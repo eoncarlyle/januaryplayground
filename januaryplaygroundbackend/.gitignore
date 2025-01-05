@@ -4,6 +4,7 @@
 *.log
 *.ctxt
 .mtj.tmp/
+.kotlin
 
 # Package Files
 *.jar
