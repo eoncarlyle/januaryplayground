@@ -1,5 +1,18 @@
-# Feedback Log
-## `62e5324`
+# README
+
+## Purpose
+In Janurary 2025 I wanted to find an excuse to work with the following technologies
+- Javalin
+- Kotlin
+- WebSockets
+- Shadcn Component Library
+- Apache Kafka
+- Session-based auth (https://github.com/stolinski/drop-in)
+
+This repository is a playground for working on a grab bag of these technologies, I probably won't find a way to shoehorn all of these in
+
+## Feedback Log
+### `62e5324`
 - Use atomic integer for `usercount`
 - Change `startServerEventSimulation` to be able to stop thread, use coroutine as welll
 
@@ -21,5 +34,5 @@ private fun startServerEventSimulation() {
 ```
 
 - Inside of `useEffect`, define `onopen`, `onmessage`, `onerror`, `oneclose`, and a component cleanup lambda to close any open sockets on unmount
-  - Websocket lifecycle does not require the nesting that has been implemented in the hook
+  - Websocket lifecycle means that the nesting in the hook is unnecessary
   - Can `if(socket) return;` at top of `useEffect`

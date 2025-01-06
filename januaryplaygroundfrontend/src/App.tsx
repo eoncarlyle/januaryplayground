@@ -9,18 +9,33 @@ function App() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    if (!socket) {
-      const socket = new WebSocket("ws://localhost:7070/ws");
-      socket.onopen = (_event) => {
-        console.log("onopen called");
+    if (socket) return;
+    const newSocket = new WebSocket("ws://localhost:7070/ws");
+    setSocket(newSocket);
 
-        socket.onmessage = (event) => {
-          setMessage(event.data);
-        };
+    newSocket.onopen = () => {
+      console.log("WebSocket connected");
+    };
 
-        setSocket(socket);
-      };
+    newSocket.onmessage = (event) => {
+        setMessage(event.data);
     }
+
+    newSocket.onerror = (event) => {
+        console.error("WebSocket error:", event);
+    }
+
+    newSocket.onclose = () => {
+        console.log("WebSocket disconnencted");
+        setSocket(null);
+    }
+
+    return () => {
+        if (newSocket.readyState === WebSocket.OPEN) {
+            newSocket.close();
+        }
+    }
+
   }, [socket]);
 
   return (
