@@ -7,15 +7,30 @@ import io.javalin.Javalin
 import io.javalin.websocket.WsContext
 import java.util.concurrent.ConcurrentHashMap
 
+import DatabaseHelper
+
 private val userMap = ConcurrentHashMap<WsContext, String>()
 private var usercount = 0
 
-fun main() {
+fun getDbTest(id: Long, db: DatabaseHelper): String? {
+    return db.query { conn ->
+        conn.prepareStatement("select * from test_table where id = ?").use { stmt ->
+            stmt.setLong(1, id)
+            stmt.executeQuery().use { rs -> if (rs.next()) rs.getString("value") else null
+            }
+        }
+    }
+}
+
+fun main(vararg args: String) {
+    if (args.isEmpty()) {
+       throw IllegalArgumentException("Empty args")
+    }
+    val db = DatabaseHelper(args[0])
+    println(getDbTest(2, db))
+
     val app = Javalin.create(/*config*/).start(7070)
-
     app.get("/health") { ctx -> ctx.result("Up") }
-
-
     app.ws("/ws") { ws ->
         ws.onConnect { ctx ->
             val username = "User" + usercount++
@@ -35,15 +50,14 @@ fun main() {
 
 private fun startServerEventSimulation() {
     Thread {
-        while (true) {
-            Thread.sleep(5000) // Every 5 seconds
-            val serverUpdate = "Server time: ${System.currentTimeMillis()}"
-            println("Starting server send process")
-            userMap.keys.filter { it.session.isOpen }.forEach { session ->
-                session.send(
-                    serverUpdate
-                )
+                while (true) {
+                    Thread.sleep(5000) // Every 5 seconds
+                    val serverUpdate = "Server time: ${System.currentTimeMillis()}"
+                    println("Starting server send process")
+                    userMap.keys.filter { it.session.isOpen }.forEach { session ->
+                        session.send(serverUpdate)
+                    }
+                }
             }
-        }
-    }.start()
+            .start()
 }

@@ -11,6 +11,13 @@ In Janurary 2025 I wanted to find an excuse to work with the following technolog
 
 This repository is a playground for working on a grab bag of these technologies, I probably won't find a way to shoehorn all of these in
 
+## Auth Notes
+- Session based authentication: still sending JWTs, but you're also storing them for validation
+- Could add `userRoles` to the session object as well
+- `return@beforematched` and `ctx.skipRemainingHandlers()` important
+- Everything are HTTP only cookies, this is handled between server and browser, JS is completely out of the loop
+- Session, refresh token possible as well
+
 ## Feedback Log
 ### `62e5324`
 - Use atomic integer for `usercount`

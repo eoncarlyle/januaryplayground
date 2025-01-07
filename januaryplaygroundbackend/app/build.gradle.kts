@@ -32,7 +32,7 @@ dependencies {
     implementation("io.javalin:javalin:6.2.0")
     implementation("org.slf4j:slf4j-simple:2.0.9")
     implementation("org.slf4j:slf4j-api:2.0.9")
-
+    implementation("org.xerial:sqlite-jdbc:3.47.2.0")
 
 }
 
