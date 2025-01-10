@@ -33,7 +33,8 @@ dependencies {
     implementation("org.slf4j:slf4j-simple:2.0.9")
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("org.xerial:sqlite-jdbc:3.47.2.0")
-
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
