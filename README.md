@@ -54,3 +54,8 @@ private fun startServerEventSimulation() {
 - Inside of `useEffect`, define `onopen`, `onmessage`, `onerror`, `oneclose`, and a component cleanup lambda to close any open sockets on unmount
   - Websocket lifecycle means that the nesting in the hook is unnecessary
   - Can `if(socket) return;` at top of `useEffect`
+
+## WebSocket Authentication Detail
+- Create an endpoint that returns a short-lived token over JSON for authenticated HTTP contexts
+- If legitimate, invalidate the token and then store it in the WebSocket user store
+- Send short-lived token with initial WebSocket response on `"auth"` messages

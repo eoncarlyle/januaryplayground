@@ -35,6 +35,8 @@ dependencies {
     implementation("org.xerial:sqlite-jdbc:3.47.2.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
+    implementation("org.mindrot:jbcrypt:0.4")
+    implementation("com.fasterxml.uuid:java-uuid-generator:4.3.0")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
