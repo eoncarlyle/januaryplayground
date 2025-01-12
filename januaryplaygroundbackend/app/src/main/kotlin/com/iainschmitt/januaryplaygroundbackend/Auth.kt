@@ -29,7 +29,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             }
             val cookie = createSession(dto.username)
             ctx.cookie(cookie)
-            ctx.status(200)
+            ctx.status(201)
         } catch (e: Exception) {
             throw InternalError(exceptionMessage("`signUpHandler` error", e))
         }
@@ -52,9 +52,20 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         if (passwordHash != null && BCrypt.checkpw(dto.password, passwordHash)) {
             val cookie = createSession(dto.username)
             ctx.cookie(cookie)
-            ctx.status(201)
+            ctx.status(200)
         } else {
             throw UnauthorizedResponse("Credentials invalid")
+        }
+    }
+
+    fun testAuthHandler(ctx: Context) {
+        val token = ctx.cookie("session")
+        if (token != null && tokenValid(token)) {
+            ctx.result("Success")
+            ctx.status(200)
+        } else {
+            ctx.result("Fail")
+            ctx.status(403)
         }
     }
 
@@ -85,7 +96,15 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()
         val cookie =
-            Cookie("session", token, maxAge = 24 * 3600, secure = secure, isHttpOnly = true)
+            Cookie(
+                "session",
+                token,
+                maxAge = 24 * 3600,
+                secure = secure,
+                sameSite = if (secure) SameSite.STRICT else SameSite.NONE,
+                isHttpOnly = true,
+                path = "/"
+            )
 
         try {
             db.query { conn ->
@@ -109,7 +128,8 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             val sessionExists = db.query { conn ->
                 conn.prepareStatement("select * from test_session where username = ?").use { stmt ->
                     stmt.setString(1, username)
-                    stmt.executeQuery().use { rs -> rs.next() }}
+                    stmt.executeQuery().use { rs -> rs.next() }
+                }
             }
 
             if (sessionExists) {

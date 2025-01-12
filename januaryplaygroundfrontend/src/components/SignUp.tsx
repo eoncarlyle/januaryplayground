@@ -16,13 +16,14 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { getBaseUrl } from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useLocation } from "wouter";
 import { z } from "zod";
 
-// Define the form schema using Zod
 const signUpSchema = z.object({
-  email: z
+  username: z
     .string()
     .min(1, { message: "Email is required" })
     .email({ message: "Must be a valid email address" }),
@@ -37,17 +38,34 @@ const signUpSchema = z.object({
 
 type SignUpValues = z.infer<typeof signUpSchema>;
 
+//TODO backend using username and frontend using email should probably be rectified at some point
 export default function SignUp() {
+  const [_, setLocation] = useLocation();
+
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
-      email: "",
+      username: "",
       password: "",
     },
   });
 
-  function onSubmit(data: SignUpValues) {
-    console.log("Form submitted:", data);
+  async function onSubmit(data: SignUpValues) {
+    try {
+      const result = await fetch(`${getBaseUrl()}/auth/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (result.ok) {
+        setLocation("/home");
+      }
+    } catch (e: unknown) {
+      console.error(`Fetch failed: ${e}`);
+    }
   }
 
   return (
@@ -62,7 +80,7 @@ export default function SignUp() {
           <CardContent className="grid gap-4">
             <FormField
               control={form.control}
-              name="email"
+              name="username"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>

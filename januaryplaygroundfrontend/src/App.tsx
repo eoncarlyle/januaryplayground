@@ -1,5 +1,30 @@
+import { useEffect, useState } from "react";
+import { Route, Switch } from "wouter";
+
 import "./App.css";
-import { SignUp } from "./components/SignUp";
+import SignUp from "./components/SignUp";
+import { getBaseUrl } from "./util/rest";
+
+function Home() {
+  const [response, setResponse] = useState<string>("");
+
+  useEffect(() => {
+    if (response === "") {
+      fetch(`${getBaseUrl()}/auth/test`, {
+        credentials: "include",
+      })
+        .then((auth) => auth.text())
+        .then((text) => {
+          console.log(text);
+          setResponse(text);
+        });
+    } else {
+      return;
+    }
+  }, [response, setResponse]);
+
+  return response;
+}
 
 function App() {
   /*
@@ -38,9 +63,11 @@ function App() {
    */
 
   return (
-    <>
-      <SignUp />
-    </>
+    <Switch>
+      <Route path="/signup" component={SignUp} />
+      <Route path="/" component={() => "Landing Page"} />
+      <Route path="/home" component={Home} />
+    </Switch>
   );
 }
 
