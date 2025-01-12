@@ -20,6 +20,14 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `41afb33`
+- Database security
+  - Hide databse errors (change HTTP error based off of command-line security flag)
+  - Harden SQL statements against injection
+- Session management
+  - Implement expired session cleanup
+
+
 ### `2996280`
 - Change how passwords are handled
   - Send raw password over HTTPS

@@ -3,16 +3,8 @@
  */
 package com.iainschmitt.januaryplaygroundbackend
 
-import DatabaseHelper
-import com.fasterxml.uuid.Generators
 import io.javalin.Javalin
-import io.javalin.http.Context
-import io.javalin.http.Cookie
-import io.javalin.http.ForbiddenResponse
-import io.javalin.http.UnauthorizedResponse
 import io.javalin.websocket.WsContext
-import org.mindrot.jbcrypt.BCrypt
-import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 private val userMap = ConcurrentHashMap<WsContext, String>()
@@ -20,7 +12,8 @@ private var usercount = 0
 
 class CredentialsDto(val username: String, val password: String)
 
-fun isUsernamePresent(username: String, db: DatabaseHelper): Boolean {
+/*
+fun isUsernamePresent(username: String, db: com.iainschmitt.januaryplaygroundbackend.DatabaseHelper): Boolean {
     return db.query { conn ->
         conn.prepareStatement("select username from test_users where username = ?").use { stmt ->
             stmt.setString(1, username)
@@ -29,48 +22,43 @@ fun isUsernamePresent(username: String, db: DatabaseHelper): Boolean {
     }
 }
 
-fun createSession(db: DatabaseHelper, cookieSecure: Boolean): Cookie {
+fun createSession(db: com.iainschmitt.januaryplaygroundbackend.DatabaseHelper, cookieSecure: Boolean): Cookie {
     val expireTimestamp = Instant.now().plusSeconds(24 * 3600L).epochSecond
-    //Do not like that I can't specify a timestamp as `maxAge`
+    // Do not like that I can't specify a timestamp as `maxAge`
     val token = Generators.randomBasedGenerator().generate().toString()
-    val cookie = Cookie(
-        "session",
-        token,
-        maxAge = 24 * 3600,
-        secure = cookieSecure,
-        isHttpOnly = true
-    )
+    val cookie =
+            Cookie("session", token, maxAge = 24 * 3600, secure = cookieSecure, isHttpOnly = true)
 
     try {
         db.query { conn ->
-            conn.prepareStatement(
-                "insert into test_users (token, password_hash) values (?, ?)"
-            )
-                .use { stmt ->
-                    stmt.setString(1, token)
-                    stmt.setLong(2, expireTimestamp)
-                    stmt.executeUpdate()
-                }
+            conn.prepareStatement("insert into test_users (token, password_hash) values (?, ?)")
+                    .use { stmt ->
+                        stmt.setString(1, token)
+                        stmt.setLong(2, expireTimestamp)
+                        stmt.executeUpdate()
+                    }
         }
 
-        return cookie;
+        return cookie
     } catch (e: Exception) {
         throw InternalError("`handleAuth` error: ${e.message}")
     }
 }
 
-fun tokenValid(db: DatabaseHelper, token: String): Boolean {
-    val expireTimestamp: Long? = db.query { conn ->
-        conn.prepareStatement("select expire_timestamp from test_users where token = ?").use { stmt ->
-            stmt.setString(1, token)
-            stmt.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
-        }
-    }
+fun tokenValid(db: com.iainschmitt.januaryplaygroundbackend.DatabaseHelper, token: String): Boolean {
+    val expireTimestamp: Long? =
+            db.query { conn ->
+                conn.prepareStatement("select expire_timestamp from test_users where token = ?")
+                        .use { stmt ->
+                            stmt.setString(1, token)
+                            stmt.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
+                        }
+            }
     return expireTimestamp != null && expireTimestamp > Instant.now().epochSecond
 }
 
 // TODO: abstract out database argument
-fun signUpHandler(db: DatabaseHelper, cookieSecure: Boolean): (Context) -> Unit {
+fun signUpHandler(db: com.iainschmitt.januaryplaygroundbackend.DatabaseHelper, cookieSecure: Boolean): (Context) -> Unit {
     return { ctx: Context ->
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
@@ -84,37 +72,37 @@ fun signUpHandler(db: DatabaseHelper, cookieSecure: Boolean): (Context) -> Unit 
         try {
             db.query { conn ->
                 conn.prepareStatement(
-                    "insert into test_users (username, password_hash) values (?, ?)"
-                )
-                    .use { stmt ->
-                        stmt.setString(1, dto.username)
-                        stmt.setString(2, passwordHash)
-                        stmt.executeUpdate()
-                    }
+                                "insert into test_users (username, password_hash) values (?, ?)"
+                        )
+                        .use { stmt ->
+                            stmt.setString(1, dto.username)
+                            stmt.setString(2, passwordHash)
+                            stmt.executeUpdate()
+                        }
             }
             val cookie = createSession(db, cookieSecure)
             ctx.cookie(cookie)
-            ctx.status(201)
+            ctx.status(200)
         } catch (e: Exception) {
             throw InternalError("`loginHandler` error: ${e.message}")
         }
     }
 }
 
-fun logInHandler(db: DatabaseHelper, cookieSecure: Boolean): (Context) -> Unit {
+fun logInHandler(db: com.iainschmitt.januaryplaygroundbackend.DatabaseHelper, cookieSecure: Boolean): (Context) -> Unit {
     return { ctx: Context ->
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
 
         val passwordHash: String? =
-            db.query { conn ->
-                conn.prepareStatement(
-                    "select * from test_users where username = ?"
-                )
-                    .use { stmt ->
+                db.query { conn ->
+                    conn.prepareStatement("select * from test_users where username = ?").use { stmt
+                        ->
                         stmt.setString(1, dto.username)
-                        stmt.executeQuery().use { rs -> if (rs.next()) rs.getString("password_hash") else null }
+                        stmt.executeQuery().use { rs ->
+                            if (rs.next()) rs.getString("password_hash") else null
+                        }
                     }
-            }
+                }
 
         if (passwordHash != null && BCrypt.checkpw(dto.password, passwordHash)) {
             val cookie = createSession(db, cookieSecure)
@@ -126,23 +114,25 @@ fun logInHandler(db: DatabaseHelper, cookieSecure: Boolean): (Context) -> Unit {
     }
 }
 
-
+ */
 fun main(vararg args: String) {
     if (args.size < 2) {
         throw IllegalArgumentException("Empty args")
     }
     val db = DatabaseHelper(args[0])
 
-    val cookieSecure = when (args[1]) {
-        "insecure" -> false
-        "secure" -> true
-        else -> throw IllegalArgumentException("Invalid `cookieSecure`")
-    }
+    val secure =
+        when (args[1]) {
+            "insecure" -> false
+            "secure" -> true
+            else -> throw IllegalArgumentException("Invalid `cookieSecure`")
+        }
 
     val app = Javalin.create(/*config*/).start(7070)
+    val auth = Auth(db, secure)
     app.get("/health") { ctx -> ctx.result("Up") }
-    app.post("/auth/signup", signUpHandler(db, cookieSecure))
-    app.post("/auth/login", logInHandler(db, cookieSecure))
+    app.post("/auth/signup") { ctx -> auth.signUpHandler(ctx) }
+    app.post("/auth/login") { ctx -> auth.logInHandler(ctx) }
 
     // TODO: Add auth here
     app.ws("/ws") { ws ->

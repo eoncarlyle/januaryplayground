@@ -1,3 +1,5 @@
+package com.iainschmitt.januaryplaygroundbackend
+
 import java.sql.Connection
 import java.sql.DriverManager
 
