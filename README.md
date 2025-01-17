@@ -23,6 +23,12 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `cd9bc43`
+- Add rate-limiting for auth endpoints
+- Reduce duplicate code in `LogIn` and `SignUp`
+- Consider a `useAuthForm` for shared auth work
+- Consider CSRF protection
+
 ### `41afb33`
 - Database security
   - Hide databse errors (change HTTP error based off of command-line security flag)

@@ -46,6 +46,8 @@ export default function LogIn() {
 
   const [_, setLocation] = useLocation();
 
+  //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
+
   const onSubmit = async (data: LogInValues) => {
     try {
       const result = await fetch(`${getBaseUrl()}/auth/login`, {
