@@ -17,45 +17,38 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { getBaseUrl } from "@/util/rest";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod/src/zod.js";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { z } from "zod";
 
-const signUpSchema = z.object({
+const logInSchema = z.object({
   username: z
     .string()
     .min(1, { message: "Email is required" })
     .email({ message: "Must be a valid email address" }),
   password: z
     .string()
-    .min(8, { message: "Password must be at least 8 characters" })
-    .max(64, { message: "Password must be less than 64 characters" })
-    .regex(/^(?=.*[a-z])(?=.*[A-Z])/, {
-      message: "Password must contain upper and lowercase letters",
-    }),
+    .min(1, { message: "Password must be required" })
+    .max(64, { message: "Password must be less than 64 characters" }),
 });
 
-type SignUpValues = z.infer<typeof signUpSchema>;
+type LogInValues = z.infer<typeof logInSchema>;
 
-//TODO backend using username and frontend using email should probably be rectified at some point
-export default function SignUp() {
-  const form = useForm<SignUpValues>({
-    resolver: zodResolver(signUpSchema),
+export default function LogIn() {
+  const form = useForm<LogInValues>({
+    resolver: zodResolver(logInSchema),
     defaultValues: {
       username: "",
       password: "",
     },
   });
+
   const [_, setLocation] = useLocation();
 
-  //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
-
-  //TODO: this is the same as what we have in `LogIn.tsx`
-  const onSubmit = async (data: SignUpValues) => {
+  const onSubmit = async (data: LogInValues) => {
     try {
-      const result = await fetch(`${getBaseUrl()}/auth/signup`, {
+      const result = await fetch(`${getBaseUrl()}/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -94,8 +87,7 @@ export default function SignUp() {
     <Card className="w-full max-w-md">
       <Form {...form}>
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Sign Up</CardTitle>
-          <CardDescription>Enter your email below to sign up</CardDescription>
+          <CardTitle className="text-2xl">Log In</CardTitle>
         </CardHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -137,7 +129,7 @@ export default function SignUp() {
 
           <CardFooter>
             <Button type="submit" className="w-full">
-              Sign Up
+              Log In
             </Button>
           </CardFooter>
         </form>

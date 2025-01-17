@@ -27,6 +27,7 @@ fun main(vararg args: String) {
 
     val app = Javalin.create({ config ->
         config.bundledPlugins.enableCors { cors ->
+            // TODO: specify this correctly in production
             cors.addRule {
                 it.allowHost("http://localhost:5173")
                 it.allowCredentials = true

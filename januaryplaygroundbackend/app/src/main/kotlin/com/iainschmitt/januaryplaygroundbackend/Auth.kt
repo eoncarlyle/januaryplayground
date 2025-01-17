@@ -54,7 +54,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             ctx.cookie(cookie)
             ctx.status(200)
         } else {
-            throw UnauthorizedResponse("Credentials invalid")
+            throw ForbiddenResponse("Username or password not found")
         }
     }
 
@@ -101,7 +101,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
                 token,
                 maxAge = 24 * 3600,
                 secure = secure,
-                sameSite = if (secure) SameSite.STRICT else SameSite.NONE,
+                sameSite = if (secure) SameSite.STRICT else SameSite.LAX,
                 isHttpOnly = true,
                 path = "/"
             )

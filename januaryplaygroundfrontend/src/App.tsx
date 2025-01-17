@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Route, Switch } from "wouter";
 
 import "./App.css";
+import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
 import { getBaseUrl } from "./util/rest";
 
@@ -65,6 +66,7 @@ function App() {
   return (
     <Switch>
       <Route path="/signup" component={SignUp} />
+      <Route path="/login" component={LogIn} />
       <Route path="/" component={() => "Landing Page"} />
       <Route path="/home" component={Home} />
     </Switch>
