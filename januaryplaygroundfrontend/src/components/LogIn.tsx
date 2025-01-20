@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { createAuthOnSubmitHandler } from "@/util/rest";
+import {createAuthOnSubmitHandler, useAuthRedirect} from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod/src/zod.js";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
@@ -44,7 +44,8 @@ export default function LogIn() {
   });
 
   const [_, setLocation] = useLocation();
-
+  useAuthRedirect(false, setLocation);
+  
   return (
     <Card className="w-full max-w-md">
       <Form {...form}>
@@ -54,7 +55,7 @@ export default function LogIn() {
 
         <form
           onSubmit={form.handleSubmit(
-            createAuthOnSubmitHandler(form, setLocation),
+            createAuthOnSubmitHandler(form, setLocation, "login"),
           )}
           className="space-y-6"
         >

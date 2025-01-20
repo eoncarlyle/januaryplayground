@@ -1,6 +1,7 @@
-import IAppAuth from "@/model.ts";
-import React, { useEffect } from "react";
+import React, {useContext} from "react";
 import { UseFormReturn } from "react-hook-form";
+import {AuthState} from "@/model.ts";
+import { AuthContext} from "@/util/AuthContext.ts";
 
 type FormType = UseFormReturn<{
   email: string;
@@ -28,10 +29,11 @@ export function getBaseUrl(): string {
 export function createAuthOnSubmitHandler<T>(
   form: FormType,
   setLocation: SetLocationType,
+  endpoint: "signup" | "login",
 ) {
   return async (data: T) => {
     try {
-      const result = await fetch(`${getBaseUrl()}/auth/signup`, {
+      const result = await fetch(`${getBaseUrl()}/auth/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -68,10 +70,10 @@ export function createAuthOnSubmitHandler<T>(
 }
 
 export async function evaluateAppAuth(
-  appAuthContext: IAppAuth,
-  setAppAuthState: React.Dispatch<React.SetStateAction<IAppAuth>>,
+  authState: AuthState,
+  setAuthState: React.Dispatch<React.SetStateAction<AuthState>>,
 ) {
-  if (appAuthContext.loggedIn) {
+  if (authState.loggedIn) {
     return;
   }
 
@@ -88,13 +90,22 @@ export async function evaluateAppAuth(
         "email" in body &&
         typeof body.email === "string"
       ) {
-        setAppAuthState({ email: body.email, loggedIn: true });
+        setAuthState({ email: body.email, loggedIn: true });
       }
     } else {
-      setAppAuthState({ email: null, loggedIn: false });
     }
   } catch (error: any) {
     console.error(`Evaluate app auth failed: ${error}`);
-    setAppAuthState({ email: null, loggedIn: false });
+  }
+}
+
+export function useAuthRedirect(requiresAuth: boolean, setLocation: SetLocationType) {
+  const authContext = useContext(AuthContext);
+  if (authContext === null) {
+    return
+  } if (requiresAuth && !authContext.authState.loggedIn) {
+    setLocation("/login");
+  } else if (!requiresAuth && authContext.authState.loggedIn) {
+    setLocation("/home");
   }
 }

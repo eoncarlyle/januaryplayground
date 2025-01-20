@@ -1,46 +1,49 @@
-import IAppAuth from "@/model.ts";
-import { createContext, useContext, useEffect, useState } from "react";
-import { Route, Switch } from "wouter";
+import {useEffect, useState} from "react";
+import {Route, Switch, useLocation} from "wouter";
 
 import "./App.css";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
-import {evaluateAppAuth, getBaseUrl} from "./util/rest";
+import {evaluateAppAuth, getBaseUrl, useAuthRedirect} from "./util/rest";
+import {AuthState} from "@/model.ts";
+import {AuthContext} from "./util/AuthContext";
 
 function Home() {
   const [response, setResponse] = useState<string>("");
+  //const [_, setLocation] = useLocation(); 
+
+  //useAuthRedirect(true, setLocation)
 
   useEffect(() => {
-    if (response === "") {
-      fetch(`${getBaseUrl()}/auth/test`, {
+    const evaluateAuth = async () => {
+      fetch(`${getBaseUrl()}/auth/evaluate`, {
         credentials: "include",
       })
         .then((auth) => auth.text())
         .then((text) => {
-          console.log(text);
-          setResponse(text);
+          if (text != response) {
+            console.log(text);
+            setResponse(text);
+          }
         });
-    } else {
-      return;
     }
-  }, [response, setResponse]);
+    
+    evaluateAuth()
+  }, []);
 
   return response;
 }
-const defaultAuth = { email: null, loggedIn: false }
 
-const AuthContext = createContext<IAppAuth>(defaultAuth);
+const defaultAuth: AuthState = {email: null, loggedIn: false}
 
 function App() {
-  const [authState, setAuthState] = useState<IAppAuth>(defaultAuth);
-  
-  useEffect(() => {
-    const evaluate = async () => {
-      await evaluateAppAuth(authState, setAuthState);
-    };
+  const [authState, setAuthState] = useState(defaultAuth);
 
-    evaluate();
-  }, [authState, setAuthState]);
+  useEffect(() => {
+    (async () => {
+      await evaluateAppAuth({email: null, loggedIn: false}, setAuthState);
+    })();
+  }, [authState]);
 
   /*
     const [count, setCount] = useState(0);
@@ -79,12 +82,12 @@ function App() {
 
   // TODO start here: provide the state, setState in the auth context, this will rqeuire new types and that's fine
   return (
-    <AuthContext.Provider value={useContext(AuthContext)}>
+    <AuthContext.Provider value={{authState: authState, setAuthState: setAuthState}}>
       <Switch>
-        <Route path="/signup" component={SignUp} />
-        <Route path="/login" component={LogIn} />
-        <Route path="/" component={() => "Landing Page"} />
-        <Route path="/home" component={Home} />
+        <Route path="/signup" component={SignUp}/>
+        <Route path="/login" component={LogIn}/>
+        <Route path="/" component={() => "Landing Page"}/>
+        <Route path="/home" component={Home}/>
       </Switch>
     </AuthContext.Provider>
   );

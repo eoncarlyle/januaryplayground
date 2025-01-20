@@ -83,18 +83,18 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
     }
 
     private fun evaluateUserEmail(token: String): String? {
-        val rs =
+        val pair =
             db.query { conn ->
                 conn.prepareStatement("select expire_timestamp, email from test_session where token = ?")
                     .use { stmt ->
                         stmt.setString(1, token)
-                        stmt.executeQuery().use { rs -> if (rs.next()) rs else null }
+                        stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getLong(1), rs.getString(2)) else null }
                     }
             }
-        if (rs == null || rs.getLong(1) > Instant.now().epochSecond) {
-            return null
+        return if (pair == null || pair.first < Instant.now().epochSecond) {
+            null
         } else {
-            return rs.getString(2)
+            pair.second
         }
     }
 
