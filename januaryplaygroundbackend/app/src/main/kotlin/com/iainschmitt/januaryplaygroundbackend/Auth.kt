@@ -9,25 +9,25 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
     fun signUpHandler(ctx: Context) {
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
-        if (isUsernamePresent(dto.username)) {
+        if (emailPresent(dto.email)) {
             // If the start of this lamda was `return lamda@`, then doing `return@lamda` below after
             // setting
             // status and return code would do the exit early stuff
-            throw ForbiddenResponse("Username `${dto.username}` already exists")
+            throw ForbiddenResponse("Account with email `${dto.email}` already exists")
         }
 
         try {
             db.query { conn ->
                 conn.prepareStatement(
-                    "insert into test_users (username, password_hash) values (?, ?)"
+                    "insert into test_users (email, password_hash) values (?, ?)"
                 )
                     .use { stmt ->
-                        stmt.setString(1, dto.username)
+                        stmt.setString(1, dto.email)
                         stmt.setString(2, passwordHash)
                         stmt.executeUpdate()
                     }
             }
-            val cookie = createSession(dto.username)
+            val cookie = createSession(dto.email)
             ctx.cookie(cookie)
             ctx.status(201)
         } catch (e: Exception) {
@@ -40,9 +40,9 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash: String? =
             db.query { conn ->
-                conn.prepareStatement("select * from test_users where username = ?").use { stmt
+                conn.prepareStatement("select * from test_users where email = ?").use { stmt
                     ->
-                    stmt.setString(1, dto.username)
+                    stmt.setString(1, dto.email)
                     stmt.executeQuery().use { rs ->
                         if (rs.next()) rs.getString("password_hash") else null
                     }
@@ -50,18 +50,19 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             }
 
         if (passwordHash != null && BCrypt.checkpw(dto.password, passwordHash)) {
-            val cookie = createSession(dto.username)
+            val cookie = createSession(dto.email)
             ctx.cookie(cookie)
             ctx.status(200)
         } else {
-            throw ForbiddenResponse("Username or password not found")
+            throw ForbiddenResponse("email or password not found")
         }
     }
 
-    fun testAuthHandler(ctx: Context) {
+    fun evaluateAuthHandler(ctx: Context) {
         val token = ctx.cookie("session")
-        if (token != null && tokenValid(token)) {
-            ctx.result("Success")
+        val user = if (token != null) evaluateUserEmail(token) else null
+        if (token != null && user != null) {
+            ctx.json(mapOf("email" to user))
             ctx.status(200)
         } else {
             ctx.result("Fail")
@@ -81,17 +82,32 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         return expireTimestamp != null && expireTimestamp > Instant.now().epochSecond
     }
 
+    private fun evaluateUserEmail(token: String): String? {
+        val rs =
+            db.query { conn ->
+                conn.prepareStatement("select expire_timestamp, email from test_session where token = ?")
+                    .use { stmt ->
+                        stmt.setString(1, token)
+                        stmt.executeQuery().use { rs -> if (rs.next()) rs else null }
+                    }
+            }
+        if (rs == null || rs.getLong(1) > Instant.now().epochSecond) {
+            return null
+        } else {
+            return rs.getString(2)
+        }
+    }
 
-    private fun isUsernamePresent(username: String): Boolean {
+    private fun emailPresent(email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select username from test_users where username = ?").use { stmt ->
-                stmt.setString(1, username)
+            conn.prepareStatement("select email from test_users where email = ?").use { stmt ->
+                stmt.setString(1, email)
                 stmt.executeQuery().use { rs -> rs.next() }
             }
         }
     }
 
-    private fun createSession(username: String): Cookie {
+    private fun createSession(email: String): Cookie {
         val expireTimestamp = Instant.now().plusSeconds(24 * 3600L).epochSecond
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()
@@ -108,11 +124,11 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
 
         try {
             db.query { conn ->
-                conn.prepareStatement("insert into test_session (token, expire_timestamp, username) values (?, ?, ?)")
+                conn.prepareStatement("insert into test_session (token, expire_timestamp, email) values (?, ?, ?)")
                     .use { stmt ->
                         stmt.setString(1, token)
                         stmt.setLong(2, expireTimestamp)
-                        stmt.setString(3, username)
+                        stmt.setString(3, email)
                         stmt.executeUpdate()
                     }
             }
@@ -123,19 +139,19 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         }
     }
 
-    private fun removeExistingSessions(username: String) {
+    private fun removeExistingSessions(email: String) {
         try {
             val sessionExists = db.query { conn ->
-                conn.prepareStatement("select * from test_session where username = ?").use { stmt ->
-                    stmt.setString(1, username)
+                conn.prepareStatement("select * from test_session where email = ?").use { stmt ->
+                    stmt.setString(1, email)
                     stmt.executeQuery().use { rs -> rs.next() }
                 }
             }
 
             if (sessionExists) {
                 db.query { conn ->
-                    conn.prepareStatement("delete from test_session where username = ?").use { stmt ->
-                        stmt.setString(1, username)
+                    conn.prepareStatement("delete from test_session where email = ?").use { stmt ->
+                        stmt.setString(1, email)
                         stmt.executeUpdate()
                     }
                 }

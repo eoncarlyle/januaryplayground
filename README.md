@@ -24,7 +24,7 @@ This repository is a playground for working on a grab bag of these technologies,
 ## Feedback Log
 
 ### `cd9bc43`
-- Add rate-limiting for auth endpoints
+- ~Add rate-limiting for auth endpoints~
 - Reduce duplicate code in `LogIn` and `SignUp`
 - Consider a `useAuthForm` for shared auth work
 - Consider CSRF protection
@@ -38,17 +38,17 @@ This repository is a playground for working on a grab bag of these technologies,
 
 
 ### `2996280`
-- Change how passwords are handled
-  - Send raw password over HTTPS
-  - Hash server-side with unique salt: `val hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt())`
-  - Store the salt alongside the user credentials in the database
-- Use `POST` method on anything auth related
+- ~Change how passwords are handled~
+  - ~Send raw password over HTTPS~
+  - ~Hash server-side with unique salt: `val hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt())`~
+  - ~Store the salt alongside the user credentials in the database~
+~- Use `POST` method on anything auth related~
 - Make sure to add auth to WebSocket communication
 - If you were using anything other than SQLite, use a database thread pool
 - Add input validation to DB queries
 
 ### `62e5324`
-- Use atomic integer for `usercount`
+- ~Use atomic integer for `usercount`~
 - Change `startServerEventSimulation` to be able to stop thread, use coroutine as welll
 
 ```kotlin

@@ -16,15 +16,14 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { getBaseUrl } from "@/util/rest";
+import { createAuthOnSubmitHandler } from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { UseFormReturn, useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { z } from "zod";
 
 const signUpSchema = z.object({
-  username: z
+  email: z
     .string()
     .min(1, { message: "Email is required" })
     .email({ message: "Must be a valid email address" }),
@@ -39,56 +38,17 @@ const signUpSchema = z.object({
 
 type SignUpValues = z.infer<typeof signUpSchema>;
 
-//TODO backend using username and frontend using email should probably be rectified at some point
 export default function SignUp() {
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   });
   const [_, setLocation] = useLocation();
 
   //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
-
-  //TODO: this is the same as what we have in `LogIn.tsx`
-  const onSubmit = async (data: SignUpValues) => {
-    try {
-      const result = await fetch(`${getBaseUrl()}/auth/signup`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-
-      if (result.ok) {
-        setLocation("/home");
-      } else {
-        const errorMessage: unknown = await result.text();
-
-        if (
-          result.status < 500 &&
-          errorMessage &&
-          typeof errorMessage === "string"
-        ) {
-          form.setError("root", {
-            type: "server",
-            message: errorMessage,
-          });
-        } else {
-          form.setError("root", {
-            type: "server",
-            message: "Something went wrong",
-          });
-        }
-      }
-    } catch (e: unknown) {
-      console.error(`Fetch failed: ${e}`);
-    }
-  };
 
   return (
     <Card className="w-full max-w-md">
@@ -98,7 +58,12 @@ export default function SignUp() {
           <CardDescription>Enter your email below to sign up</CardDescription>
         </CardHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form
+          onSubmit={form.handleSubmit(
+            createAuthOnSubmitHandler(form, setLocation),
+          )}
+          className="space-y-6"
+        >
           {form.formState.errors.root && (
             <div className="text-red-500 text-sm">
               {form.formState.errors.root.message}
@@ -108,7 +73,7 @@ export default function SignUp() {
           <CardContent className="grid gap-4">
             <FormField
               control={form.control}
-              name="username"
+              name="email"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>

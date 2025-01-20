@@ -4,13 +4,15 @@
 package com.iainschmitt.januaryplaygroundbackend
 
 import io.javalin.Javalin
+import io.javalin.http.util.NaiveRateLimit
 import io.javalin.websocket.WsContext
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 private val userMap = ConcurrentHashMap<WsContext, String>()
 private var usercount = 0
 
-class CredentialsDto(val username: String, val password: String)
+class CredentialsDto(val email: String, val password: String)
 
 fun main(vararg args: String) {
     if (args.size < 2) {
@@ -36,21 +38,22 @@ fun main(vararg args: String) {
     }).start(7070)
     val auth = Auth(db, secure)
     app.get("/health") { ctx -> ctx.result("Up") }
+    app.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
     app.post("/auth/signup") { ctx -> auth.signUpHandler(ctx) }
     app.post("/auth/login") { ctx -> auth.logInHandler(ctx) }
-    app.get("/auth/test") { ctx -> auth.testAuthHandler(ctx) }
+    app.get("/auth/evaluate") { ctx -> auth.evaluateAuthHandler(ctx) }
 
     // TODO: Add auth here
     app.ws("/ws") { ws ->
         ws.onConnect { ctx ->
-            val username = "User" + usercount++
-            userMap[ctx] = username
-            println("Connected: $username")
+            val email = "User" + usercount++
+            userMap[ctx] = email
+            println("Connected: $email")
         }
         ws.onClose { ctx ->
-            val username = userMap[ctx]
+            val email = userMap[ctx]
             userMap.remove(ctx)
-            println("Disconnected: $username")
+            println("Disconnected: $email")
         }
     }
 
