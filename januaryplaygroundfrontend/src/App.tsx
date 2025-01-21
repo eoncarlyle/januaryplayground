@@ -1,18 +1,17 @@
-import {useEffect, useState} from "react";
-import {Route, Switch, useLocation} from "wouter";
+import { useEffect, useState } from "react";
+import { Route, Switch, useLocation } from "wouter";
 
 import "./App.css";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
-import {evaluateAppAuth, getBaseUrl, useAuthRedirect} from "./util/rest";
-import {AuthState} from "@/model.ts";
-import {AuthContext} from "./util/AuthContext";
+import { getBaseUrl, useAuthLocalStorage, useAuthRedirect } from "./util/rest";
 
 function Home() {
-  const [response, setResponse] = useState<string>("");
-  //const [_, setLocation] = useLocation(); 
+  const [_location, setLocation] = useLocation();
+  useAuthRedirect(true, setLocation);
 
-  //useAuthRedirect(true, setLocation)
+  const [response, setResponse] = useState<string>("");
+  const [authLocalStorage, _setAuthLocalStorage] = useAuthLocalStorage();
 
   useEffect(() => {
     const evaluateAuth = async () => {
@@ -21,29 +20,21 @@ function Home() {
       })
         .then((auth) => auth.text())
         .then((text) => {
-          if (text != response) {
-            console.log(text);
-            setResponse(text);
-          }
+          setResponse(text);
         });
-    }
-    
-    evaluateAuth()
-  }, []);
+    };
+    evaluateAuth();
+  }, [authLocalStorage]);
 
   return response;
 }
 
-const defaultAuth: AuthState = {email: null, loggedIn: false}
-
 function App() {
-  const [authState, setAuthState] = useState(defaultAuth);
-
-  useEffect(() => {
-    (async () => {
-      await evaluateAppAuth({email: null, loggedIn: false}, setAuthState);
-    })();
-  }, [authState]);
+  //useEffect(() => {
+  //  (async () => {
+  //    await evaluateAppAuth({ email: null, loggedIn: false }, setAuthState);
+  //  })();
+  //}, [authState]);
 
   /*
     const [count, setCount] = useState(0);
@@ -53,43 +44,41 @@ function App() {
       if (socket) return;
       const newSocket = new WebSocket("ws://localhost:7070/ws");
       setSocket(newSocket);
-  
+
       newSocket.onopen = () => {
         console.log("WebSocket connected");
       };
-  
+
       newSocket.onmessage = (event) => {
           setMessage(event.data);
       }
-  
+
       newSocket.onerror = (event) => {
           console.error("WebSocket error:", event);
       }
-  
+
       newSocket.onclose = () => {
           console.log("WebSocket disconnencted");
           setSocket(null);
       }
-  
+
       return () => {
           if (newSocket.readyState === WebSocket.OPEN) {
               newSocket.close();
           }
       }
-  
+
     }, [socket]);
      */
 
   // TODO start here: provide the state, setState in the auth context, this will rqeuire new types and that's fine
   return (
-    <AuthContext.Provider value={{authState: authState, setAuthState: setAuthState}}>
-      <Switch>
-        <Route path="/signup" component={SignUp}/>
-        <Route path="/login" component={LogIn}/>
-        <Route path="/" component={() => "Landing Page"}/>
-        <Route path="/home" component={Home}/>
-      </Switch>
-    </AuthContext.Provider>
+    <Switch>
+      <Route path="/signup" component={SignUp} />
+      <Route path="/login" component={LogIn} />
+      <Route path="/" component={() => "Landing Page"} />
+      <Route path="/home" component={Home} />
+    </Switch>
   );
 }
 

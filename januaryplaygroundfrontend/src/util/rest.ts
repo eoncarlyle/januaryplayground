@@ -1,7 +1,10 @@
-import React, {useContext} from "react";
+import { AuthState } from "@/model.ts";
+import AuthContext from "@/util/AuthContext.ts";
+import React, { useContext } from "react";
 import { UseFormReturn } from "react-hook-form";
-import {AuthState} from "@/model.ts";
-import { AuthContext} from "@/util/AuthContext.ts";
+
+const EMAIL = "email";
+const LOGGED_IN = "loggedIn";
 
 type FormType = UseFormReturn<{
   email: string;
@@ -28,7 +31,8 @@ export function getBaseUrl(): string {
 //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
 export function createAuthOnSubmitHandler<T>(
   form: FormType,
-  setLocation: SetLocationType,
+  setAuth: (loggedIn: boolean) => void,
+  redirectOnSuccess: () => void,
   endpoint: "signup" | "login",
 ) {
   return async (data: T) => {
@@ -43,10 +47,10 @@ export function createAuthOnSubmitHandler<T>(
       });
 
       if (result.ok) {
-        setLocation("/home");
+        setAuth(true);
+        redirectOnSuccess();
       } else {
         const errorMessage: unknown = await result.text();
-
         if (
           result.status < 500 &&
           errorMessage &&
@@ -92,20 +96,37 @@ export async function evaluateAppAuth(
       ) {
         setAuthState({ email: body.email, loggedIn: true });
       }
-    } else {
     }
   } catch (error: any) {
     console.error(`Evaluate app auth failed: ${error}`);
   }
 }
 
-export function useAuthRedirect(requiresAuth: boolean, setLocation: SetLocationType) {
-  const authContext = useContext(AuthContext);
-  if (authContext === null) {
-    return
-  } if (requiresAuth && !authContext.authState.loggedIn) {
+export function useAuthRedirect(
+  requiresAuth: boolean,
+  setLocation: SetLocationType,
+) {
+  const [authLocalStorage, _] = useAuthLocalStorage();
+  if (requiresAuth && !authLocalStorage.loggedIn) {
     setLocation("/login");
-  } else if (!requiresAuth && authContext.authState.loggedIn) {
+  } else if (!requiresAuth && authLocalStorage.loggedIn) {
     setLocation("/home");
   }
+}
+
+export function useAuthLocalStorage(): [
+  AuthState,
+  (loggedIn: boolean, email?: string) => void,
+] {
+  const authLocalStorage: AuthState = {
+    email: localStorage.getItem(EMAIL),
+    loggedIn: localStorage.getItem(LOGGED_IN) === "true",
+  };
+
+  const setAuthLocalStorage = (loggedIn: boolean, email?: string) => {
+    localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
+    if (email) localStorage.setItem(EMAIL, email);
+  };
+
+  return [authLocalStorage, setAuthLocalStorage];
 }

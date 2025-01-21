@@ -16,7 +16,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {createAuthOnSubmitHandler, useAuthRedirect} from "@/util/rest";
+import {
+  createAuthOnSubmitHandler,
+  useAuthLocalStorage,
+  useAuthRedirect,
+} from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
@@ -46,8 +50,9 @@ export default function SignUp() {
       password: "",
     },
   });
-  const [_, setLocation] = useLocation();
+  const [_location, setLocation] = useLocation();
   useAuthRedirect(false, setLocation);
+  const [_authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
 
   //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
 
@@ -61,7 +66,12 @@ export default function SignUp() {
 
         <form
           onSubmit={form.handleSubmit(
-            createAuthOnSubmitHandler(form, setLocation, "signup"),
+            createAuthOnSubmitHandler(
+              form,
+              (loggedIn: boolean) => setAuthLocalStorage(loggedIn),
+              () => setLocation("/home"),
+              "signup",
+            ),
           )}
           className="space-y-6"
         >
