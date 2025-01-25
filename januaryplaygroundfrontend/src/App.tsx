@@ -8,22 +8,32 @@ import { getBaseUrl, useAuthLocalStorage, useAuthRedirect } from "./util/rest";
 
 function Home() {
   const [_location, setLocation] = useLocation();
+
+  // Check auth if we know it is wrong
   useAuthRedirect(true, setLocation);
 
   const [response, setResponse] = useState<string>("");
-  const [authLocalStorage, _setAuthLocalStorage] = useAuthLocalStorage();
+  const [authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
 
   useEffect(() => {
-    const evaluateAuth = async () => {
+    const landingAuth = async () => {
       fetch(`${getBaseUrl()}/auth/evaluate`, {
         credentials: "include",
       })
         .then((auth) => auth.text())
         .then((text) => {
+          const evalBody: unknown = JSON.parse(text)
+
+          if(typeof evalBody === 'object' && evalBody !== null && 'email' in evalBody) {
+            // @ts-expect-error: Type has been narrowed
+            setAuthLocalStorage(true, evalBody.email)
+          }
+          // check auth explicitly
           setResponse(text);
-        });
+        }).catch((_err) => setAuthLocalStorage(false));
+
     };
-    evaluateAuth();
+    landingAuth();
   }, [authLocalStorage]);
 
   return response;

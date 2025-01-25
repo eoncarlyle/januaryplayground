@@ -102,6 +102,15 @@ export async function evaluateAppAuth(
   }
 }
 
+/*
+What I need is just
+- Change the backend to include when the session will inspire
+  - Save both in storage and in global state
+- Write async job that logs out when the tu
+- Write function that logs out (state and cookies) if 403s are hit
+
+
+ */
 export function useAuthRedirect(
   requiresAuth: boolean,
   setLocation: SetLocationType,
