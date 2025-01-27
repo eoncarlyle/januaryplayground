@@ -1,6 +1,4 @@
 import { AuthProps, AuthState, SetAuthState } from "@/model.ts";
-import AuthContext from "@/util/AuthContext.ts";
-import React, { useContext } from "react";
 import { UseFormReturn } from "react-hook-form";
 
 const EMAIL = "email";
@@ -12,7 +10,7 @@ type FormType = UseFormReturn<{
   password: string;
 }>;
 
-type SetLocationType = <S = any>(
+type SetLocationType = <S>(
   to: string | URL,
   options?: {
     replace?: boolean;

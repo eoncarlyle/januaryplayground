@@ -1,7 +1,4 @@
-import { Fan } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BrowserRouter } from "react-router";
-import { Routes } from "react-router";
 import { Route, Switch, useLocation } from "wouter";
 
 import "./App.css";

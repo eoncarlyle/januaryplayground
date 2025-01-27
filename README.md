@@ -23,6 +23,12 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `c03ce94`
+- Should handle network errors separately from auth failures (explicit 403 handing in auth)
+- Add session invalidation on logout
+- Implement proper session cleanup for expired sessions
+- The auth feedback mechanism needs completion
+
 ### `39c923e`
 - Consider adding fallback/safety checks for localStorage availability
 - Might want to add error boundaries for cases where localStorage is disabled
@@ -34,8 +40,6 @@ This repository is a playground for working on a grab bag of these technologies,
   - Add a prefix to avoid potential naming conflicts (e.g., `AUTH_EMAIL`)
 - Consider delay between `setAuth`, `redirectOnSuccess`
 - Consider loading state during form submission
-
-
 
 ### `cd9bc43`
 - ~Add rate-limiting for auth endpoints~
@@ -49,7 +53,6 @@ This repository is a playground for working on a grab bag of these technologies,
   - Harden SQL statements against injection
 - Session management
   - Implement expired session cleanup
-
 
 ### `2996280`
 - ~Change how passwords are handled~
