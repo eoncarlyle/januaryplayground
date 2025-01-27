@@ -15,11 +15,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  createAuthOnSubmitHandler,
-  useAuthLocalStorage,
-  useAuthRedirect,
-} from "@/util/rest";
+import { AuthProps } from "@/model";
+import { createAuthOnSubmitHandler, useAuthRedirect } from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod/src/zod.js";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
@@ -38,7 +35,7 @@ const logInSchema = z.object({
 
 type LogInValues = z.infer<typeof logInSchema>;
 
-export default function LogIn() {
+export default function LogIn(authProps: AuthProps) {
   const form = useForm<LogInValues>({
     resolver: zodResolver(logInSchema),
     defaultValues: {
@@ -48,8 +45,7 @@ export default function LogIn() {
   });
 
   const [_location, setLocation] = useLocation();
-  useAuthRedirect(false, setLocation);
-  const [_authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
+  useAuthRedirect(false, setLocation, authProps);
 
   return (
     <Card className="w-full max-w-md">
@@ -62,7 +58,7 @@ export default function LogIn() {
           onSubmit={form.handleSubmit(
             createAuthOnSubmitHandler(
               form,
-              (loggedIn: boolean) => setAuthLocalStorage(loggedIn),
+              authProps.setAuthState,
               () => setLocation("/home"),
               "login",
             ),

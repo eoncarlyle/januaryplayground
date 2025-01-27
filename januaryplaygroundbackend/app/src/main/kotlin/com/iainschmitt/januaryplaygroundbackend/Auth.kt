@@ -27,8 +27,9 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
                         stmt.executeUpdate()
                     }
             }
-            val cookie = createSession(dto.email)
-            ctx.cookie(cookie)
+            val session = createSession(dto.email)
+            ctx.cookie(session.first)
+            ctx.json(mapOf("email" to dto.email, "expireTime" to session.second.toString()))
             ctx.status(201)
         } catch (e: Exception) {
             throw InternalError(exceptionMessage("`signUpHandler` error", e))
@@ -36,7 +37,6 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
     }
 
     fun logInHandler(ctx: Context) {
-        //TODO: clear existing sessions on login
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash: String? =
             db.query { conn ->
@@ -50,8 +50,9 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             }
 
         if (passwordHash != null && BCrypt.checkpw(dto.password, passwordHash)) {
-            val cookie = createSession(dto.email)
-            ctx.cookie(cookie)
+            val session = createSession(dto.email)
+            ctx.cookie(session.first)
+            ctx.json(mapOf("email" to dto.email, "expireTime" to session.second.toString()))
             ctx.status(200)
         } else {
             throw ForbiddenResponse("email or password not found")
@@ -60,9 +61,9 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
 
     fun evaluateAuthHandler(ctx: Context) {
         val token = ctx.cookie("session")
-        val user = if (token != null) evaluateUserEmail(token) else null
-        if (token != null && user != null) {
-            ctx.json(mapOf("email" to user))
+        val userAuth = if (token != null) evaluateUserAuth(token) else null
+        if (token != null && userAuth != null) {
+            ctx.json(userAuth)
             ctx.status(200)
         } else {
             ctx.result("Fail")
@@ -82,19 +83,19 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         return expireTimestamp != null && expireTimestamp > Instant.now().epochSecond
     }
 
-    private fun evaluateUserEmail(token: String): String? {
+    private fun evaluateUserAuth(token: String): Map<String, String>? {
         val pair =
             db.query { conn ->
-                conn.prepareStatement("select expire_timestamp, email from test_session where token = ?")
+                conn.prepareStatement("select email, expire_timestamp from test_session where token = ?")
                     .use { stmt ->
                         stmt.setString(1, token)
-                        stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getLong(1), rs.getString(2)) else null }
+                        stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
                     }
             }
-        return if (pair == null || pair.first < Instant.now().epochSecond) {
+        return if (pair == null || pair.second < Instant.now().epochSecond) {
             null
         } else {
-            pair.second
+            mapOf("email" to pair.first, "expireTime" to pair.second.toString())
         }
     }
 
@@ -107,7 +108,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         }
     }
 
-    private fun createSession(email: String): Cookie {
+    private fun createSession(email: String): Pair<Cookie, Long> {
         val expireTimestamp = Instant.now().plusSeconds(24 * 3600L).epochSecond
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()
@@ -133,7 +134,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
                     }
             }
 
-            return cookie
+            return Pair(cookie, expireTimestamp)
         } catch (e: Exception) {
             throw InternalError(exceptionMessage("`handleAuth` error", e))
         }

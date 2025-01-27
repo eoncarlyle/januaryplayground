@@ -16,11 +16,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  createAuthOnSubmitHandler,
-  useAuthLocalStorage,
-  useAuthRedirect,
-} from "@/util/rest";
+import { AuthProps } from "@/model";
+import { createAuthOnSubmitHandler, useAuthRedirect } from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
@@ -42,7 +39,7 @@ const signUpSchema = z.object({
 
 type SignUpValues = z.infer<typeof signUpSchema>;
 
-export default function SignUp() {
+export default function SignUp(authProps: AuthProps) {
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
@@ -51,8 +48,7 @@ export default function SignUp() {
     },
   });
   const [_location, setLocation] = useLocation();
-  useAuthRedirect(false, setLocation);
-  const [_authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
+  useAuthRedirect(false, setLocation, authProps);
 
   //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
 
@@ -68,7 +64,7 @@ export default function SignUp() {
           onSubmit={form.handleSubmit(
             createAuthOnSubmitHandler(
               form,
-              (loggedIn: boolean) => setAuthLocalStorage(loggedIn),
+              authProps.setAuthState,
               () => setLocation("/home"),
               "signup",
             ),

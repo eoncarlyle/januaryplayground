@@ -1,10 +1,11 @@
-import { AuthState } from "@/model.ts";
+import { AuthProps, AuthState, SetAuthState } from "@/model.ts";
 import AuthContext from "@/util/AuthContext.ts";
 import React, { useContext } from "react";
 import { UseFormReturn } from "react-hook-form";
 
 const EMAIL = "email";
 const LOGGED_IN = "loggedIn";
+const EXPIRE_TIME = "expireTime";
 
 type FormType = UseFormReturn<{
   email: string;
@@ -28,10 +29,11 @@ export function getBaseUrl(): string {
   }
 }
 
-//TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
+// TODO: This needs to be adjusted to work with login 403s, I don't think the
+// feedback to the server is working correctly
 export function createAuthOnSubmitHandler<T>(
   form: FormType,
-  setAuth: (loggedIn: boolean) => void,
+  setAuth: SetAuthState,
   redirectOnSuccess: () => void,
   endpoint: "signup" | "login",
 ) {
@@ -47,59 +49,47 @@ export function createAuthOnSubmitHandler<T>(
       });
 
       if (result.ok) {
-        setAuth(true);
-        redirectOnSuccess();
-      } else {
-        const errorMessage: unknown = await result.text();
+        const authBody = await result.json();
         if (
-          result.status < 500 &&
-          errorMessage &&
-          typeof errorMessage === "string"
+          typeof authBody === "object" &&
+          authBody !== null &&
+          "email" in authBody &&
+          "expireTime" in authBody
         ) {
-          form.setError("root", {
-            type: "server",
-            message: errorMessage,
-          });
+          const newAuth = {
+            email: authBody.email,
+            loggedIn: true,
+            expireTime: authBody.expireTime,
+          };
+          setAuth(newAuth);
+          //setAuthLocalStorage(newAuth);
+          // May become an issue?
+          redirectOnSuccess();
         } else {
-          form.setError("root", {
-            type: "server",
-            message: "Something went wrong",
-          });
+          const errorMessage: unknown = await result.text();
+          if (
+            result.status < 500 &&
+            errorMessage &&
+            typeof errorMessage === "string"
+          ) {
+            form.setError("root", {
+              type: "server",
+              message: errorMessage,
+            });
+          } else {
+            form.setError("root", {
+              type: "server",
+              message: "Something went wrong",
+            });
+          }
         }
+      } else {
+        throw new Error(`Bad result ${result}`);
       }
     } catch (e: unknown) {
       console.error(`Fetch failed: ${e}`);
     }
   };
-}
-
-export async function evaluateAppAuth(
-  authState: AuthState,
-  setAuthState: React.Dispatch<React.SetStateAction<AuthState>>,
-) {
-  if (authState.loggedIn) {
-    return;
-  }
-
-  try {
-    const response = await fetch(`${getBaseUrl()}/auth/evaluate`, {
-      credentials: "include",
-    });
-
-    if (response.ok) {
-      const body: unknown = await response.json();
-      if (
-        body &&
-        typeof body === "object" &&
-        "email" in body &&
-        typeof body.email === "string"
-      ) {
-        setAuthState({ email: body.email, loggedIn: true });
-      }
-    }
-  } catch (error: any) {
-    console.error(`Evaluate app auth failed: ${error}`);
-  }
 }
 
 /*
@@ -114,27 +104,35 @@ What I need is just
 export function useAuthRedirect(
   requiresAuth: boolean,
   setLocation: SetLocationType,
+  authProps: AuthProps,
 ) {
-  const [authLocalStorage, _] = useAuthLocalStorage();
-  if (requiresAuth && !authLocalStorage.loggedIn) {
+  if (requiresAuth && !authProps.authState.loggedIn) {
     setLocation("/login");
-  } else if (!requiresAuth && authLocalStorage.loggedIn) {
+  } else if (!requiresAuth && authProps.authState.loggedIn) {
     setLocation("/home");
   }
 }
 
+function setAuthLocalStorage(authState: AuthState) {
+  const { loggedIn, email, expireTime } = authState;
+  console.log(authState);
+  localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
+  if (email) {
+    localStorage.setItem(EMAIL, email);
+  }
+  localStorage.setItem(EXPIRE_TIME, expireTime.toString());
+}
+
 export function useAuthLocalStorage(): [
   AuthState,
-  (loggedIn: boolean, email?: string) => void,
+  (authState: AuthState) => void,
 ] {
+  const maybeExpireTime = localStorage.getItem(EXPIRE_TIME);
+
   const authLocalStorage: AuthState = {
     email: localStorage.getItem(EMAIL),
     loggedIn: localStorage.getItem(LOGGED_IN) === "true",
-  };
-
-  const setAuthLocalStorage = (loggedIn: boolean, email?: string) => {
-    localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
-    if (email) localStorage.setItem(EMAIL, email);
+    expireTime: maybeExpireTime ? parseInt(maybeExpireTime) : -1,
   };
 
   return [authLocalStorage, setAuthLocalStorage];

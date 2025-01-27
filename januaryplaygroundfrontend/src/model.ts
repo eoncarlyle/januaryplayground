@@ -3,9 +3,12 @@ import React from "react";
 export interface AuthState {
   email: string | null;
   loggedIn: boolean;
+  expireTime: number;
 }
 
-export interface IAuthContext {
+export type SetAuthState = React.Dispatch<React.SetStateAction<AuthState>>;
+
+export interface AuthProps {
   authState: AuthState;
-  setAuthState: React.Dispatch<React.SetStateAction<AuthState>>;
+  setAuthState: SetAuthState;
 }

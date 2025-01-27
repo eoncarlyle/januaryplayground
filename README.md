@@ -90,3 +90,10 @@ private fun startServerEventSimulation() {
 - Create an endpoint that returns a short-lived token over JSON for authenticated HTTP contexts
 - If legitimate, invalidate the token and then store it in the WebSocket user store
 - Send short-lived token with initial WebSocket response on `"auth"` messages
+
+## New authentication
+- Run top-level auth
+- Change the backend to include when the session will inspire
+- Save both in storage and in global state
+- Write async job that logs out when the tu
+- Write function that logs out (state and cookies) if 403s are hit
