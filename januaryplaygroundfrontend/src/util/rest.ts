@@ -64,25 +64,28 @@ export function createAuthOnSubmitHandler<T>(
           // May become an issue?
           redirectOnSuccess();
         } else {
-          const errorMessage: unknown = await result.text();
-          if (
-            result.status < 500 &&
-            errorMessage &&
-            typeof errorMessage === "string"
-          ) {
-            form.setError("root", {
-              type: "server",
-              message: errorMessage,
-            });
-          } else {
-            form.setError("root", {
-              type: "server",
-              message: "Something went wrong",
-            });
-          }
+          form.setError("root", {
+            type: "server",
+            message: "Something went wrong",
+          });
         }
       } else {
-        throw new Error(`Bad result ${result}`);
+        const errorMessage: unknown = await result.text();
+        if (
+          result.status < 500 &&
+          errorMessage &&
+          typeof errorMessage === "string"
+        ) {
+          form.setError("root", {
+            type: "server",
+            message: errorMessage,
+          });
+        } else {
+          form.setError("root", {
+            type: "server",
+            message: "Something went wrong",
+          });
+        }
       }
     } catch (e: unknown) {
       console.error(`Fetch failed: ${e}`);
@@ -90,15 +93,6 @@ export function createAuthOnSubmitHandler<T>(
   };
 }
 
-/*
-What I need is just
-- Change the backend to include when the session will inspire
-  - Save both in storage and in global state
-- Write async job that logs out when the tu
-- Write function that logs out (state and cookies) if 403s are hit
-
-
- */
 export function useAuthRedirect(
   requiresAuth: boolean,
   setLocation: SetLocationType,
@@ -111,9 +105,14 @@ export function useAuthRedirect(
   }
 }
 
+export const loggedOutAuthState = {
+  email: null,
+  loggedIn: false,
+  expireTime: -1,
+};
+
 function setAuthLocalStorage(authState: AuthState) {
   const { loggedIn, email, expireTime } = authState;
-  console.log(authState);
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
     localStorage.setItem(EMAIL, email);

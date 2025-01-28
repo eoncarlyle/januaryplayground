@@ -6,6 +6,11 @@ import org.mindrot.jbcrypt.BCrypt
 import java.time.Instant
 
 class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
+
+    private val session = "session"
+    private val email = "email"
+    private val expireTime = "expireTime"
+
     fun signUpHandler(ctx: Context) {
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
@@ -29,7 +34,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             }
             val session = createSession(dto.email)
             ctx.cookie(session.first)
-            ctx.json(mapOf("email" to dto.email, "expireTime" to session.second.toString()))
+            ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
             ctx.status(201)
         } catch (e: Exception) {
             throw InternalError(exceptionMessage("`signUpHandler` error", e))
@@ -40,7 +45,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash: String? =
             db.query { conn ->
-                conn.prepareStatement("select * from test_users where email = ?").use { stmt
+                conn.prepareStatement("select password_hash from test_users where email = ?").use { stmt
                     ->
                     stmt.setString(1, dto.email)
                     stmt.executeQuery().use { rs ->
@@ -52,7 +57,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         if (passwordHash != null && BCrypt.checkpw(dto.password, passwordHash)) {
             val session = createSession(dto.email)
             ctx.cookie(session.first)
-            ctx.json(mapOf("email" to dto.email, "expireTime" to session.second.toString()))
+            ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
             ctx.status(200)
         } else {
             throw ForbiddenResponse("email or password not found")
@@ -60,7 +65,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
     }
 
     fun evaluateAuthHandler(ctx: Context) {
-        val token = ctx.cookie("session")
+        val token = ctx.cookie(session)
         val userAuth = if (token != null) evaluateUserAuth(token) else null
         if (token != null && userAuth != null) {
             ctx.json(userAuth)
@@ -69,6 +74,41 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
             ctx.result("Fail")
             ctx.status(403)
         }
+    }
+
+    fun logOut(ctx: Context) {
+        val token = ctx.cookie(session)
+        val userAuth = if (token != null) {
+            evaluateUserAuth(token)
+        } else null
+
+        if (token != null && userAuth != null) {
+            when (deleteToken(token)) {
+                true -> {
+                    ctx.removeCookie(session); ctx.status(200)
+                }
+
+                false -> {
+                    ctx.result("Server Error"); ctx.status(500)
+                }
+            }
+
+        } else {
+            ctx.result("User not logged in")
+            ctx.status(403)
+        }
+    }
+
+    fun deleteToken(token: String): Boolean {
+        val edits = db.query { conn ->
+            conn.prepareStatement("delete from test_sessions where token = ?").use { stmt ->
+                stmt.setString(1, token)
+                stmt.executeUpdate()
+            }
+        }
+
+        // TODO logging when edits > 1
+        return edits > 0
     }
 
     fun tokenValid(token: String): Boolean {
@@ -95,7 +135,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         return if (pair == null || pair.second < Instant.now().epochSecond) {
             null
         } else {
-            mapOf("email" to pair.first, "expireTime" to pair.second.toString())
+            mapOf(email to pair.first, expireTime to pair.second.toString())
         }
     }
 
@@ -114,7 +154,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         val token = Generators.randomBasedGenerator().generate().toString()
         val cookie =
             Cookie(
-                "session",
+                session,
                 token,
                 maxAge = 24 * 3600,
                 secure = secure,
