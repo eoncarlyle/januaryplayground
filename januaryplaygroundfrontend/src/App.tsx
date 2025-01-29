@@ -1,64 +1,16 @@
-import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
-import { Route, Switch, useLocation } from "wouter";
+import { Route, Switch } from "wouter";
 
 import "./App.css";
+import Home from "./components/Home";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
-import { Card } from "./components/ui/card";
-import { AuthProps, AuthState } from "./model";
+import { AuthState } from "./model";
 import {
   getBaseUrl,
   loggedOutAuthState,
   useAuthLocalStorage,
-  useAuthRedirect,
 } from "./util/rest";
-
-function Layout(props: { children: JSX.Element }) {
-  return (
-    <div className="flex flex-col min-h-screen w-screen">
-      <NavBar />
-      <main className="flex-1">{props.children}</main>
-    </div>
-  );
-}
-
-function NavBar() {
-  return (
-    <nav className="border-b">
-      <div className="flex h-16 items-center px-4 w-full">
-        <div className="flex items-center space-x-2">
-          <span className="text-xl font-semibold">Janurary Playground</span>
-        </div>
-        <div className="flex-1" />
-
-        <Button
-          onClick={() => console.log("clicked")}
-          className="flex items-center space-x-2"
-        >
-          <span> Log out </span>
-        </Button>
-      </div>
-    </nav>
-  );
-}
-
-function Home(authPops: AuthProps) {
-  const [_location, setLocation] = useLocation();
-
-  // Check auth if we know it is wrong
-  useAuthRedirect(true, setLocation, authPops);
-
-  return (
-    <Layout>
-      <div className="flex items-center justify-center h-full p-2">
-        <Card>
-          <div className="m-2">{authPops.authState.email}</div>
-        </Card>
-      </div>
-    </Layout>
-  );
-}
 
 function App() {
   //useEffect(() => {

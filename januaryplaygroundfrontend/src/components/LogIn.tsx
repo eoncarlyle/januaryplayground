@@ -47,7 +47,8 @@ export default function LogIn(authProps: AuthProps) {
   const [_location, setLocation] = useLocation();
   useAuthRedirect(false, setLocation, authProps);
   return (
-    <Card className="w-full max-w-md">
+    //<Card className="w-full max-w-md">
+    <Card>
       <Form {...form}>
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Log In</CardTitle>
