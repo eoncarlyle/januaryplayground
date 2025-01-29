@@ -27,8 +27,6 @@ export function getBaseUrl(): string {
   }
 }
 
-// TODO: This needs to be adjusted to work with login 403s, I don't think the
-// feedback to the server is working correctly
 export function createAuthOnSubmitHandler<T>(
   form: FormType,
   setAuth: SetAuthState,
@@ -85,6 +83,39 @@ export function createAuthOnSubmitHandler<T>(
             type: "server",
             message: "Something went wrong",
           });
+        }
+      }
+    } catch (e: unknown) {
+      console.error(`Fetch failed: ${e}`);
+    }
+  };
+}
+
+export function logOutHandler(
+  setAuth: SetAuthState,
+  redirectOnSuccess: () => void,
+) {
+  return async () => {
+    try {
+      const result = await fetch(`${getBaseUrl()}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (result.ok) {
+        setAuth(loggedOutAuthState);
+        setAuthLocalStorage(loggedOutAuthState);
+        redirectOnSuccess();
+      } else {
+        const errorMessage: unknown = await result.text();
+        if (
+          result.status < 500 &&
+          errorMessage &&
+          typeof errorMessage === "string"
+        ) {
+          console.error(`Log out response failure: ${errorMessage}`);
+        } else {
+          console.error(`Log out response failure: server error`);
         }
       }
     } catch (e: unknown) {

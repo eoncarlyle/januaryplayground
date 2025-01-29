@@ -101,7 +101,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
 
     fun deleteToken(token: String): Boolean {
         val edits = db.query { conn ->
-            conn.prepareStatement("delete from test_sessions where token = ?").use { stmt ->
+            conn.prepareStatement("delete from test_session where token = ?").use { stmt ->
                 stmt.setString(1, token)
                 stmt.executeUpdate()
             }

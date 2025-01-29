@@ -42,6 +42,7 @@ fun main(vararg args: String) {
     app.post("/auth/signup") { ctx -> auth.signUpHandler(ctx) }
     app.post("/auth/login") { ctx -> auth.logInHandler(ctx) }
     app.get("/auth/evaluate") { ctx -> auth.evaluateAuthHandler(ctx) }
+    app.post("/auth/logout") { ctx -> auth.logOut(ctx) }
 
     // TODO: Add auth here
     app.ws("/ws") { ws ->

@@ -14,7 +14,10 @@ export default function Home(authPops: AuthProps) {
   return (
     <Layout>
       <>
-        <AuthNavBar />
+        <AuthNavBar
+          authState={authPops.authState}
+          setAuthState={authPops.setAuthState}
+        />
         <div className="m-2 flex justify-center">
           {authPops.authState.email}
         </div>
