@@ -2,10 +2,13 @@ package com.iainschmitt.januaryplaygroundbackend
 
 import com.fasterxml.uuid.Generators
 import io.javalin.http.*
+import io.javalin.websocket.WsConnectContext
+import io.javalin.websocket.WsContext
 import org.mindrot.jbcrypt.BCrypt
+import java.time.Duration
 import java.time.Instant
 
-class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
+class Auth(private val db: DatabaseHelper, private val secure: Boolean, private val wsUserMap: WsUserMap) {
 
     private val session = "session"
     private val email = "email"
@@ -76,6 +79,21 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         }
     }
 
+    // Yet only used by the websockets
+    fun shortSessionHttpHandler(ctx: Context) {
+        val token = ctx.cookie(session)
+        val userAuth = if (token != null) evaluateUserAuth(token) else null
+        val dto = ctx.bodyAsClass(CredentialsDto::class.java)
+        if (token != null && userAuth != null) {
+            val websocketSession = createSession(dto.email, Duration.ofMinutes(1))
+            ctx.json(websocketSession.first)
+            ctx.status(201)
+        } else {
+            ctx.result("Fail")
+            ctx.status(403)
+        }
+    }
+
     fun logOut(ctx: Context) {
         val token = ctx.cookie(session)
         val userAuth = if (token != null) {
@@ -99,7 +117,45 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         }
     }
 
-    fun deleteToken(token: String): Boolean {
+    private fun <T> wsResponse(status: WebSocketStatus, body: T): WebSocketResponse<T> {
+        return WebSocketResponseImpl(status, body)
+    }
+
+    fun handleWsConnection(ctx: WsConnectContext) {
+        wsUserMap[ctx] = WsUserMapRecord(null, null, false)
+    }
+    fun handleWsAuth(ctx: WsContext, auth: AuthWsMessage) {
+        val token = auth.token
+        val email = auth.email
+
+        val userAuth = evaluateUserAuth(token)
+        if (userAuth == null || userAuth.first != email) {
+            ctx.closeSession(WebSocketStatus.UNAUTHORIZED.code, "invalid token" )
+            return
+        }
+
+        when (auth.operation) {
+            AuthWsMessageOperation.AUTHENTICATE -> {
+                wsUserMap[ctx] = WsUserMapRecord(token, email, true)
+                ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "authentication success"))
+                //TODO handling error cases
+                deleteToken(token)
+                return
+            }
+
+            AuthWsMessageOperation.CLOSE -> {
+                return handleWsClose(ctx)
+            }
+        }
+    }
+
+    fun handleWsClose(ctx: WsContext) {
+        wsUserMap.remove(ctx)
+        ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "web socket close success"))
+        return
+    }
+
+    private fun deleteToken(token: String): Boolean {
         val edits = db.query { conn ->
             conn.prepareStatement("delete from test_session where token = ?").use { stmt ->
                 stmt.setString(1, token)
@@ -123,7 +179,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         return expireTimestamp != null && expireTimestamp > Instant.now().epochSecond
     }
 
-    private fun evaluateUserAuth(token: String): Map<String, String>? {
+    private fun evaluateUserAuth(token: String): Pair<String, Long>? {
         val pair =
             db.query { conn ->
                 conn.prepareStatement("select email, expire_timestamp from test_session where token = ?")
@@ -135,7 +191,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         return if (pair == null || pair.second < Instant.now().epochSecond) {
             null
         } else {
-            mapOf(email to pair.first, expireTime to pair.second.toString())
+            pair
         }
     }
 
@@ -148,8 +204,8 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean) {
         }
     }
 
-    private fun createSession(email: String): Pair<Cookie, Long> {
-        val expireTimestamp = Instant.now().plusSeconds(24 * 3600L).epochSecond
+    private fun createSession(email: String, cookieLifetime: Duration = Duration.ofHours(1)): Pair<Cookie, Long> {
+        val expireTimestamp = Instant.now().plus(cookieLifetime).epochSecond
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()
         val cookie =

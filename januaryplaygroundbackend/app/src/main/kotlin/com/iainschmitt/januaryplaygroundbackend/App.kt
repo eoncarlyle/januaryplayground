@@ -9,10 +9,7 @@ import io.javalin.websocket.WsContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
-private val userMap = ConcurrentHashMap<WsContext, String>()
-private var usercount = 0
-
-class CredentialsDto(val email: String, val password: String)
+private val wsUserMap: WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>()
 
 fun main(vararg args: String) {
     if (args.size < 2) {
@@ -36,7 +33,8 @@ fun main(vararg args: String) {
             }
         }
     }).start(7070)
-    val auth = Auth(db, secure)
+
+    val auth = Auth(db, secure, wsUserMap)
     app.get("/health") { ctx -> ctx.result("Up") }
     app.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
     app.post("/auth/signup") { ctx -> auth.signUpHandler(ctx) }
@@ -44,33 +42,30 @@ fun main(vararg args: String) {
     app.get("/auth/evaluate") { ctx -> auth.evaluateAuthHandler(ctx) }
     app.post("/auth/logout") { ctx -> auth.logOut(ctx) }
 
-    // TODO: Add auth here
     app.ws("/ws") { ws ->
-        ws.onConnect { ctx ->
-            val email = "User" + usercount++
-            userMap[ctx] = email
-            println("Connected: $email")
+        ws.onConnect { ctx -> auth.handleWsConnection(ctx) }
+        ws.onMessage { ctx ->
+            when (val message = ctx.messageAsClass<WebSocketMessage>()) {
+                is AuthWsMessage -> auth.handleWsAuth(ctx, message)
+            }
         }
         ws.onClose { ctx ->
-            val email = userMap[ctx]
-            userMap.remove(ctx)
-            println("Disconnected: $email")
+            auth.handleWsClose(ctx)
         }
     }
-
     // startServerEventSimulation()
 }
 
-private fun startServerEventSimulation() {
-    Thread {
-        while (true) {
-            Thread.sleep(5000) // Every 5 seconds
-            val serverUpdate = "Server time: ${System.currentTimeMillis()}"
-            println("Starting server send process")
-            userMap.keys.filter { it.session.isOpen }.forEach { session ->
-                session.send(serverUpdate)
-            }
-        }
-    }
-        .start()
-}
+//private fun startServerEventSimulation() {
+//    Thread {
+//        while (true) {
+//            Thread.sleep(5000) // Every 5 seconds
+//            val serverUpdate = "Server time: ${System.currentTimeMillis()}"
+//            println("Starting server send process")
+//            userMap.keys.filter { it.session.isOpen }.forEach { session ->
+//                session.send(serverUpdate)
+//            }
+//        }
+//    }
+//        .start()
+//}
