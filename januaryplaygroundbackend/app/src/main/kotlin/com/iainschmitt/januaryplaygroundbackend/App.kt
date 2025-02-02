@@ -41,12 +41,18 @@ fun main(vararg args: String) {
     app.post("/auth/login") { ctx -> auth.logInHandler(ctx) }
     app.get("/auth/evaluate") { ctx -> auth.evaluateAuthHandler(ctx) }
     app.post("/auth/logout") { ctx -> auth.logOut(ctx) }
+    app.post("/auth/sessions/temporary") { ctx -> auth.temporarySessionHttpHandler(ctx) }
 
     app.ws("/ws") { ws ->
         ws.onConnect { ctx -> auth.handleWsConnection(ctx) }
         ws.onMessage { ctx ->
-            when (val message = ctx.messageAsClass<WebSocketMessage>()) {
-                is AuthWsMessage -> auth.handleWsAuth(ctx, message)
+            try {
+                val message = ctx.messageAsClass<WebSocketMessage>()
+                when (message) {
+                    is AuthWsMessage -> auth.handleWsAuth(ctx, message)
+                }
+            } catch (e: Exception) {
+                ctx.send(auth.wsResponse(WebSocketStatus.ERROR, "internal server error"))
             }
         }
         ws.onClose { ctx ->

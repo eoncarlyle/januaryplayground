@@ -1,0 +1,18 @@
+POST http://localhost:7070/auth/login
+Content-Type: application/json
+
+{
+  "email": "user2@mail.com",
+  "password": "User2Password"
+}
+
+###
+GET http://localhost:7070/auth/evaluate
+
+###
+POST http://localhost:7070/auth/sessions/temporary
+Content-Type: application/json
+
+{
+  "email": "user2@mail.com"
+}

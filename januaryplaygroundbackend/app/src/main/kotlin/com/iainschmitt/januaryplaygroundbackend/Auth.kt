@@ -71,7 +71,11 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         val token = ctx.cookie(session)
         val userAuth = if (token != null) evaluateUserAuth(token) else null
         if (token != null && userAuth != null) {
-            ctx.json(userAuth)
+            ctx.json(
+                mapOf(
+                    "email" to userAuth.first, "expireTime" to userAuth.second
+                )
+            )
             ctx.status(200)
         } else {
             ctx.result("Fail")
@@ -80,13 +84,14 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
     }
 
     // Yet only used by the websockets
-    fun shortSessionHttpHandler(ctx: Context) {
+    fun temporarySessionHttpHandler(ctx: Context) {
         val token = ctx.cookie(session)
         val userAuth = if (token != null) evaluateUserAuth(token) else null
-        val dto = ctx.bodyAsClass(CredentialsDto::class.java)
+        val dto = ctx.bodyAsClass(TemporarySessionDto::class.java)
         if (token != null && userAuth != null) {
-            val websocketSession = createSession(dto.email, Duration.ofMinutes(1))
-            ctx.json(websocketSession.first)
+            //val websocketSession = createSession(dto.email, Duration.ofMinutes(1))
+            val websocketSession = createSession(dto.email, Duration.ofMinutes(5), false)
+            ctx.json(mapOf("token" to websocketSession.first.value))
             ctx.status(201)
         } else {
             ctx.result("Fail")
@@ -117,20 +122,21 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         }
     }
 
-    private fun <T> wsResponse(status: WebSocketStatus, body: T): WebSocketResponse<T> {
-        return WebSocketResponseImpl(status, body)
+    fun <T> wsResponse(status: WebSocketStatus, body: T): WebSocketResponse<T> {
+        return WebSocketResponseImpl(status.code, body)
     }
 
     fun handleWsConnection(ctx: WsConnectContext) {
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
     }
+
     fun handleWsAuth(ctx: WsContext, auth: AuthWsMessage) {
         val token = auth.token
         val email = auth.email
 
         val userAuth = evaluateUserAuth(token)
         if (userAuth == null || userAuth.first != email) {
-            ctx.closeSession(WebSocketStatus.UNAUTHORIZED.code, "invalid token" )
+            ctx.closeSession(WebSocketStatus.UNAUTHORIZED.code, "invalid token")
             return
         }
 
@@ -204,7 +210,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         }
     }
 
-    private fun createSession(email: String, cookieLifetime: Duration = Duration.ofHours(1)): Pair<Cookie, Long> {
+    private fun createSession(email: String, cookieLifetime: Duration = Duration.ofHours(24), isHttpOnly: Boolean = true): Pair<Cookie, Long> {
         val expireTimestamp = Instant.now().plus(cookieLifetime).epochSecond
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()
@@ -212,10 +218,10 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
             Cookie(
                 session,
                 token,
-                maxAge = 24 * 3600,
+                maxAge = cookieLifetime.toSeconds().toInt(),
                 secure = secure,
                 sameSite = if (secure) SameSite.STRICT else SameSite.LAX,
-                isHttpOnly = true,
+                isHttpOnly = isHttpOnly,
                 path = "/"
             )
 
@@ -265,4 +271,6 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
             false -> "${baseMessage}: ${e.message}"
         }
     }
+
+    private class TemporarySessionDto(val email: String)
 }
