@@ -28,7 +28,7 @@ This repository is a playground for working on a grab bag of these technologies,
 - Configuration file for cookie durations
 - More verbose error messages
 - Consider allowing to authentication retries to the websockets
-
+- Consider token-bucketed rate limiting rather than the naive approach
 
 ### `c03ce94`
 - Should handle network errors separately from auth failures (explicit 403 handing in auth)
