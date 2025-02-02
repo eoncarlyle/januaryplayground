@@ -18,12 +18,12 @@ enum class WebSocketStatus(val code: Int) {
 }
 
 interface WebSocketResponse<T> {
-    val statusCode: Int
+    val code: Int
     val body: T
 }
 
 class WebSocketResponseImpl<T>(
-    override val statusCode: Int,
+    override val code: Int,
     override val body: T
 ) : WebSocketResponse<T>
 

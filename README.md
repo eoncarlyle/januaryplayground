@@ -23,6 +23,13 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `32686c8`
+- Consider sealed class hierarchy for `WebSocketMessage`
+- Configuration file for cookie durations
+- More verbose error messages
+- Consider allowing to authentication retries to the websockets
+
+
 ### `c03ce94`
 - Should handle network errors separately from auth failures (explicit 403 handing in auth)
 - Add session invalidation on logout
