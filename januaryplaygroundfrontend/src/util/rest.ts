@@ -58,8 +58,6 @@ export function createAuthOnSubmitHandler<T>(
             expireTime: authBody.expireTime,
           };
           setAuth(newAuth);
-          //setAuthLocalStorage(newAuth);
-          // May become an issue?
           redirectOnSuccess();
         } else {
           form.setError("root", {

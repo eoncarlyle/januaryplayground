@@ -92,16 +92,28 @@ private fun startServerEventSimulation() {
 }
 ```
 
-- Inside of `useEffect`, define `onopen`, `onmessage`, `onerror`, `oneclose`, and a component cleanup lambda to close any open sockets on unmount
+- Inside of `useEffect`, define `onopen`, `onmessage`, `onerror`, `onclose`, and a component cleanup lambda to close any open sockets on unmount
   - Websocket lifecycle means that the nesting in the hook is unnecessary
   - Can `if(socket) return;` at top of `useEffect`
 
-## WebSocket Authentication Detail
+## Active Topic Notes
+
+### Client-side Websockets
+- Use socket.io for the client side
+- There are only a handful of routes that this will be relevant for: I we need to decide which components need websockets before putting this into place?
+- One possibility is storing effectively a singleton in the application state
+- The state built off of the singleton could be organised on the page level
+- If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
+  - We need subsequent websockets to pick up where previous ones left off
+
+## Previous Topic Notes
+
+### WebSocket Authentication Detail
 - Create an endpoint that returns a short-lived token over JSON for authenticated HTTP contexts
 - If legitimate, invalidate the token and then store it in the WebSocket user store
 - Send short-lived token with initial WebSocket response on `"auth"` messages
 
-## New authentication
+### New authentication
 - Run top-level auth
 - Change the backend to include when the session will inspire
 - Save both in storage and in global state

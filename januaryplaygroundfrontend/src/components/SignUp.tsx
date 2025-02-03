@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import { AuthProps } from "@/model";
 import { createAuthOnSubmitHandler, useAuthRedirect } from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Layout } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { z } from "zod";
