@@ -99,10 +99,12 @@ private fun startServerEventSimulation() {
 ## Active Topic Notes
 
 ### Client-side Websockets
-- Use socket.io for the client side
+- ~Use socket.io for the client side~: vanilla websockets will work instead
 - There are only a handful of routes that this will be relevant for: I we need to decide which components need websockets before putting this into place?
 - One possibility is storing effectively a singleton in the application state
+  - This would mean creating a WebSocket object in the 
 - The state built off of the singleton could be organised on the page level
+  - The types of 
 - If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
   - We need subsequent websockets to pick up where previous ones left off
 
