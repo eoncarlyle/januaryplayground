@@ -47,8 +47,8 @@ export default function SignUp(authProps: AuthProps) {
       password: "",
     },
   });
-  const [_location, setLocation] = useLocation();
-  useAuthRedirect(false, setLocation, authProps);
+  const [location, setLocation] = useLocation();
+  useAuthRedirect(false, authProps, location, setLocation);
 
   //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
 

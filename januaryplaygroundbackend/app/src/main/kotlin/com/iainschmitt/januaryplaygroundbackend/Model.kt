@@ -31,7 +31,7 @@ class WebSocketResponseImpl<T>(
 class WsUserMapRecord(val token: String?, val email: String?, val authenticated: Boolean)
 typealias WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>
 
-enum class AuthWsMessageOperation {
+enum class LifecycleOperation {
     @JsonAlias("authenticate")
     AUTHENTICATE,
     @JsonAlias("close")
@@ -43,7 +43,7 @@ enum class AuthWsMessageOperation {
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(
-    JsonSubTypes.Type(value = AuthWsMessage::class, name = "authenticate")
+    JsonSubTypes.Type(value = LifecycleWsMessage::class, name = "lifecycle")
 )
 sealed interface WebSocketMessage {
     val type: String //Needed for serialisation?
@@ -51,9 +51,9 @@ sealed interface WebSocketMessage {
     val email: String
 }
 
-data class AuthWsMessage(
-    override val type: String = "authenticate",
+data class LifecycleWsMessage(
+    override val type: String = "lifecycle",
     override val token: String,
     override val email: String,
-    val operation: AuthWsMessageOperation
+    val operation: LifecycleOperation
 ) : WebSocketMessage

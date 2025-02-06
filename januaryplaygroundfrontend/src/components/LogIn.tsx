@@ -44,8 +44,8 @@ export default function LogIn(authProps: AuthProps) {
     },
   });
 
-  const [_location, setLocation] = useLocation();
-  useAuthRedirect(false, setLocation, authProps);
+  const [location, setLocation] = useLocation();
+  useAuthRedirect(false, authProps, location, setLocation);
   return (
     //<Card className="w-full max-w-md">
     <Card>

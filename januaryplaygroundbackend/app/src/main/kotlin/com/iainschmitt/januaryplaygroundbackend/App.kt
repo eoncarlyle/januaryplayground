@@ -8,7 +8,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 fun main(args: Array<String>) {
-    println("Application started with args: ${args.joinToString()}")
     if (args.size < 2) {
         throw IllegalArgumentException("Empty args")
     }
@@ -64,9 +63,10 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 try {
                     val message = ctx.messageAsClass<WebSocketMessage>()
                     when (message) {
-                        is AuthWsMessage -> auth.handleWsAuth(ctx, message)
+                        is LifecycleWsMessage -> auth.handleWsAuth(ctx, message)
                     }
                 } catch (e: Exception) {
+                    logger.error("Unable to serialise '{}'", ctx.message())
                     ctx.send(auth.wsResponse(WebSocketStatus.ERROR, "internal server error"))
                 }
             }
@@ -75,18 +75,19 @@ class App(db: DatabaseHelper, secure: Boolean) {
             }
         }
         this.javalinApp.start(7070)
+
+        startServerEventSimulation()
     }
-}
 
 
-/*
     private fun startServerEventSimulation() {
         Thread {
             while (true) {
                 Thread.sleep(5000) // Every 5 seconds
                 val serverUpdate = "Server time: ${System.currentTimeMillis()}"
-                println("Starting server send process")
-                wsUserMap.keys.filter { it.session.isOpen }.forEach { session ->
+                val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
+                logger.info("Sending event to {} websockets", aliveSockets.size)
+                aliveSockets.forEach { session ->
                     session.send(serverUpdate)
                 }
             }
@@ -94,5 +95,3 @@ class App(db: DatabaseHelper, secure: Boolean) {
             .start()
     }
 }
-
- */

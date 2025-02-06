@@ -1,4 +1,13 @@
-import { AuthProps, AuthState, SetAuthState } from "@/model.ts";
+import {
+  AuthProps,
+  AuthState,
+  CheckedAuthState,
+  SetAuthState,
+  SetSocketMessageState,
+  SetSocketState,
+  TempSessionAuth,
+  isFetching,
+} from "@/model.ts";
 import { UseFormReturn } from "react-hook-form";
 
 const EMAIL = "email";
@@ -124,13 +133,87 @@ export function logOutHandler(
 
 export function useAuthRedirect(
   requiresAuth: boolean,
-  setLocation: SetLocationType,
   authProps: AuthProps,
+  location: string,
+  setLocation: SetLocationType,
 ) {
-  if (requiresAuth && !authProps.authState.loggedIn) {
+  const authState = authProps.authState;
+
+  if (isFetching(authState)) {
+    // @ts-expect-error Types have been narrowed
+  } else if (requiresAuth && !authState.loggedIn) {
     setLocation("/login");
-  } else if (!requiresAuth && authProps.authState.loggedIn) {
+  } else if (
+    !requiresAuth &&
+    // @ts-expect-error Types have been narrowed
+    authState.loggedIn &&
+    ["/login", "/signup"].includes(location)
+  ) {
     setLocation("/home");
+  }
+}
+
+export async function getWebsocketAuth(
+  email: string,
+): Promise<TempSessionAuth | null> {
+  return fetch(`${getBaseUrl()}/auth/sessions/temporary`, {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ email: email }),
+  })
+    .then((auth) => auth.json())
+    .then((body) => {
+      if (typeof body === "object" && body !== null && "token" in body) {
+        return { token: body["token"] };
+      } else return null;
+    });
+}
+
+//typeof authBody === "object" &&
+//authBody !== null &&
+//"email" in authBody &&
+//"expireTime" in authBody
+
+export async function setupWebsocket(
+  email: string,
+  socket: WebSocket,
+  setSocketState: SetSocketState,
+  setSocketMessageState: SetSocketMessageState,
+) {
+  const tempSessionAuth = await getWebsocketAuth(email);
+
+  if (
+    tempSessionAuth &&
+    typeof tempSessionAuth === "object" &&
+    "token" in tempSessionAuth
+  ) {
+    socket.onopen = () => {
+      console.log("Connecting");
+      socket.send(
+        JSON.stringify({
+          type: "lifecycle",
+          token: tempSessionAuth.token,
+          email: email,
+          operation: "authenticate",
+        }),
+      );
+      setSocketState(socket);
+    };
+
+    socket.onmessage = (event) => {
+      setSocketMessageState(event.data);
+    };
+
+    socket.onerror = (event) => {
+      console.error("WebSocket error:", event);
+    };
+
+    socket.onclose = () => {
+      console.log("WebSocket disconnencted");
+      setSocketState(null);
+    };
+  } else {
+    console.error(`Websocket error, temp session auth: ${tempSessionAuth}`);
   }
 }
 
@@ -140,7 +223,7 @@ export const loggedOutAuthState = {
   expireTime: -1,
 };
 
-function setAuthLocalStorage(authState: AuthState) {
+function setAuthLocalStorage(authState: CheckedAuthState) {
   const { loggedIn, email, expireTime } = authState;
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
@@ -150,8 +233,8 @@ function setAuthLocalStorage(authState: AuthState) {
 }
 
 export function useAuthLocalStorage(): [
-  AuthState,
-  (authState: AuthState) => void,
+  CheckedAuthState,
+  (authState: CheckedAuthState) => void,
 ] {
   const maybeExpireTime = localStorage.getItem(EXPIRE_TIME);
 

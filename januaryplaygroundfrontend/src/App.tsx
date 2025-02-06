@@ -5,7 +5,7 @@ import "./App.css";
 import Home from "./components/Home";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
-import { AuthState } from "./model";
+import { AuthState, isFetching } from "./model";
 import {
   getBaseUrl,
   loggedOutAuthState,
@@ -13,54 +13,17 @@ import {
 } from "./util/rest";
 
 function App() {
-  //useEffect(() => {
-  //  (async () => {
-  //    await evaluateAppAuth({ email: null, loggedIn: false }, setAuthState);
-  //  })();
-  //}, [authState]);
-
-  /*
-    const [count, setCount] = useState(0);
-    const [socket, setSocket] = useState<null | WebSocket>(null);
-    const [message, setMessage] = useState("");
-    useEffect(() => {
-      if (socket) return;
-      const newSocket = new WebSocket("ws://localhost:7070/ws");
-      setSocket(newSocket);
-
-      newSocket.onopen = () => {
-        console.log("WebSocket connected");
-      };
-
-      newSocket.onmessage = (event) => {
-          setMessage(event.data);
-      }
-
-      newSocket.onerror = (event) => {
-          console.error("WebSocket error:", event);
-      }
-
-      newSocket.onclose = () => {
-          console.log("WebSocket disconnencted");
-          setSocket(null);
-      }
-
-      return () => {
-          if (newSocket.readyState === WebSocket.OPEN) {
-              newSocket.close();
-          }
-      }
-
-    }, [socket]);
-     */
-
   const [_response, setResponse] = useState<string>("");
-  const [authState, setAuthState] = useState<AuthState>(loggedOutAuthState);
+  const [authState, setAuthState] = useState<AuthState>({ fetching: true });
   const [authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
 
   useEffect(() => {
     const landingAuth = async () => {
-      if (authLocalStorage.loggedIn && authState.loggedIn) {
+      if (
+        authLocalStorage.loggedIn &&
+        !isFetching(authState) &&
+        authState.loggedIn
+      ) {
         return;
       } else if (authLocalStorage.loggedIn && !authState.loggedIn) {
         setAuthState({
@@ -69,22 +32,21 @@ function App() {
           expireTime: authLocalStorage.expireTime,
         });
       } else {
-        fetch(`${getBaseUrl()}/auth/evaluate`, {
+        const auth = await fetch(`${getBaseUrl()}/auth/evaluate`, {
           credentials: "include",
-        })
-          .then((auth) => auth.text())
-          .then((text) => {
-            const evalBody = JSON.parse(text);
-            //TODO throwing error
+        });
+        try {
+          if (auth.ok) {
+            const body = await auth.json();
             if (
-              typeof evalBody === "object" &&
-              evalBody !== null &&
-              "email" in evalBody &&
-              "expireTime" in evalBody
+              typeof body === "object" &&
+              body !== null &&
+              "email" in body &&
+              "expireTime" in body
             ) {
-              const expireTime = parseInt(evalBody.expireTime);
+              const expireTime = parseInt(body.expireTime);
               const newAuthState = {
-                email: evalBody.email,
+                email: body.email,
                 loggedIn: true,
                 expireTime: expireTime,
               };
@@ -96,19 +58,24 @@ function App() {
                 setAuthLocalStorage(loggedOutAuthState);
               }, Date.now() - expireTime);
             }
-            // check auth explicitly
-            setResponse(text);
-          })
-          .catch((_err) =>
+            setResponse(body);
+          } else {
             setAuthLocalStorage({
               email: null,
               loggedIn: false,
               expireTime: -1,
-            }),
-          );
+            });
+          }
+        } catch (_e) {
+          setAuthLocalStorage({
+            email: null,
+            loggedIn: false,
+            expireTime: -1,
+          });
+        }
       }
+      landingAuth();
     };
-    landingAuth();
   }, [authState, authLocalStorage, setAuthLocalStorage]);
 
   /* Reflect on the fact that you did not immediately understand that if the first was allowed, the

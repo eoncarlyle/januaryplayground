@@ -131,7 +131,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
     }
 
-    fun handleWsAuth(ctx: WsContext, auth: AuthWsMessage) {
+    fun handleWsAuth(ctx: WsContext, auth: LifecycleWsMessage) {
         val token = auth.token
         val email = auth.email
 
@@ -142,7 +142,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         }
 
         when (auth.operation) {
-            AuthWsMessageOperation.AUTHENTICATE -> {
+            LifecycleOperation.AUTHENTICATE -> {
                 wsUserMap[ctx] = WsUserMapRecord(token, email, true)
                 ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "authentication success"))
                 //TODO handling error cases
@@ -150,7 +150,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
                 return
             }
 
-            AuthWsMessageOperation.CLOSE -> {
+            LifecycleOperation.CLOSE -> {
                 return handleWsClose(ctx)
             }
         }
