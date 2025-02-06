@@ -5,10 +5,11 @@ import io.javalin.http.*
 import io.javalin.websocket.WsConnectContext
 import io.javalin.websocket.WsContext
 import org.mindrot.jbcrypt.BCrypt
+import org.slf4j.Logger
 import java.time.Duration
 import java.time.Instant
 
-class Auth(private val db: DatabaseHelper, private val secure: Boolean, private val wsUserMap: WsUserMap) {
+class Auth(private val db: DatabaseHelper, private val secure: Boolean, private val wsUserMap: WsUserMap, private val logger: Logger) {
 
     private val session = "session"
     private val email = "email"

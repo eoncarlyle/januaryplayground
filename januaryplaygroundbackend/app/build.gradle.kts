@@ -37,6 +37,7 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
     implementation("org.mindrot:jbcrypt:0.4")
     implementation("com.fasterxml.uuid:java-uuid-generator:4.3.0")
+    implementation("org.slf4j:slf4j-simple:2.0.7")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
@@ -48,7 +49,7 @@ java {
 
 application {
     // Define the main class for the application.
-    mainClass = "org.example.AppKt"
+    mainClass = "com.iainschmitt.januaryplaygroundbackend.App"
 }
 
 tasks.named<Test>("test") {
