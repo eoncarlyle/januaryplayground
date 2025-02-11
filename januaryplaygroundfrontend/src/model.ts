@@ -1,24 +1,10 @@
 import React from "react";
 
-export interface CheckedAuthState {
+export interface AuthState {
   email: string | null;
   loggedIn: boolean;
   expireTime: number;
 }
-
-export interface Fetching {
-  fetching: true;
-}
-
-export function isFetching(authState: AuthState): boolean {
-  return (
-    authState !== null &&
-    typeof authState === "object" &&
-    "fetching" in authState
-  );
-}
-
-export type AuthState = CheckedAuthState | Fetching;
 
 export type SetAuthState = React.Dispatch<React.SetStateAction<AuthState>>;
 

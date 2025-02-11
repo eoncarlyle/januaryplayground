@@ -45,9 +45,8 @@ export default function LogIn(authProps: AuthProps) {
   });
 
   const [location, setLocation] = useLocation();
-  useAuthRedirect(false, authProps, location, setLocation);
+  //useAuthRedirect(false, authProps, location, setLocation);
   return (
-    //<Card className="w-full max-w-md">
     <Card>
       <Form {...form}>
         <CardHeader className="space-y-1">

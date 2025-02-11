@@ -5,7 +5,7 @@ import "./App.css";
 import Home from "./components/Home";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
-import { AuthState, isFetching } from "./model";
+import { AuthState } from "./model";
 import {
   getBaseUrl,
   loggedOutAuthState,
@@ -14,16 +14,12 @@ import {
 
 function App() {
   const [_response, setResponse] = useState<string>("");
-  const [authState, setAuthState] = useState<AuthState>({ fetching: true });
+  const [authState, setAuthState] = useState<AuthState>(loggedOutAuthState);
   const [authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
 
   useEffect(() => {
     const landingAuth = async () => {
-      if (
-        authLocalStorage.loggedIn &&
-        !isFetching(authState) &&
-        authState.loggedIn
-      ) {
+      if (authLocalStorage.loggedIn && authState.loggedIn) {
         return;
       } else if (authLocalStorage.loggedIn && !authState.loggedIn) {
         setAuthState({
@@ -74,8 +70,8 @@ function App() {
           });
         }
       }
-      landingAuth();
     };
+    landingAuth();
   }, [authState, authLocalStorage, setAuthLocalStorage]);
 
   /* Reflect on the fact that you did not immediately understand that if the first was allowed, the
