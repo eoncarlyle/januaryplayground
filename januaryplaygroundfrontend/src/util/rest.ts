@@ -1,10 +1,12 @@
 import {
   AuthProps,
   AuthState,
+  CheckedAuthState,
   SetAuthState,
   SetSocketMessageState,
   SetSocketState,
   TempSessionAuth,
+  isFetching,
 } from "@/model.ts";
 import { UseFormReturn } from "react-hook-form";
 
@@ -137,10 +139,13 @@ export function useAuthRedirect(
 ) {
   const authState = authProps.authState;
 
-  if (requiresAuth && !authState.loggedIn) {
+  if (isFetching(authState)) {
+    // @ts-expect-error Types have been narrowed
+  } else if (requiresAuth && !authState.loggedIn) {
     setLocation("/login");
   } else if (
     !requiresAuth &&
+    // @ts-expect-error Types have been narrowed
     authState.loggedIn &&
     ["/login", "/signup"].includes(location)
   ) {
@@ -218,7 +223,7 @@ export const loggedOutAuthState = {
   expireTime: -1,
 };
 
-function setAuthLocalStorage(authState: AuthState) {
+function setAuthLocalStorage(authState: CheckedAuthState) {
   const { loggedIn, email, expireTime } = authState;
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
@@ -228,8 +233,8 @@ function setAuthLocalStorage(authState: AuthState) {
 }
 
 export function useAuthLocalStorage(): [
-  AuthState,
-  (authState: AuthState) => void,
+  CheckedAuthState,
+  (authState: CheckedAuthState) => void,
 ] {
   const maybeExpireTime = localStorage.getItem(EXPIRE_TIME);
 

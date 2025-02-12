@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 
-import { AuthProps } from "../model";
+import { AuthProps, isFetching } from "../model";
 import { setupWebsocket, useAuthRedirect } from "../util/rest";
 import AuthNavBar from "./AuthNavBar";
 import Layout from "./Layout";
@@ -14,10 +14,12 @@ export default function Home(authProps: AuthProps) {
 
   useEffect(() => {
     if (socketState) return;
+    if (isFetching(authProps.authState)) return;
     const socket = new WebSocket("ws://localhost:7070/ws");
 
     setupWebsocket(
       //TODO fix, is ugly
+      // @ts-expect-error Types have been narrowed
       authProps.authState.email || "",
       socket,
       setSocketState,
@@ -31,7 +33,8 @@ export default function Home(authProps: AuthProps) {
     };
   }, [socketState, authProps.authState]);
   // Check auth if we know it is wrong
-  //useAuthRedirect(true, authProps, location, setLocation);
+  useAuthRedirect(true, authProps, location, setLocation);
+  console.log(socketMessageState);
   return (
     <Layout>
       <>
