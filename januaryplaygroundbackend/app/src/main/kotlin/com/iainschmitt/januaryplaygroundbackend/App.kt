@@ -86,7 +86,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 Thread.sleep(5000) // Every 5 seconds
                 val serverUpdate = "Server time: ${System.currentTimeMillis()}"
                 val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
-                logger.info("Sending event to {} websockets", aliveSockets.size)
+                //logger.info("Sending event to {} websockets", aliveSockets.size)
                 aliveSockets.forEach { session ->
                     session.send(serverUpdate)
                 }

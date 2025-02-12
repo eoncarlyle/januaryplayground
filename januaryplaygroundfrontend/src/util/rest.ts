@@ -1,12 +1,11 @@
 import {
   AuthProps,
   AuthState,
-  CheckedAuthState,
   SetAuthState,
   SetSocketMessageState,
   SetSocketState,
+  StoredAuthState,
   TempSessionAuth,
-  isFetching,
 } from "@/model.ts";
 import { UseFormReturn } from "react-hook-form";
 
@@ -62,6 +61,7 @@ export function createAuthOnSubmitHandler<T>(
           "expireTime" in authBody
         ) {
           const newAuth = {
+            evaluated: false,
             email: authBody.email,
             loggedIn: true,
             expireTime: authBody.expireTime,
@@ -139,13 +139,10 @@ export function useAuthRedirect(
 ) {
   const authState = authProps.authState;
 
-  if (isFetching(authState)) {
-    // @ts-expect-error Types have been narrowed
-  } else if (requiresAuth && !authState.loggedIn) {
+  if (requiresAuth && !authState.loggedIn) {
     setLocation("/login");
   } else if (
     !requiresAuth &&
-    // @ts-expect-error Types have been narrowed
     authState.loggedIn &&
     ["/login", "/signup"].includes(location)
   ) {
@@ -218,12 +215,13 @@ export async function setupWebsocket(
 }
 
 export const loggedOutAuthState = {
+  evaluated: true,
   email: null,
   loggedIn: false,
   expireTime: -1,
 };
 
-function setAuthLocalStorage(authState: CheckedAuthState) {
+function setAuthLocalStorage(authState: StoredAuthState) {
   const { loggedIn, email, expireTime } = authState;
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
@@ -233,12 +231,12 @@ function setAuthLocalStorage(authState: CheckedAuthState) {
 }
 
 export function useAuthLocalStorage(): [
-  CheckedAuthState,
-  (authState: CheckedAuthState) => void,
+  StoredAuthState,
+  (authState: StoredAuthState) => void,
 ] {
   const maybeExpireTime = localStorage.getItem(EXPIRE_TIME);
 
-  const authLocalStorage: AuthState = {
+  const authLocalStorage: StoredAuthState = {
     email: localStorage.getItem(EMAIL),
     loggedIn: localStorage.getItem(LOGGED_IN) === "true",
     expireTime: maybeExpireTime ? parseInt(maybeExpireTime) : -1,

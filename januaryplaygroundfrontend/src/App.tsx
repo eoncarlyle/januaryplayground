@@ -5,7 +5,7 @@ import "./App.css";
 import Home from "./components/Home";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
-import { AuthState, isFetching } from "./model";
+import { AuthState } from "./model";
 import {
   getBaseUrl,
   loggedOutAuthState,
@@ -13,23 +13,27 @@ import {
 } from "./util/rest";
 
 function App() {
-  const [_response, setResponse] = useState<string>("");
-  const [authState, setAuthState] = useState<AuthState>({ fetching: true });
+  const [authState, setAuthState] = useState<AuthState>(loggedOutAuthState);
   const [authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
+  console.log(authState);
 
   useEffect(() => {
     const landingAuth = async () => {
-      if (
-        authLocalStorage.loggedIn &&
-        !isFetching(authState) &&
-        authState.loggedIn
-      ) {
+      if (authState.evaluated) {
         return;
-      } else if (authLocalStorage.loggedIn && !authState.loggedIn) {
+      } else if (authLocalStorage.loggedIn && authState.loggedIn) {
+        setAuthState({ ...authState, evaluated: true });
+        return;
+      } else if (
+        authLocalStorage.loggedIn &&
+        !authState.loggedIn &&
+        authState.expireTime > Math.floor(Date.now() / 1000)
+      ) {
         setAuthState({
           email: authLocalStorage.email,
           loggedIn: true,
           expireTime: authLocalStorage.expireTime,
+          evaluated: true,
         });
       } else {
         const auth = await fetch(`${getBaseUrl()}/auth/evaluate`, {
@@ -38,6 +42,7 @@ function App() {
         try {
           if (auth.ok) {
             const body = await auth.json();
+            setAuthState({ ...authState, evaluated: true });
             if (
               typeof body === "object" &&
               body !== null &&
@@ -46,6 +51,7 @@ function App() {
             ) {
               const expireTime = parseInt(body.expireTime);
               const newAuthState = {
+                evaluated: true,
                 email: body.email,
                 loggedIn: true,
                 expireTime: expireTime,
@@ -58,8 +64,13 @@ function App() {
                 setAuthLocalStorage(loggedOutAuthState);
               }, Date.now() - expireTime);
             }
-            setResponse(body);
           } else {
+            setAuthState({
+              evaluated: true,
+              email: null,
+              loggedIn: false,
+              expireTime: -1,
+            });
             setAuthLocalStorage({
               email: null,
               loggedIn: false,
@@ -67,6 +78,12 @@ function App() {
             });
           }
         } catch (_e) {
+          setAuthState({
+            evaluated: true,
+            email: null,
+            loggedIn: false,
+            expireTime: -1,
+          });
           setAuthLocalStorage({
             email: null,
             loggedIn: false,
@@ -74,8 +91,8 @@ function App() {
           });
         }
       }
-      landingAuth();
     };
+    landingAuth();
   }, [authState, authLocalStorage, setAuthLocalStorage]);
 
   /* Reflect on the fact that you did not immediately understand that if the first was allowed, the
@@ -94,29 +111,33 @@ function App() {
 
   */
 
-  return (
-    <Switch>
-      <Route
-        path="/signup"
-        component={() => (
-          <SignUp authState={authState} setAuthState={setAuthState} />
-        )}
-      />
-      <Route
-        path="/login"
-        component={() => (
-          <LogIn authState={authState} setAuthState={setAuthState} />
-        )}
-      />
-      <Route path="/" component={() => "Landing Page"} />
-      <Route
-        path="/home"
-        component={() => (
-          <Home authState={authState} setAuthState={setAuthState} />
-        )}
-      />
-    </Switch>
-  );
+  if (authState.evaluated) {
+    return (
+      <Switch>
+        <Route
+          path="/signup"
+          component={() => (
+            <SignUp authState={authState} setAuthState={setAuthState} />
+          )}
+        />
+        <Route
+          path="/login"
+          component={() => (
+            <LogIn authState={authState} setAuthState={setAuthState} />
+          )}
+        />
+        <Route path="/" component={() => "Landing Page"} />
+        <Route
+          path="/home"
+          component={() => (
+            <Home authState={authState} setAuthState={setAuthState} />
+          )}
+        />
+      </Switch>
+    );
+  } else {
+    return <> </>;
+  }
 }
 
 export default App;

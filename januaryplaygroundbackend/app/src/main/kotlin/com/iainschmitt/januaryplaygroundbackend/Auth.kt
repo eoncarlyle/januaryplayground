@@ -79,7 +79,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
             )
             ctx.status(200)
         } else {
-            ctx.result("Fail")
+            ctx.json(mapOf("message" to "Fail"))
             ctx.status(403)
         }
     }
@@ -95,7 +95,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
             ctx.json(mapOf("token" to websocketSession.first.value))
             ctx.status(201)
         } else {
-            ctx.result("Fail")
+            ctx.json(mapOf("message" to "Fail"))
             ctx.status(403)
         }
     }
