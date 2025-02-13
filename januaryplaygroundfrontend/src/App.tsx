@@ -12,8 +12,6 @@ function App() {
   const [authState, setAuth] = useState<AuthState>(loggedOutAuthState);
   const [persistentAuthState, setPersistentAuth] = usePersistentAuth();
 
-  console.log("App Auth State", authState);
-  console.log("Auth Local Storage", persistentAuthState);
   useEffect(() => {
     const landingAuth = async () => {
       if (authState.evaluated) {

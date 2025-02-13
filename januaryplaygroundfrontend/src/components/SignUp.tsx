@@ -62,12 +62,7 @@ export default function SignUp(authProps: AuthProps) {
 
         <form
           onSubmit={form.handleSubmit(
-            createAuthOnSubmitHandler(
-              form,
-              authProps.setAuth,
-              () => setLocation("/home"),
-              "signup",
-            ),
+            createAuthOnSubmitHandler(form, authProps.setAuth, "signup"),
           )}
           className="space-y-6"
         >

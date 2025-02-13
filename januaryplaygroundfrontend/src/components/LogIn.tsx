@@ -39,14 +39,13 @@ export default function LogIn(authProps: AuthProps) {
   const form = useForm<LogInValues>({
     resolver: zodResolver(logInSchema),
     defaultValues: {
-      email: "",
-      password: "",
+      email: "user2@mail.com",
+      password: "User2Password",
     },
   });
 
   const [location, setLocation] = useLocation();
   useAuthRedirect(false, authProps, location, setLocation);
-  console.log("Log In", authProps.authState);
   return (
     //<Card className="w-full max-w-md">
     <Card>
@@ -57,12 +56,7 @@ export default function LogIn(authProps: AuthProps) {
 
         <form
           onSubmit={form.handleSubmit(
-            createAuthOnSubmitHandler(
-              form,
-              authProps.setAuth,
-              () => setLocation("/home"),
-              "login",
-            ),
+            createAuthOnSubmitHandler(form, authProps.setAuth, "login"),
           )}
           className="space-y-6"
         >

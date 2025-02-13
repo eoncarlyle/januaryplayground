@@ -38,7 +38,6 @@ export function getBaseUrl(): string {
 export function createAuthOnSubmitHandler<T>(
   form: FormType,
   setAuth: SetAuth,
-  redirectOnSuccess: () => void,
   endpoint: "signup" | "login",
 ) {
   return async (data: T) => {
@@ -67,7 +66,6 @@ export function createAuthOnSubmitHandler<T>(
             expireTime: authBody.expireTime,
           };
           setAuth(newAuth);
-          redirectOnSuccess();
         } else {
           form.setError("root", {
             type: "server",
@@ -181,18 +179,16 @@ export async function setupWebsocket(
     typeof tempSessionAuth === "object" &&
     "token" in tempSessionAuth
   ) {
-    socket.onopen = () => {
-      console.log("Connecting");
-      socket.send(
-        JSON.stringify({
-          type: "lifecycle",
-          token: tempSessionAuth.token,
-          email: email,
-          operation: "authenticate",
-        }),
-      );
-      setSocketState(socket);
-    };
+    console.log("Connecting");
+    socket.send(
+      JSON.stringify({
+        type: "lifecycle",
+        token: tempSessionAuth.token,
+        email: email,
+        operation: "authenticate",
+      }),
+    );
+    setSocketState(socket);
 
     socket.onmessage = (event) => {
       setSocketMessageState(event.data);

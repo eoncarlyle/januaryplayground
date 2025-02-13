@@ -11,7 +11,7 @@ export default function Home(authProps: AuthProps) {
 
   const [socketState, setSocketState] = useState<null | WebSocket>(null);
   const [socketMessageState, setSocketMessageState] = useState("");
-  console.log("Home", authProps.authState);
+  console.log(authProps.authState);
   useEffect(() => {
     if (socketState) return;
     const socket = new WebSocket("ws://localhost:7070/ws");
