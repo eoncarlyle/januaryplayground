@@ -4,6 +4,7 @@ import io.javalin.Javalin
 import io.javalin.http.util.NaiveRateLimit
 import io.javalin.websocket.WsContext
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -71,7 +72,11 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 }
             }
             ws.onClose { ctx ->
-                auth.handleWsClose(ctx)
+                try {
+                    auth.handleWsClose(ctx)
+                } catch (e: IOException) {
+                    logger.warn("Exception-throwing close")
+                }
             }
         }
         this.javalinApp.start(7070)

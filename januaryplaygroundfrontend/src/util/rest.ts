@@ -210,7 +210,7 @@ export async function setupWebsocket(
 }
 
 export const loggedOutAuthState = {
-  evaluated: true,
+  evaluated: false,
   email: null,
   loggedIn: false,
   expireTime: -1,
