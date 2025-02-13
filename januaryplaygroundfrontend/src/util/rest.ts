@@ -1,10 +1,10 @@
 import {
   AuthProps,
-  AuthState,
-  SetAuthState,
+  PersistentAuthState,
+  SetAuth,
+  SetPersistentAuth,
   SetSocketMessageState,
   SetSocketState,
-  StoredAuthState,
   TempSessionAuth,
 } from "@/model.ts";
 import { UseFormReturn } from "react-hook-form";
@@ -37,7 +37,7 @@ export function getBaseUrl(): string {
 
 export function createAuthOnSubmitHandler<T>(
   form: FormType,
-  setAuth: SetAuthState,
+  setAuth: SetAuth,
   redirectOnSuccess: () => void,
   endpoint: "signup" | "login",
 ) {
@@ -98,10 +98,7 @@ export function createAuthOnSubmitHandler<T>(
   };
 }
 
-export function logOutHandler(
-  setAuth: SetAuthState,
-  redirectOnSuccess: () => void,
-) {
+export function logOutHandler(setAuth: SetAuth, redirectOnSuccess: () => void) {
   return async () => {
     try {
       const result = await fetch(`${getBaseUrl()}/auth/logout`, {
@@ -111,7 +108,7 @@ export function logOutHandler(
 
       if (result.ok) {
         setAuth(loggedOutAuthState);
-        setAuthLocalStorage(loggedOutAuthState);
+        setPersistentAuth(loggedOutAuthState);
         redirectOnSuccess();
       } else {
         const errorMessage: unknown = await result.text();
@@ -221,8 +218,8 @@ export const loggedOutAuthState = {
   expireTime: -1,
 };
 
-function setAuthLocalStorage(authState: StoredAuthState) {
-  const { loggedIn, email, expireTime } = authState;
+function setPersistentAuth(persistentAuthState: PersistentAuthState) {
+  const { loggedIn, email, expireTime } = persistentAuthState;
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
     localStorage.setItem(EMAIL, email);
@@ -230,17 +227,14 @@ function setAuthLocalStorage(authState: StoredAuthState) {
   localStorage.setItem(EXPIRE_TIME, expireTime.toString());
 }
 
-export function useAuthLocalStorage(): [
-  StoredAuthState,
-  (authState: StoredAuthState) => void,
-] {
+export function usePersistentAuth(): [PersistentAuthState, SetPersistentAuth] {
   const maybeExpireTime = localStorage.getItem(EXPIRE_TIME);
 
-  const authLocalStorage: StoredAuthState = {
+  const persistentAuthState: PersistentAuthState = {
     email: localStorage.getItem(EMAIL),
     loggedIn: localStorage.getItem(LOGGED_IN) === "true",
     expireTime: maybeExpireTime ? parseInt(maybeExpireTime) : -1,
   };
 
-  return [authLocalStorage, setAuthLocalStorage];
+  return [persistentAuthState, setPersistentAuth];
 }

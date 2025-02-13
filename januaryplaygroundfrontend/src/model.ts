@@ -10,13 +10,19 @@ export interface AuthState extends BaseAuth {
   evaluated: boolean;
 }
 
-export type StoredAuthState = BaseAuth;
+export type PersistentAuthState = BaseAuth;
 
-export type SetAuthState = React.Dispatch<React.SetStateAction<AuthState>>;
+export type SetAuth = React.Dispatch<React.SetStateAction<AuthState>>;
+
+export type SetPersistentAuth = (
+  persistentAuthState: PersistentAuthState,
+) => void;
 
 export interface AuthProps {
   authState: AuthState;
-  setAuthState: SetAuthState;
+  setAuth: SetAuth;
+  persistentAuthState: PersistentAuthState;
+  setPersistentAuth: SetPersistentAuth;
 }
 
 export interface TempSessionAuth {

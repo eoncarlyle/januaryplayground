@@ -6,33 +6,30 @@ import Home from "./components/Home";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
 import { AuthState } from "./model";
-import {
-  getBaseUrl,
-  loggedOutAuthState,
-  useAuthLocalStorage,
-} from "./util/rest";
+import { getBaseUrl, loggedOutAuthState, usePersistentAuth } from "./util/rest";
 
 function App() {
-  const [authState, setAuthState] = useState<AuthState>(loggedOutAuthState);
-  const [authLocalStorage, setAuthLocalStorage] = useAuthLocalStorage();
-  console.log(authState);
+  const [authState, setAuth] = useState<AuthState>(loggedOutAuthState);
+  const [persistentAuthState, setPersistentAuth] = usePersistentAuth();
 
+  console.log("App Auth State", authState);
+  console.log("Auth Local Storage", persistentAuthState);
   useEffect(() => {
     const landingAuth = async () => {
       if (authState.evaluated) {
         return;
-      } else if (authLocalStorage.loggedIn && authState.loggedIn) {
-        setAuthState({ ...authState, evaluated: true });
+      } else if (persistentAuthState.loggedIn && authState.loggedIn) {
+        setAuth({ ...authState, evaluated: true });
         return;
       } else if (
-        authLocalStorage.loggedIn &&
+        persistentAuthState.loggedIn &&
         !authState.loggedIn &&
         authState.expireTime > Math.floor(Date.now() / 1000)
       ) {
-        setAuthState({
-          email: authLocalStorage.email,
+        setAuth({
+          email: persistentAuthState.email,
           loggedIn: true,
-          expireTime: authLocalStorage.expireTime,
+          expireTime: persistentAuthState.expireTime,
           evaluated: true,
         });
       } else {
@@ -42,7 +39,7 @@ function App() {
         try {
           if (auth.ok) {
             const body = await auth.json();
-            setAuthState({ ...authState, evaluated: true });
+            setAuth({ ...authState, evaluated: true });
             if (
               typeof body === "object" &&
               body !== null &&
@@ -57,34 +54,34 @@ function App() {
                 expireTime: expireTime,
               };
 
-              setAuthState(newAuthState);
-              setAuthLocalStorage(newAuthState);
+              setAuth(newAuthState);
+              setPersistentAuth(newAuthState);
               setTimeout(() => {
-                setAuthState(loggedOutAuthState);
-                setAuthLocalStorage(loggedOutAuthState);
-              }, Date.now() - expireTime);
+                setAuth(loggedOutAuthState);
+                setPersistentAuth(loggedOutAuthState);
+              }, expireTime - Date.now());
             }
           } else {
-            setAuthState({
+            setAuth({
               evaluated: true,
               email: null,
               loggedIn: false,
               expireTime: -1,
             });
-            setAuthLocalStorage({
+            setPersistentAuth({
               email: null,
               loggedIn: false,
               expireTime: -1,
             });
           }
         } catch (_e) {
-          setAuthState({
+          setAuth({
             evaluated: true,
             email: null,
             loggedIn: false,
             expireTime: -1,
           });
-          setAuthLocalStorage({
+          setPersistentAuth({
             email: null,
             loggedIn: false,
             expireTime: -1,
@@ -93,7 +90,7 @@ function App() {
       }
     };
     landingAuth();
-  }, [authState, authLocalStorage, setAuthLocalStorage]);
+  }, [authState, persistentAuthState, setPersistentAuth]);
 
   /* Reflect on the fact that you did not immediately understand that if the first was allowed, the
       second would neccesarily be allowed
@@ -111,28 +108,20 @@ function App() {
 
   */
 
+  const authProps = {
+    authState: authState,
+    setAuth: setAuth,
+    persistentAuthState: persistentAuthState,
+    setPersistentAuth: setPersistentAuth,
+  };
+
   if (authState.evaluated) {
     return (
       <Switch>
-        <Route
-          path="/signup"
-          component={() => (
-            <SignUp authState={authState} setAuthState={setAuthState} />
-          )}
-        />
-        <Route
-          path="/login"
-          component={() => (
-            <LogIn authState={authState} setAuthState={setAuthState} />
-          )}
-        />
+        <Route path="/signup" component={() => <SignUp {...authProps} />} />
+        <Route path="/login" component={() => <LogIn {...authProps} />} />
         <Route path="/" component={() => "Landing Page"} />
-        <Route
-          path="/home"
-          component={() => (
-            <Home authState={authState} setAuthState={setAuthState} />
-          )}
-        />
+        <Route path="/home" component={() => <Home {...authProps} />} />
       </Switch>
     );
   } else {

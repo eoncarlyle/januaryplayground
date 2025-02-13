@@ -15,7 +15,7 @@ export default function AuthNavBar(props: AuthProps) {
         <div className="flex-1" />
 
         <Button
-          onClick={logOutHandler(props.setAuthState, () => setLocation("/"))}
+          onClick={logOutHandler(props.setAuth, () => setLocation("/"))}
           className="flex items-center space-x-2"
         >
           <span> Log out </span>

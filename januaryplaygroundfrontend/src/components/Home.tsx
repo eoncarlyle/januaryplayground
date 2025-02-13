@@ -11,7 +11,7 @@ export default function Home(authProps: AuthProps) {
 
   const [socketState, setSocketState] = useState<null | WebSocket>(null);
   const [socketMessageState, setSocketMessageState] = useState("");
-  console.log(authProps.authState);
+  console.log("Home", authProps.authState);
   useEffect(() => {
     if (socketState) return;
     const socket = new WebSocket("ws://localhost:7070/ws");
@@ -37,7 +37,9 @@ export default function Home(authProps: AuthProps) {
       <>
         <AuthNavBar
           authState={authProps.authState}
-          setAuthState={authProps.setAuthState}
+          setAuth={authProps.setAuth}
+          persistentAuthState={authProps.persistentAuthState}
+          setPersistentAuth={authProps.setPersistentAuth}
         />
         <div className="m-2 flex justify-center">
           {authProps.authState.email}

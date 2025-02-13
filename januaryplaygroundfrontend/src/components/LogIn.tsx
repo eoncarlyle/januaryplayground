@@ -46,6 +46,7 @@ export default function LogIn(authProps: AuthProps) {
 
   const [location, setLocation] = useLocation();
   useAuthRedirect(false, authProps, location, setLocation);
+  console.log("Log In", authProps.authState);
   return (
     //<Card className="w-full max-w-md">
     <Card>
@@ -58,7 +59,7 @@ export default function LogIn(authProps: AuthProps) {
           onSubmit={form.handleSubmit(
             createAuthOnSubmitHandler(
               form,
-              authProps.setAuthState,
+              authProps.setAuth,
               () => setLocation("/home"),
               "login",
             ),
