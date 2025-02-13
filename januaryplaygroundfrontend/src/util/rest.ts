@@ -179,16 +179,18 @@ export async function setupWebsocket(
     typeof tempSessionAuth === "object" &&
     "token" in tempSessionAuth
   ) {
-    console.log("Connecting");
-    socket.send(
-      JSON.stringify({
-        type: "lifecycle",
-        token: tempSessionAuth.token,
-        email: email,
-        operation: "authenticate",
-      }),
-    );
-    setSocketState(socket);
+    socket.onopen = (event) => {
+      console.log("Connecting");
+      socket.send(
+        JSON.stringify({
+          type: "lifecycle",
+          token: tempSessionAuth.token,
+          email: email,
+          operation: "authenticate",
+        }),
+      );
+      setSocketState(socket);
+    };
 
     socket.onmessage = (event) => {
       setSocketMessageState(event.data);

@@ -128,10 +128,12 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
     }
 
     fun handleWsConnection(ctx: WsConnectContext) {
+        logger.info("Incoming connection")
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
     }
 
     fun handleWsAuth(ctx: WsContext, auth: LifecycleWsMessage) {
+        logger.info("Incoming auth request")
         val token = auth.token
         val email = auth.email
 

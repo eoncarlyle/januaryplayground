@@ -16,6 +16,7 @@ export default function Home(authProps: AuthProps) {
     if (socketState) return;
     const socket = new WebSocket("ws://localhost:7070/ws");
     console.log("Invoking hook");
+    setSocketState(socket);
     setupWebsocket(
       //TODO fix, is ugly
       authProps.authState.email || "",

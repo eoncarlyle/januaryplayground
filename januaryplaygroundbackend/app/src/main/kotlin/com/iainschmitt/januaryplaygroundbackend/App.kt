@@ -88,6 +88,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
                 //logger.info("Sending event to {} websockets", aliveSockets.size)
                 aliveSockets.forEach { session ->
+                    logger.info("Sending message to {}", session.toString())
                     session.send(serverUpdate)
                 }
             }
