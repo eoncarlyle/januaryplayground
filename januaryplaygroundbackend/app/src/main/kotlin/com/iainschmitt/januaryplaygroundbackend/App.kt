@@ -72,6 +72,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 }
             }
             ws.onClose { ctx ->
+                logger.info("Closing WebSocket connection")
                 try {
                     auth.handleWsClose(ctx)
                 } catch (e: IOException) {
