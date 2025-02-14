@@ -179,8 +179,7 @@ export async function setupWebsocket(
     typeof tempSessionAuth === "object" &&
     "token" in tempSessionAuth
   ) {
-    socket.onopen = (event) => {
-      console.log("Connecting");
+    if (socket.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
           type: "lifecycle",
@@ -189,8 +188,18 @@ export async function setupWebsocket(
           operation: "authenticate",
         }),
       );
-      setSocketState(socket);
-    };
+    } else {
+      socket.onopen = (_event) => {
+        socket.send(
+          JSON.stringify({
+            type: "lifecycle",
+            token: tempSessionAuth.token,
+            email: email,
+            operation: "authenticate",
+          }),
+        );
+      };
+    }
 
     socket.onmessage = (event) => {
       setSocketMessageState(event.data);
@@ -201,7 +210,6 @@ export async function setupWebsocket(
     };
 
     socket.onclose = () => {
-      console.log("WebSocket disconnencted");
       setSocketState(null);
     };
   } else {

@@ -82,6 +82,13 @@ class App(db: DatabaseHelper, secure: Boolean) {
         }
         this.javalinApp.start(7070)
 
+        val _app = Javalin.create(/*config*/)
+            .get("/") { ctx -> ctx.result("Hello World") }
+            .ws("/websocket/{path}") { ws ->
+                ws.onConnect { ctx -> println("Connected") }
+            }.start(7070)
+
+
         startServerEventSimulation()
     }
 

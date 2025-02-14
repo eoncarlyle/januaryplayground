@@ -130,6 +130,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
     fun handleWsConnection(ctx: WsConnectContext) {
         logger.info("Incoming connection")
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
+        ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "connection attempt acknolwedged"))
     }
 
     fun handleWsAuth(ctx: WsContext, auth: LifecycleWsMessage) {
