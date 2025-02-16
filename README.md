@@ -23,6 +23,20 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `48e627d`
+- Note: diff evaluated from `32686c8` to `48e627d`
+- Backend
+  - Add validation for WebSocket message payloads
+  - Rate limiting on the WebSocket messages, bucketd by tokens
+  - More granular error types and more error logging
+  - Implement session invalidation
+  - Auth endpoint rate limiting
+  - WebSocket connection timeout
+- Frontend
+  - Retry logic for failed auth
+  - Add loading spinner during auth
+  - WebSocket reconnection logic
+
 ### `32686c8`
 - Consider sealed class hierarchy for `WebSocketMessage`
 - Configuration file for cookie durations
@@ -98,15 +112,21 @@ private fun startServerEventSimulation() {
 
 ## Active Topic Notes
 
-### Client-side Websockets
-- ~Use socket.io for the client side~: vanilla websockets will work instead
-- There are only a handful of routes that this will be relevant for: I we need to decide which components need websockets before putting this into place?
-- One possibility is storing effectively a singleton in the application state
-  - This would mean creating a WebSocket object in the
-- The state built off of the singleton could be organised on the page level
-  - The types of
-- If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
-  - We need subsequent websockets to pick up where previous ones left off
+### Initial Market Design
+- Start with single instrument, long only
+- Initially don't support end-user order submission
+- Moving pieces
+  - One market maker with three naive bots and one more sophisticated trend-following bot, detail in `TrendFollower.md`
+  - Market maker
+    - Simple spread (2% or so, will need to be careful with small prices/rounding)
+    - Cancels existing orders when the spread changes
+    - Do not want to inately make the assumption that the one market maker will always be the only market maker
+        - Each order book entry placed by a market maker should include time, such that the first matching order is respected
+- Kafka Topics
+  - Order submission requests (trader, position, volume, time)
+  - Order submission results (trader, position, volume, time)
+  - Existing order book updates
+
 
 ## Previous Topic Notes
 
@@ -123,3 +143,13 @@ private fun startServerEventSimulation() {
 - Save both in storage and in global state
 - Write async job that logs out when the tu
 - Write function that logs out (state and cookies) if 403s are hit
+
+### Client-side Websockets
+- ~Use socket.io for the client side~: vanilla websockets will work instead
+- There are only a handful of routes that this will be relevant for: I we need to decide which components need websockets before putting this into place?
+- One possibility is storing effectively a singleton in the application state
+  - This would mean creating a WebSocket object in the
+- The state built off of the singleton could be organised on the page level
+  - The types of
+- If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
+  - We need subsequent websockets to pick up where previous ones left off
