@@ -1,11 +1,10 @@
-package com.iainschmitt.januaryplaygroundbackend
+package com.iainschmitt.januaryplaygroundbackend.app
 
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import io.javalin.websocket.WsContext
 import java.util.concurrent.ConcurrentHashMap
-
 class CredentialsDto(val email: String, val password: String)
 
 enum class WebSocketStatus(val code: Int) {
@@ -57,3 +56,17 @@ data class LifecycleWsMessage(
     override val email: String,
     val operation: LifecycleOperation
 ) : WebSocketMessage
+
+//enum class MarketLifecycleOperation {
+//    @JsonAlias("open")
+//    OPEN,
+//    @JsonAlias("close")
+//    CLOSE;
+//}
+//
+//data class MarketLifecycleMessage(
+//    override val type: String = "lifecycle",
+//    override val token: String,
+//    override val email: String,
+//    val operation: LifecycleOperation
+//): WebSocketMessage

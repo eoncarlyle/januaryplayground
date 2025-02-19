@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend
+package com.iainschmitt.januaryplaygroundbackend.app
 
 import io.javalin.Javalin
 import io.javalin.http.util.NaiveRateLimit

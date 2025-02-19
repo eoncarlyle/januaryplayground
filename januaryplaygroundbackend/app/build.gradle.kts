@@ -29,6 +29,7 @@ dependencies {
 
     // This dependency is used by the application.
     implementation(libs.guava)
+    implementation(project(":shared"))
     implementation("io.javalin:javalin:6.2.0")
     implementation("org.slf4j:slf4j-simple:2.0.9")
     implementation("org.slf4j:slf4j-api:2.0.9")

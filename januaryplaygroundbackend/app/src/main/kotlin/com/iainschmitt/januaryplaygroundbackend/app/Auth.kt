@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend
+package com.iainschmitt.januaryplaygroundbackend.app
 
 import com.fasterxml.uuid.Generators
 import io.javalin.http.*
@@ -28,7 +28,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         try {
             db.query { conn ->
                 conn.prepareStatement(
-                    "insert into test_users (email, password_hash) values (?, ?)"
+                    "insert into users (email, password_hash) values (?, ?)"
                 )
                     .use { stmt ->
                         stmt.setString(1, dto.email)
@@ -49,7 +49,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash: String? =
             db.query { conn ->
-                conn.prepareStatement("select password_hash from test_users where email = ?").use { stmt
+                conn.prepareStatement("select password_hash from users where email = ?").use { stmt
                     ->
                     stmt.setString(1, dto.email)
                     stmt.executeQuery().use { rs ->
@@ -167,7 +167,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
 
     private fun deleteToken(token: String): Boolean {
         val edits = db.query { conn ->
-            conn.prepareStatement("delete from test_session where token = ?").use { stmt ->
+            conn.prepareStatement("delete from session where token = ?").use { stmt ->
                 stmt.setString(1, token)
                 stmt.executeUpdate()
             }
@@ -180,7 +180,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
     fun tokenValid(token: String): Boolean {
         val expireTimestamp: Long? =
             db.query { conn ->
-                conn.prepareStatement("select expire_timestamp from test_session where token = ?")
+                conn.prepareStatement("select expire_timestamp from session where token = ?")
                     .use { stmt ->
                         stmt.setString(1, token)
                         stmt.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
@@ -192,7 +192,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
     private fun evaluateUserAuth(token: String): Pair<String, Long>? {
         val pair =
             db.query { conn ->
-                conn.prepareStatement("select email, expire_timestamp from test_session where token = ?")
+                conn.prepareStatement("select email, expire_timestamp from session where token = ?")
                     .use { stmt ->
                         stmt.setString(1, token)
                         stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
@@ -207,7 +207,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
 
     private fun emailPresent(email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select email from test_users where email = ?").use { stmt ->
+            conn.prepareStatement("select email from users where email = ?").use { stmt ->
                 stmt.setString(1, email)
                 stmt.executeQuery().use { rs -> rs.next() }
             }
@@ -231,7 +231,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
 
         try {
             db.query { conn ->
-                conn.prepareStatement("insert into test_session (token, expire_timestamp, email) values (?, ?, ?)")
+                conn.prepareStatement("insert into session (token, expire_timestamp, email) values (?, ?, ?)")
                     .use { stmt ->
                         stmt.setString(1, token)
                         stmt.setLong(2, expireTimestamp)
@@ -249,7 +249,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
     private fun removeExistingSessions(email: String) {
         try {
             val sessionExists = db.query { conn ->
-                conn.prepareStatement("select * from test_session where email = ?").use { stmt ->
+                conn.prepareStatement("select * from session where email = ?").use { stmt ->
                     stmt.setString(1, email)
                     stmt.executeQuery().use { rs -> rs.next() }
                 }
@@ -257,7 +257,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
 
             if (sessionExists) {
                 db.query { conn ->
-                    conn.prepareStatement("delete from test_session where email = ?").use { stmt ->
+                    conn.prepareStatement("delete from session where email = ?").use { stmt ->
                         stmt.setString(1, email)
                         stmt.executeUpdate()
                     }

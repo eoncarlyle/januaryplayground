@@ -122,10 +122,21 @@ private fun startServerEventSimulation() {
     - Cancels existing orders when the spread changes
     - Do not want to inately make the assumption that the one market maker will always be the only market maker
         - Each order book entry placed by a market maker should include time, such that the first matching order is respected
+  - Exchange
+    - A counterpart order needs to exist and the trader needs to have the funds to run it
+    - This needs to check against the database
+- Have a tick timing system: not dependent on the wallclock time, but rather dependant on the time relative to the market starting
+- Client requests originate via WebSockets, only the services communicate over Kafka
+  - Not entirely sure how to split up the services
+    - Client -> WebSocket -> App module -> Kafka -> Market module -> Kafka -> App module -> WebSocket -> Client?
 - Kafka Topics
+  - Market open/close
   - Order submission requests (trader, position, volume, time)
   - Order submission results (trader, position, volume, time)
   - Existing order book updates
+  - Fringe topics
+    - Lifecycle events: traders running out of money or joining market (not instrument specific)
+    - Admin actions: granting shares and funds?
 
 
 ## Previous Topic Notes

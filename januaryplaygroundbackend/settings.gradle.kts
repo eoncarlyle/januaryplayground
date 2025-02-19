@@ -12,3 +12,4 @@ plugins {
 
 rootProject.name = "januaryplaygroundbackend"
 include("app")
+include("shared")
