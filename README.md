@@ -11,16 +11,6 @@ In Janurary 2025 I wanted to find an excuse to work with the following technolog
 
 This repository is a playground for working on a grab bag of these technologies, I probably won't find a way to shoehorn all of these in
 
-## Auth Notes
-- Session based authentication: storing cookies them for validation
-- Could add `userRoles` to the session object as well
-- `return@beforematched` and `ctx.skipRemainingHandlers()` important
-- Everything are HTTP only cookies, this is handled between server and browser, JS is completely out of the loop
-- Session, refresh token possible as well
-- Spent almost an hour because cookies aren't saved unless explicitly allowed
-  - Should review the following
-  - https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#including_credentials
-
 ## Feedback Log
 
 ### `48e627d`
@@ -164,3 +154,13 @@ private fun startServerEventSimulation() {
   - The types of
 - If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
   - We need subsequent websockets to pick up where previous ones left off
+
+## Auth Notes
+- Session based authentication: storing cookies them for validation
+- Could add `userRoles` to the session object as well
+- `return@beforematched` and `ctx.skipRemainingHandlers()` important
+- Everything are HTTP only cookies, this is handled between server and browser, JS is completely out of the loop
+- Session, refresh token possible as well
+- Spent almost an hour because cookies aren't saved unless explicitly allowed
+  - Should review the following
+  - https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#including_credentials
