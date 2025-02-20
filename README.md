@@ -119,15 +119,9 @@ private fun startServerEventSimulation() {
 - Client requests originate via WebSockets, only the services communicate over Kafka
   - Not entirely sure how to split up the services
     - Client -> WebSocket -> App module -> Kafka -> Market module -> Kafka -> App module -> WebSocket -> Client?
-- Kafka Topics
-  - Market open/close
-  - Order submission requests (trader, position, volume, time)
-  - Order submission results (trader, position, volume, time)
-  - Existing order book updates
-  - Fringe topics
-    - Lifecycle events: traders running out of money or joining market (not instrument specific)
-    - Admin actions: granting shares and funds?
-
+- Start without Kafka
+  - Possibly never introduce it
+  - Reserve for recording trades?
 
 ## Previous Topic Notes
 
@@ -164,3 +158,12 @@ private fun startServerEventSimulation() {
 - Spent almost an hour because cookies aren't saved unless explicitly allowed
   - Should review the following
   - https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#including_credentials
+
+## Market Kafka Topics
+  - Market open/close
+  - Order submission requests (trader, position, volume, time)
+  - Order submission results (trader, position, volume, time)
+  - Existing order book updates
+  - Fringe topics
+    - Lifecycle events: traders running out of money or joining market (not instrument specific)
+    - Admin actions: granting shares and funds?

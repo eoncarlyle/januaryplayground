@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.app
+package com.iainschmitt.januaryplaygroundbackend.gateway
 
 import com.fasterxml.uuid.Generators
 import io.javalin.http.*

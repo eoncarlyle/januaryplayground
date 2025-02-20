@@ -53,7 +53,6 @@ class OrderRequest(
     override val trader: String,
 ): Order
 
-
 // Only needed for market and fill-or-kill
 class OrderAcknowledged(
     val ticker: Ticker,
@@ -61,7 +60,7 @@ class OrderAcknowledged(
     override val size: Int,
     override val trader: String,
     val id: String,
-    val acknowledgedTime: Long
+    val acknowledgedTick: Long
 ): Order
 
 // Can have multiple with a singe
@@ -71,7 +70,7 @@ class OrderFilled(
     override val size: Int,
     override val trader: String,
     val id: String,
-    val filledTime: Long
+    val filledTick: Long
 ): Order
 
 class OrderFailed(
@@ -79,12 +78,31 @@ class OrderFailed(
     override val tradeType: TradeType,
     override val size: Int,
     override val trader: String,
-    val failedTime: Long,
+    val failedTick: Long,
     val id: String,
     val code: Int
 ): Order
 
-class OrderBook(
-    val bid: Map<BigDecimal, List<Order>>,
-    val ask: Map<BigDecimal, List<Order>>
-)
+sealed class OrderBook {
+    abstract val bid: Map<BigDecimal, List<Order>>
+    abstract val ask: Map<BigDecimal, List<Order>>
+}
+
+data class OrderBookRecord(
+    override val bid: Map<BigDecimal, List<Order>>,
+    override val ask: Map<BigDecimal, List<Order>>,
+    val publishedTick: Long
+) : OrderBook()
+
+data class ConcreteOrderBook(
+    override val bid: Map<BigDecimal, List<Order>>,
+    override val ask: Map<BigDecimal, List<Order>>
+) : OrderBook()
+
+enum class MarketLifecycleOperation {
+    @JsonAlias("open")
+    OPEN,
+    @JsonAlias("close")
+    CLOSE;
+}
+

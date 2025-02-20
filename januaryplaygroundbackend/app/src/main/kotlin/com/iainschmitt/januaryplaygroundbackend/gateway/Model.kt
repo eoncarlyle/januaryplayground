@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.app
+package com.iainschmitt.januaryplaygroundbackend.gateway
 
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonSubTypes
@@ -57,13 +57,6 @@ data class LifecycleWsMessage(
     val operation: LifecycleOperation
 ) : WebSocketMessage
 
-//enum class MarketLifecycleOperation {
-//    @JsonAlias("open")
-//    OPEN,
-//    @JsonAlias("close")
-//    CLOSE;
-//}
-//
 //data class MarketLifecycleMessage(
 //    override val type: String = "lifecycle",
 //    override val token: String,
