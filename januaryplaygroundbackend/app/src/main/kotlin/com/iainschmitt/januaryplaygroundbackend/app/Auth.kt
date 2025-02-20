@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.gateway
+package com.iainschmitt.januaryplaygroundbackend.app
 
 import com.fasterxml.uuid.Generators
 import io.javalin.http.*
@@ -133,7 +133,7 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "connection attempt acknolwedged"))
     }
 
-    fun handleWsAuth(ctx: WsContext, auth: LifecycleWsMessage) {
+    fun handleWsAuth(ctx: WsContext, auth: SocketLifecycleMessage) {
         logger.info("Incoming auth request")
         val token = auth.token
         val email = auth.email

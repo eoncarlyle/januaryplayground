@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.gateway
+package com.iainschmitt.januaryplaygroundbackend.app
 
 import io.javalin.Javalin
 import io.javalin.http.util.NaiveRateLimit
@@ -64,7 +64,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 try {
                     val message = ctx.messageAsClass<WebSocketMessage>()
                     when (message) {
-                        is LifecycleWsMessage -> auth.handleWsAuth(ctx, message)
+                        is SocketLifecycleMessage -> auth.handleWsAuth(ctx, message)
                     }
                 } catch (e: Exception) {
                     logger.error("Unable to serialise '{}'", ctx.message())

@@ -1,4 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.gateway
+package com.iainschmitt.januaryplaygroundbackend.app
 
 import java.sql.Connection
 import java.sql.DriverManager

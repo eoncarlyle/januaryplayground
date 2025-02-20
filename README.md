@@ -116,12 +116,14 @@ private fun startServerEventSimulation() {
     - A counterpart order needs to exist and the trader needs to have the funds to run it
     - This needs to check against the database
 - Have a tick timing system: not dependent on the wallclock time, but rather dependant on the time relative to the market starting
-- Client requests originate via WebSockets, only the services communicate over Kafka
-  - Not entirely sure how to split up the services
-    - Client -> WebSocket -> App module -> Kafka -> Market module -> Kafka -> App module -> WebSocket -> Client?
+- Client requests originate via WebSockets
+  - ~~Not entirely sure how to split up the services~~
+    - ~~Client -> WebSocket -> App module -> Kafka -> Market module -> Kafka -> App module -> WebSocket -> Client?~~
 - Start without Kafka
   - Possibly never introduce it
   - Reserve for recording trades?
+- The arbiter of time is the app module
+  - No times sent by the client are to be trusted
 
 ## Previous Topic Notes
 
