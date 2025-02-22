@@ -64,11 +64,11 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 try {
                     val message = ctx.messageAsClass<WebSocketMessage>()
                     when (message) {
-                        is SocketLifecycleMessage -> auth.handleWsAuth(ctx, message)
+                        is IncomingSocketLifecycleMessage -> auth.handleWsLifecycleMessage(ctx, message)
                     }
                 } catch (e: Exception) {
                     logger.error("Unable to serialise '{}'", ctx.message())
-                    ctx.send(auth.wsResponse(WebSocketStatus.ERROR, "internal server error"))
+                    ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, "", "", "Internal server error"))
                 }
             }
             ws.onClose { ctx ->

@@ -9,7 +9,12 @@ import org.slf4j.Logger
 import java.time.Duration
 import java.time.Instant
 
-class Auth(private val db: DatabaseHelper, private val secure: Boolean, private val wsUserMap: WsUserMap, private val logger: Logger) {
+class Auth(
+    private val db: DatabaseHelper,
+    private val secure: Boolean,
+    private val wsUserMap: WsUserMap,
+    private val logger: Logger
+) {
 
     private val session = "session"
     private val email = "email"
@@ -123,45 +128,75 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         }
     }
 
-    fun <T> wsResponse(status: WebSocketStatus, body: T): WebSocketResponse<T> {
-        return WebSocketResponseImpl(status.code, body)
-    }
-
     fun handleWsConnection(ctx: WsConnectContext) {
         logger.info("Incoming connection")
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
-        ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "connection attempt acknolwedged"))
+        ctx.sendAsClass(
+            OutgoingLifecycleMessage<String>(
+                "",
+                "",
+                WebSocketLifecycleOperation.AUTHENTICATE,
+                WebSocketResponseStatus.ACCEPTED,
+                "Connection attempt acknowledged"
+            )
+        )
     }
 
-    fun handleWsAuth(ctx: WsContext, auth: SocketLifecycleMessage) {
+
+    fun handleWsLifecycleMessage(ctx: WsContext, message: IncomingSocketLifecycleMessage) {
         logger.info("Incoming auth request")
-        val token = auth.token
-        val email = auth.email
+        val token = message.token
+        val email = message.email
 
         val userAuth = evaluateUserAuth(token)
         if (userAuth == null || userAuth.first != email) {
-            ctx.closeSession(WebSocketStatus.UNAUTHORIZED.code, "invalid token")
+            ctx.closeSession(WebSocketResponseStatus.UNAUTHORIZED.code, "invalid token")
             return
         }
 
-        when (auth.operation) {
-            LifecycleOperation.AUTHENTICATE -> {
+        when (message.operation) {
+            WebSocketLifecycleOperation.AUTHENTICATE -> {
                 wsUserMap[ctx] = WsUserMapRecord(token, email, true)
-                ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "authentication success"))
+                ctx.sendAsClass(
+                    OutgoingLifecycleMessage(
+                        token,
+                        email,
+                        WebSocketLifecycleOperation.AUTHENTICATE,
+                        WebSocketResponseStatus.SUCCESS,
+                        "Authentication success"
+                    )
+                )
                 //TODO handling error cases
                 deleteToken(token)
                 return
             }
 
-            LifecycleOperation.CLOSE -> {
+            WebSocketLifecycleOperation.CLOSE -> {
                 return handleWsClose(ctx)
             }
         }
     }
 
+    fun validateWsAuth(ctx: WsContext, message: WebSocketMessage): Boolean {
+        val record = wsUserMap[ctx]
+        return if (record != null) {
+            message.email == record.email && message.token == record.token && record.authenticated
+        } else {
+            false
+        }
+    }
+
     fun handleWsClose(ctx: WsContext) {
         wsUserMap.remove(ctx)
-        ctx.sendAsClass(wsResponse(WebSocketStatus.SUCCESS, "web socket close success"))
+        ctx.sendAsClass(
+            OutgoingLifecycleMessage(
+                "",
+                "",
+                WebSocketLifecycleOperation.AUTHENTICATE,
+                WebSocketResponseStatus.SUCCESS,
+                "Socket closed"
+            )
+        )
         return
     }
 
@@ -214,7 +249,11 @@ class Auth(private val db: DatabaseHelper, private val secure: Boolean, private 
         }
     }
 
-    private fun createSession(email: String, cookieLifetime: Duration = Duration.ofHours(24), isHttpOnly: Boolean = true): Pair<Cookie, Long> {
+    private fun createSession(
+        email: String,
+        cookieLifetime: Duration = Duration.ofHours(24),
+        isHttpOnly: Boolean = true
+    ): Pair<Cookie, Long> {
         val expireTimestamp = Instant.now().plus(cookieLifetime).epochSecond
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()

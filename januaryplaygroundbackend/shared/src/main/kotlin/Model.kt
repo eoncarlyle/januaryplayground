@@ -28,7 +28,7 @@ enum class TradeType {
     @JsonAlias("buy")
     BUY,
 
-    @JsonAlias("")
+    @JsonAlias("sell")
     SELL;
 }
 
