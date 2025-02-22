@@ -182,7 +182,7 @@ export async function setupWebsocket(
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
-          type: "lifecycle",
+          type: "incomingLifecycle",
           token: tempSessionAuth.token,
           email: email,
           operation: "authenticate",
@@ -192,7 +192,7 @@ export async function setupWebsocket(
       socket.onopen = (_event) => {
         socket.send(
           JSON.stringify({
-            type: "lifecycle",
+            type: "incomingLifecycle",
             token: tempSessionAuth.token,
             email: email,
             operation: "authenticate",

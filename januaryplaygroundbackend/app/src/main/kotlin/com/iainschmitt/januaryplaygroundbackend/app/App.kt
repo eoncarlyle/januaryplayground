@@ -68,13 +68,13 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     }
                 } catch (e: Exception) {
                     logger.error("Unable to serialise '{}'", ctx.message())
-                    ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, "", "", "Internal server error"))
+                    ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, null, "Internal server error"))
                 }
             }
             ws.onClose { ctx ->
                 logger.info("Closing WebSocket connection")
                 try {
-                    auth.handleWsClose(ctx)
+                    auth.handleWsClose(ctx, null)
                 } catch (e: IOException) {
                     logger.warn("Exception-throwing close")
                 }

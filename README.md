@@ -124,6 +124,7 @@ private fun startServerEventSimulation() {
   - Reserve for recording trades?
 - The arbiter of time is the app module
   - No times sent by the client are to be trusted
+- Doing the markets transactions over websockets doesn't make sense, these are a better fit for request/response
 
 ## Previous Topic Notes
 

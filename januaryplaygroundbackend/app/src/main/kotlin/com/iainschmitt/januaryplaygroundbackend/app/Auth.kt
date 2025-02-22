@@ -132,9 +132,8 @@ class Auth(
         logger.info("Incoming connection")
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
         ctx.sendAsClass(
-            OutgoingLifecycleMessage<String>(
-                "",
-                "",
+            OutgoingLifecycleMessage(
+                null,
                 WebSocketLifecycleOperation.AUTHENTICATE,
                 WebSocketResponseStatus.ACCEPTED,
                 "Connection attempt acknowledged"
@@ -159,7 +158,6 @@ class Auth(
                 wsUserMap[ctx] = WsUserMapRecord(token, email, true)
                 ctx.sendAsClass(
                     OutgoingLifecycleMessage(
-                        token,
                         email,
                         WebSocketLifecycleOperation.AUTHENTICATE,
                         WebSocketResponseStatus.SUCCESS,
@@ -172,26 +170,16 @@ class Auth(
             }
 
             WebSocketLifecycleOperation.CLOSE -> {
-                return handleWsClose(ctx)
+                return handleWsClose(ctx, email)
             }
         }
     }
 
-    fun validateWsAuth(ctx: WsContext, message: WebSocketMessage): Boolean {
-        val record = wsUserMap[ctx]
-        return if (record != null) {
-            message.email == record.email && message.token == record.token && record.authenticated
-        } else {
-            false
-        }
-    }
-
-    fun handleWsClose(ctx: WsContext) {
+    fun handleWsClose(ctx: WsContext, email: String?) {
         wsUserMap.remove(ctx)
         ctx.sendAsClass(
             OutgoingLifecycleMessage(
-                "",
-                "",
+                email,
                 WebSocketLifecycleOperation.AUTHENTICATE,
                 WebSocketResponseStatus.SUCCESS,
                 "Socket closed"
