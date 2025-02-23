@@ -9,7 +9,7 @@ import org.slf4j.Logger
 import java.time.Duration
 import java.time.Instant
 
-class Auth(
+class AuthService(
     private val db: DatabaseHelper,
     private val secure: Boolean,
     private val wsUserMap: WsUserMap,
@@ -20,7 +20,7 @@ class Auth(
     private val email = "email"
     private val expireTime = "expireTime"
 
-    fun signUpHandler(ctx: Context) {
+    fun signUp(ctx: Context) {
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
         if (emailPresent(dto.email)) {
@@ -33,7 +33,7 @@ class Auth(
         try {
             db.query { conn ->
                 conn.prepareStatement(
-                    "insert into users (email, password_hash) values (?, ?)"
+                    "insert into user (email, password_hash) values (?, ?)"
                 )
                     .use { stmt ->
                         stmt.setString(1, dto.email)
@@ -50,11 +50,11 @@ class Auth(
         }
     }
 
-    fun logInHandler(ctx: Context) {
+    fun logIn(ctx: Context) {
         val dto = ctx.bodyAsClass(CredentialsDto::class.java)
         val passwordHash: String? =
             db.query { conn ->
-                conn.prepareStatement("select password_hash from users where email = ?").use { stmt
+                conn.prepareStatement("select password_hash from user where email = ?").use { stmt
                     ->
                     stmt.setString(1, dto.email)
                     stmt.executeQuery().use { rs ->
@@ -69,11 +69,11 @@ class Auth(
             ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
             ctx.status(200)
         } else {
-            throw ForbiddenResponse("email or password not found")
+            throw ForbiddenResponse("Email or password not found")
         }
     }
 
-    fun evaluateAuthHandler(ctx: Context) {
+    fun evaluateAuth(ctx: Context) {
         val token = ctx.cookie(session)
         val userAuth = if (token != null) evaluateUserAuth(token) else null
         if (token != null && userAuth != null) {
@@ -88,15 +88,25 @@ class Auth(
             ctx.status(403)
         }
     }
+    fun evaluateAuthMiddleware(ctx: Context, email: String) {
+        val token = ctx.cookie(session)
+        val userAuth = if (token != null) evaluateUserAuth(token) else null
+        val valid = token != null && userAuth != null && email == userAuth.first
+
+        if (!valid) {
+            ctx.json(mapOf("message" to "Fail"))
+            ctx.status(403)
+        }
+    }
 
     // Yet only used by the websockets
-    fun temporarySessionHttpHandler(ctx: Context) {
+    fun temporarySession(ctx: Context) {
         val token = ctx.cookie(session)
         val userAuth = if (token != null) evaluateUserAuth(token) else null
         val dto = ctx.bodyAsClass(TemporarySessionDto::class.java)
         if (token != null && userAuth != null) {
-            //val websocketSession = createSession(dto.email, Duration.ofMinutes(1))
-            val websocketSession = createSession(dto.email, Duration.ofMinutes(5), false)
+            //val websocketSession = createSession(dto.email, Duration.ofMinutes(1)
+            val websocketSession = createSession(dto.email, Duration.ofMinutes(2), false)
             ctx.json(mapOf("token" to websocketSession.first.value))
             ctx.status(201)
         } else {
@@ -230,7 +240,7 @@ class Auth(
 
     private fun emailPresent(email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select email from users where email = ?").use { stmt ->
+            conn.prepareStatement("select email from user where email = ?").use { stmt ->
                 stmt.setString(1, email)
                 stmt.executeQuery().use { rs -> rs.next() }
             }

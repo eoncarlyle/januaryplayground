@@ -13,6 +13,10 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `bcedfa7`
+> The authentication flow seems to delete the token immediately after successful authentication...
+> ...This might cause issues if there's any network instability during the WebSocket connection process. Consider adding a grace period or different token lifecycle management.
+
 ### `48e627d`
 - Note: diff evaluated from `32686c8` to `48e627d`
 - Backend
@@ -102,6 +106,14 @@ private fun startServerEventSimulation() {
 
 ## Active Topic Notes
 
+### Table design
+- The columns `user` and `ticker` in the `position` table refer to `email` and `symbol` in the `user` and `ticker` tables
+- I might come to regret this, but prices will be reflected as integers at least for now
+- Because SQLite does not have a boolean datatype, `open` in `ticker` will need to be `0` or `1`
+- Position types (long or short), will be reflected in integer form as well
+- This information will all need to live somewhere
+- Positions reflect ownership of a ticker, while
+
 ### Initial Market Design
 - Start with single instrument, long only
 - Initially don't support end-user order submission
@@ -115,7 +127,7 @@ private fun startServerEventSimulation() {
   - Exchange
     - A counterpart order needs to exist and the trader needs to have the funds to run it
     - This needs to check against the database
-- Have a tick timing system: not dependent on the wallclock time, but rather dependant on the time relative to the market starting
+- ~~Have a tick timing system: not dependent on the wallclock time, but rather dependant on the time relative to the market starting~~
 - Client requests originate via WebSockets
   - ~~Not entirely sure how to split up the services~~
     - ~~Client -> WebSocket -> App module -> Kafka -> Market module -> Kafka -> App module -> WebSocket -> Client?~~
@@ -125,6 +137,12 @@ private fun startServerEventSimulation() {
 - The arbiter of time is the app module
   - No times sent by the client are to be trusted
 - Doing the markets transactions over websockets doesn't make sense, these are a better fit for request/response
+- Only market and FOK orders will validate that required balance exists for buys/required shares exist for sales
+  - For other order types, validation will happen aysnchronously
+  - For asyncrhonous resolution, if resolution criteria met but insufficient balance/shares present then the pending order will be deeleted
+- We will need to implement limit orders in order to get the naive market maker running correctly
+- Need to destinguish between position type and order types, come back to this
+- I don't think that the non-market `OrderTypes` need to include prices given that they will be reflected elsewhere
 
 ## Previous Topic Notes
 

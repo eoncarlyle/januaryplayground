@@ -6,6 +6,7 @@ import io.javalin.websocket.WsContext
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 fun main(args: Array<String>) {
@@ -28,6 +29,7 @@ fun main(args: Array<String>) {
 class App(db: DatabaseHelper, secure: Boolean) {
     private val wsUserMap: WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>()
     private val logger by lazy { LoggerFactory.getLogger(App::class.java) }
+    private val transactionSemaphore: Semaphore = Semaphore(1);
 
     private val javalinApp = Javalin.create({ config ->
         config.bundledPlugins.enableCors { cors ->
@@ -47,24 +49,27 @@ class App(db: DatabaseHelper, secure: Boolean) {
             )
         }
     })
-    private val auth = Auth(db, secure, wsUserMap, logger)
+    private val authService = AuthService(db, secure, wsUserMap, logger)
 
     fun run() {
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
-        this.javalinApp.post("/auth/signup") { ctx -> auth.signUpHandler(ctx) }
-        this.javalinApp.post("/auth/login") { ctx -> auth.logInHandler(ctx) }
-        this.javalinApp.get("/auth/evaluate") { ctx -> auth.evaluateAuthHandler(ctx) }
-        this.javalinApp.post("/auth/logout") { ctx -> auth.logOut(ctx) }
-        this.javalinApp.post("/auth/sessions/temporary") { ctx -> auth.temporarySessionHttpHandler(ctx) }
+        this.javalinApp.post("/auth/signup") { ctx -> authService.signUp(ctx) }
+        this.javalinApp.post("/auth/login") { ctx -> authService.logIn(ctx) }
+        this.javalinApp.get("/auth/evaluate") { ctx -> authService.evaluateAuth(ctx) }
+        this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
+        this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
+
+        this.javalinApp.beforeMatched("/market") { ctx -> authService.evaluateAuth(ctx)}
+        // Providing
 
         this.javalinApp.ws("/ws") { ws ->
-            ws.onConnect { ctx -> auth.handleWsConnection(ctx) }
+            ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
             ws.onMessage { ctx ->
                 try {
                     val message = ctx.messageAsClass<WebSocketMessage>()
                     when (message) {
-                        is IncomingSocketLifecycleMessage -> auth.handleWsLifecycleMessage(ctx, message)
+                        is IncomingSocketLifecycleMessage -> authService.handleWsLifecycleMessage(ctx, message)
                     }
                 } catch (e: Exception) {
                     logger.error("Unable to serialise '{}'", ctx.message())
@@ -74,7 +79,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             ws.onClose { ctx ->
                 logger.info("Closing WebSocket connection")
                 try {
-                    auth.handleWsClose(ctx, null)
+                    authService.handleWsClose(ctx, null)
                 } catch (e: IOException) {
                     logger.warn("Exception-throwing close")
                 }
