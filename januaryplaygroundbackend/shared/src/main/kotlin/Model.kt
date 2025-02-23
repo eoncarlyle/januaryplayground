@@ -77,8 +77,8 @@ interface OrderRequest : Order {
 }
 
 interface OrderCancel {
-    val orderId: String;
-    val email: String;
+    val orderId: Int
+    val email: String
 }
 
 interface OrderCancelRequest : OrderCancel {
@@ -87,21 +87,27 @@ interface OrderCancelRequest : OrderCancel {
 
 // Only needed for market and fill-or-kill
 interface OrderAcknowledged : Order {
-    val orderId: String
-    val acknowledgedTick: Long
+    val orderId: Int
+    val acknowledgedTick: Long // Will need to include/reference any partial execution!
 }
 
 // Can have multiple with a singe
 interface OrderFilled : Order {
-    val orderId: String
+    val positionId: Int
     val filledTick: Long
+}
+
+interface OrderPartialFilled : Order {
+    val orderId: Int
+    val filledTick: Long
+    val finalSize: Long // The size in `Order` corresponds to the transacted size
 }
 
 enum class OrderFailedCode {
     MARKET_CLOSED,
     UNKNOWN_TICKER,
     UNKNOWN_TRADER,
-    INSUFFICIENT_CREDITS,
+    INSUFFICIENT_BALANCE,
     INSUFFICIENT_SHARES, // Market, FOK
 }
 
@@ -122,7 +128,7 @@ interface OrderCancelConfirmed : OrderCancel {
 }
 
 interface OrderCancelFailed {
-    val orderId: String
+    val orderId: Int
     val failedTick: Long
     val orderCancelFailedCode: OrderCancelFailedCode
 }

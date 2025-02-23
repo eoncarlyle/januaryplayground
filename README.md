@@ -143,6 +143,7 @@ private fun startServerEventSimulation() {
 - We will need to implement limit orders in order to get the naive market maker running correctly
 - Need to destinguish between position type and order types, come back to this
 - I don't think that the non-market `OrderTypes` need to include prices given that they will be reflected elsewhere
+- A user's portfolio includes both `positions` and `pending_orders`: an order request or order cancelation converts between the two
 
 ## Previous Topic Notes
 

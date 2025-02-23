@@ -42,7 +42,7 @@ data class IncomingOrderRequest(
 data class OutgoingOrderAcknowledged(
     override val type: String = "outgoingOrderAcknowledged",
     override val email: String,
-    override val orderId: String,
+    override val orderId: Int,
     override val ticker: Ticker,
     override val size: Int,
     override val tradeType: TradeType,
@@ -53,7 +53,7 @@ data class OutgoingOrderAcknowledged(
 data class OutgoingOrderFilled(
     override val type: String = "outgoingOrderFilled",
     override val email: String,
-    override val orderId: String,
+    override val positionId: Int,
     override val ticker: Ticker,
     override val size: Int,
     override val tradeType: TradeType,
@@ -64,7 +64,7 @@ data class OutgoingOrderFilled(
 data class IncomingOrderCancelRequest(
     override val type: String = "incomingOrderCancel",
     override val email: String,
-    override val orderId: String,
+    override val orderId: Int,
 ) : OrderCancelRequest, HttpOrderCancelledBody
 
 data class OutgoingOrderFailed(
@@ -80,12 +80,12 @@ data class OutgoingOrderFailed(
 data class OutgoingOrderCancelConfirmed(
     override val type: String = "outgoingOrderCancel",
     override val email: String,
-    override val orderId: String,
+    override val orderId: Int,
     override val confirmedTick: Long
 ) : OrderCancelConfirmed, HttpOrderCancelledBody
 
 data class OutgoingOrderCancelFailed(
-    override val orderId: String,
+    override val orderId: Int,
     override val orderCancelFailedCode: OrderCancelFailedCode,
     override val failedTick: Long
 ) : OrderCancelFailed

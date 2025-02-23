@@ -39,6 +39,8 @@ dependencies {
     implementation("org.mindrot:jbcrypt:0.4")
     implementation("com.fasterxml.uuid:java-uuid-generator:4.3.0")
     implementation("org.slf4j:slf4j-simple:2.0.7")
+    implementation("io.arrow-kt:arrow-core:2.0.1")
+    implementation("io.arrow-kt:arrow-fx-coroutines:2.0.1")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
