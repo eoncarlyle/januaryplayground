@@ -159,6 +159,7 @@ class MarketService(
                 )
                 else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
             } else if (subsequentSize > order.size) {
+                // If condition not met, have to split
                 if (orderBookEntry.orderType != OrderType.FillOrKill && orderBookEntry.orderType != OrderType.AllOrNothing) {
                     val positionsRemaining = subsequentSize - order.size
                     val finalEntry = orderBookEntry.copy()
@@ -170,7 +171,6 @@ class MarketService(
                     )
                     else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
                 }
-                // Otherwise cannot split order, must continue
             } else {
                 proposedOrders.add(orderBookEntry)
             }

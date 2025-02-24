@@ -13,6 +13,15 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `ac5e8f8`
+- The market order matching logic in getMarketOrderProposal could benefit from better organization
+-  The error handling could be more granular, could add:
+  - Validation errors for order parameters
+  - Market condition errors (e.g., circuit breakers)
+  - System state errors (e.g., order book inconsistency)
+- `OrderPartialFilled` not utilised
+- Consider Arrow's `ValidatedNel` class
+
 ### `bcedfa7`
 > The authentication flow seems to delete the token immediately after successful authentication...
 > ...This might cause issues if there's any network instability during the WebSocket connection process. Consider adding a grace period or different token lifecycle management.
@@ -144,6 +153,7 @@ private fun startServerEventSimulation() {
 - Need to destinguish between position type and order types, come back to this
 - I don't think that the non-market `OrderTypes` need to include prices given that they will be reflected elsewhere
 - A user's portfolio includes both `positions` and `pending_orders`: an order request or order cancelation converts between the two
+  - However: only _sell_ orders in `pending_orders` are part of the portfolio 
 
 ## Previous Topic Notes
 
