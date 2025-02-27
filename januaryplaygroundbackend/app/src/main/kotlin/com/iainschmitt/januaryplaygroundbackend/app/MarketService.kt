@@ -30,22 +30,25 @@ class MarketService(
 ) {
 
     fun orderRequest(order: IncomingOrderRequest) {
-
-        // New tables: ticker, position, store the market status on the ticker itself
-        // Add balance to user: integer?
-
-        // DB Notes
-
-        // Validate ticker
-        // Validate market open
-        // Validate position
-        // Put market-order specific functions later down
         validateTicker(order.ticker)
 
         if (order.orderType == OrderType.Market) {
             marketOrderRequest(order)
+        } else if (order.orderType == OrderType.Limit){
+            limitOrderRequest(order)
         } else {
             throw BadRequestResponse("Order types '${order.orderType}' not yet implemented")
+        }
+    }
+
+    fun limitOrderRequest(order: IncomingOrderRequest) {
+        transactionSemaphore.acquire()
+        try {
+            //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
+
+            //If a market order immediately crossed, an order success should be sent instead of an order ACK
+        } finally {
+            transactionSemaphore.release()
         }
     }
 
@@ -222,6 +225,7 @@ class MarketService(
                     stmt.setInt(
                         2, pendingOrderTradeType.ordinal
                     )
+
                     stmt.executeQuery().use { rs ->
                         while (rs.next()) {
                             matchingPendingOrders.add(

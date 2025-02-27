@@ -62,7 +62,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
 
         this.javalinApp.beforeMatched("/market") { ctx -> authService.evaluateAuth(ctx)}
-        // Providing
+        // Note about market orders: they need to be ordered by received time in order to be treated correctly
 
         this.javalinApp.ws("/ws") { ws ->
             ws.onConnect { ctx -> authService.handleWsConnection(ctx) }

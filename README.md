@@ -154,6 +154,7 @@ private fun startServerEventSimulation() {
 - I don't think that the non-market `OrderTypes` need to include prices given that they will be reflected elsewhere
 - A user's portfolio includes both `positions` and `pending_orders`: an order request or order cancelation converts between the two
   - However: only _sell_ orders in `pending_orders` are part of the portfolio 
+- All orders will need to have time recorded in order to respect FIFO ordering
 
 ## Previous Topic Notes
 
