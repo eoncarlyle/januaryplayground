@@ -1,14 +1,14 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
-import arrow.core.Either
-import arrow.core.constant
+import arrow.core.*
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.BadRequestResponse
 import io.javalin.http.InternalServerErrorResponse
 import io.javalin.http.NotFoundResponse
+import org.checkerframework.common.returnsreceiver.qual.UnknownThis
 import org.slf4j.Logger
+import java.sql.Statement
 import java.util.concurrent.Semaphore
-import kotlin.collections.ArrayList
 
 // Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems
 data class OrderBookEntry(
@@ -29,30 +29,33 @@ class MarketService(
     private val transactionSemaphore: Semaphore
 ) {
 
-    fun orderRequest(order: IncomingOrderRequest) {
-        validateTicker(order.ticker)
 
-        if (order.orderType == OrderType.Market) {
-            marketOrderRequest(order)
-        } else if (order.orderType == OrderType.Limit){
-            limitOrderRequest(order)
-        } else {
-            throw BadRequestResponse("Order types '${order.orderType}' not yet implemented")
-        }
+    fun orderRequest(order: IncomingOrderRequest):  Either<OrderFailedCode, IOrderFilled> {
+        return validateTicker(order.ticker).map { code -> Either.Left(code) }
+            .getOrElse {
+                val receivedTimestamp = System.currentTimeMillis()
+                when (order.orderType) {
+                    OrderType.Market -> marketOrderRequest(order)
+                    OrderType.Limit -> limitOrderRequest(order, receivedTimestamp)
+                    else -> Either.Left(OrderFailedCode.NOT_IMPLEMENTED)
+                }
+            }
     }
 
-    fun limitOrderRequest(order: IncomingOrderRequest) {
+    fun limitOrderRequest(order: IncomingOrderRequest, recievedTimestamp: Long): Either<OrderFailedCode, IOrderFilled> {
+        return Either.Left(OrderFailedCode.NOT_IMPLEMENTED)
         transactionSemaphore.acquire()
         try {
             //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
-
             //If a market order immediately crossed, an order success should be sent instead of an order ACK
+
+
         } finally {
             transactionSemaphore.release()
         }
     }
 
-    fun marketOrderRequest(order: IncomingOrderRequest) {
+    fun marketOrderRequest(order: IncomingOrderRequest): Either<OrderFailedCode, IOrderFilled> {
         transactionSemaphore.acquire()
         try {
             val userBalance = db.query { conn ->
@@ -71,15 +74,18 @@ class MarketService(
             val rMarketOrderProposal = getMarketOrderProposal(order, userBalance, matchingPendingOrders)
 
             rMarketOrderProposal.mapLeft { code ->
-                if (code == OrderFailedCode.INSUFFICIENT_SHARES) {
-                    throw BadRequestResponse("Insufficient shares for order")
-                } else if (code === OrderFailedCode.INSUFFICIENT_BALANCE) {
-                    throw BadRequestResponse("Insufficient balance for order")
-                } else {
-                    logger.error("Error code '${code}' returned from marketOrderProposal")
-                    throw InternalServerErrorResponse("Internal error has occured")
-                }
+                return Either.Left(code)
+                //if (code == OrderFailedCode.INSUFFICIENT_SHARES) {
+                //    throw BadRequestResponse("Insufficient shares for order")
+                //} else if (code === OrderFailedCode.INSUFFICIENT_BALANCE) {
+                //    throw BadRequestResponse("Insufficient balance for order")
+                //} else {
+                //    logger.error("Error code '${code}' returned from marketOrderProposal")
+                //    throw InternalServerErrorResponse("Internal error has occured")
+                //}
             }
+
+            var positionId: Int? = null
 
             rMarketOrderProposal.map { marketOrderProposal ->
 
@@ -130,15 +136,40 @@ class MarketService(
                     // SQLite docs:
                     // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
                     //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
-                    conn.prepareStatement("insert into position values ( ?, ?, ?, ? )").use { stmt ->
+                    positionId = conn.prepareStatement(
+                        "insert into position values ( ?, ?, ?, ? )",
+                        Statement.RETURN_GENERATED_KEYS
+                    ).use { stmt ->
                         stmt.setString(1, order.email)
                         stmt.setString(2, order.ticker)
                         stmt.setInt(3, order.tradeType.ordinal)
                         stmt.setInt(4, order.size)
+                        stmt.executeUpdate()
+
+                        val rs = stmt.generatedKeys
+                        if (rs.next()) rs.getInt(1) else -1
                     }
                 }
             }
             transactionSemaphore.release()
+            if (positionId != null) {
+                val filledTick = System.currentTimeMillis()
+
+                return Either.Right(
+                    OrderFilled(
+                        order.ticker,
+                        positionId!!,
+                        filledTick,
+                        order.tradeType,
+                        order.orderType,
+                        order.size,
+                        order.email
+                    )
+                )
+            } else {
+                logger.error("Position key not set in transaction")
+                return Either.Left(OrderFailedCode.INTERNAL_ERROR)
+            }
         } finally {
             transactionSemaphore.release()
         }
@@ -185,7 +216,7 @@ class MarketService(
         // Will need to include/reference any partial execution of an order between submission and cancelation request
     }
 
-    private fun validateTicker(ticker: Ticker) {
+    private fun validateTicker(ticker: Ticker): Option<OrderFailedCode> {
         val pair = db.query { conn ->
             conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->
                 stmt.setString(1, ticker)
@@ -194,10 +225,12 @@ class MarketService(
         }
 
         if (pair == null) {
-            throw NotFoundResponse("Ticker symbol '${ticker}' not found")
+            //throw NotFoundResponse("Ticker symbol '${ticker}' not found")
+            return Some(OrderFailedCode.UNKNOWN_TICKER)
         } else if (pair.second == 0) {
-            throw BadRequestResponse("Ticker symbol '${ticker}' not open for transactions")
-        }
+            //throw BadRequestResponse("Ticker symbol '${ticker}' not open for transactions")
+            return Some(OrderFailedCode.MARKET_CLOSED)
+        } else return None
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String) {
@@ -247,5 +280,6 @@ class MarketService(
         else matchingPendingOrders.sortByDescending { pendingOrder -> pendingOrder.price }
         return matchingPendingOrders
     }
+
 
 }

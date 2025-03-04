@@ -92,10 +92,20 @@ interface OrderAcknowledged : Order {
 }
 
 // Can have multiple with a singe
-interface OrderFilled : Order {
+interface IOrderFilled : Order {
     val positionId: Int
-    val filledTick: Long
+    val filledTime: Long
 }
+
+data class OrderFilled(
+    override val ticker: Ticker,
+    override val positionId: Int,
+    override val filledTime: Long,
+    override val tradeType: TradeType,
+    override val orderType: OrderType,
+    override val size: Int,
+    override val email: String
+) : IOrderFilled
 
 interface OrderPartialFilled : Order {
     val orderId: Int
@@ -109,6 +119,8 @@ enum class OrderFailedCode {
     UNKNOWN_TRADER,
     INSUFFICIENT_BALANCE,
     INSUFFICIENT_SHARES, // Market, FOK
+    INTERNAL_ERROR,
+    NOT_IMPLEMENTED
 }
 
 interface OrderFailed : Order {

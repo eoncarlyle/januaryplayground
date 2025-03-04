@@ -1,9 +1,6 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
-import com.fasterxml.jackson.annotation.JsonSubTypes
-import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import java.util.*
 
 // Probably not neccesary with how this is shaping up
 // @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
@@ -50,7 +47,7 @@ data class OutgoingOrderAcknowledged(
     override val acknowledgedTick: Long
 ) : OrderAcknowledged, HttpOrderBody
 
-data class OutgoingOrderFilled(
+data class OutgoingIOrderFilled(
     override val type: String = "outgoingOrderFilled",
     override val email: String,
     override val positionId: Int,
@@ -58,8 +55,8 @@ data class OutgoingOrderFilled(
     override val size: Int,
     override val tradeType: TradeType,
     override val orderType: OrderType,
-    override val filledTick: Long
-) : OrderFilled, HttpOrderBody
+    override val filledTime: Long
+) : IOrderFilled, HttpOrderBody
 
 data class IncomingOrderCancelRequest(
     override val type: String = "incomingOrderCancel",
