@@ -32,7 +32,7 @@ class MarketDao(
 
     fun pendingOrderExists(pendingOrderId: Int, email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select id from pending_order where id = ? and user = ?").use { stmt ->
+            conn.prepareStatement("select id from pending_order where id = ? and user = ? and filled_tick != -1").use { stmt ->
                 stmt.setInt(1, pendingOrderId)
                 stmt.setString(2, email)
                 stmt.executeQuery().use { rs -> rs.next() }
@@ -46,7 +46,7 @@ class MarketDao(
     ): ArrayList<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, price, size, order_type from pending_order where ticker = ? and trade_type = ?")
+            conn.prepareStatement("select id, user, ticker, price, size, order_type from pending_order where ticker = ? and trade_type = ? and filled_tick != -1")
                 .use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(
@@ -72,18 +72,19 @@ class MarketDao(
         return matchingPendingOrders
     }
 
-    fun fillMarketOrder(order: IncomingOrderRequest, marketOrderProposal: ArrayList<OrderBookEntry>): Int? {
+    fun fillMarketOrder(order: IncomingOrderRequest, marketOrderProposal: ArrayList<OrderBookEntry>): Pair<Int?, Long> {
         var positionId: Int? = null
+        val filledTick: Long = System.currentTimeMillis()
         val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
         val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
         // From perspective of the counterparties:
         // this is the direction that the counterparty balances will go
         val orderSign = if (order.tradeType == TradeType.Buy) 1 else -1
         db.query { conn ->
-
             // Addressing complete orders
-            conn.prepareStatement("delete from pending_order where id in ?").use { stmt ->
-                stmt.setArray(1, conn.createArrayOf("text", completeOrders.map { it.id }.toTypedArray()))
+            conn.prepareStatement("update pending_order set filled_tick = ? where id in ?").use { stmt ->
+                stmt.setLong(1, filledTick)
+                stmt.setArray(2, conn.createArrayOf("text", completeOrders.map { it.id }.toTypedArray()))
                 stmt.executeUpdate()
             }
             // TODO: There is certainly a way to do this in a single query
@@ -134,6 +135,6 @@ class MarketDao(
                 if (rs.next()) rs.getInt(1) else -1
             }
         }
-        return positionId
+        return Pair(positionId, filledTick)
     }
 }

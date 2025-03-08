@@ -3,9 +3,7 @@ package com.iainschmitt.januaryplaygroundbackend.app
 import arrow.core.*
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.BadRequestResponse
-import io.javalin.http.NotFoundResponse
 import org.slf4j.Logger
-import java.sql.Statement
 import java.util.concurrent.Semaphore
 
 // Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems
@@ -29,25 +27,23 @@ class MarketService(
 
     private val marketDao = MarketDao(db)
 
-    fun orderRequest(order: IncomingOrderRequest):  Either<OrderFailedCode, IOrderFilled> {
+    fun orderRequest(order: IncomingOrderRequest): Either<OrderFailedCode, IOrderFilled> {
         return validateTicker(order.ticker).map { code -> Either.Left(code) }
             .getOrElse {
                 val receivedTimestamp = System.currentTimeMillis()
                 when (order.orderType) {
                     OrderType.Market -> marketOrderRequest(order)
-                    OrderType.Limit -> limitOrderRequest(order, receivedTimestamp)
+                    //OrderType.Limit -> limitOrderRequest(order, receivedTimestamp)
                     else -> Either.Left(OrderFailedCode.NOT_IMPLEMENTED)
                 }
             }
     }
 
     fun limitOrderRequest(order: IncomingOrderRequest, recievedTimestamp: Long): Either<OrderFailedCode, IOrderFilled> {
-        return Either.Left(OrderFailedCode.NOT_IMPLEMENTED)
         transactionSemaphore.acquire()
         try {
             //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
             //If a market order immediately crossed, an order success should be sent instead of an order ACK
-
 
         } finally {
             transactionSemaphore.release()
@@ -60,15 +56,15 @@ class MarketService(
             val userBalance = marketDao.getUserBalance(order.email)
             if (userBalance == null) return Either.Left(OrderFailedCode.UNKNOWN_TRADER)
 
-            val matchingPendingOrders = getMatchingOrderBook(
+            val matchingPendingOrders = marketDao.getMatchingOrderBook(
                 order.ticker,
                 if (order.tradeType == TradeType.Buy) TradeType.Sell else TradeType.Buy
             )
 
             val rMarketOrderProposal = getMarketOrderProposal(order, userBalance, matchingPendingOrders)
 
-            rMarketOrderProposal.mapLeft { code ->
-                return Either.Left(code)
+            return rMarketOrderProposal.mapLeft { code ->
+                return@mapLeft code
                 //if (code == OrderFailedCode.INSUFFICIENT_SHARES) {
                 //    throw BadRequestResponse("Insufficient shares for order")
                 //} else if (code === OrderFailedCode.INSUFFICIENT_BALANCE) {
@@ -77,32 +73,24 @@ class MarketService(
                 //    logger.error("Error code '${code}' returned from marketOrderProposal")
                 //    throw InternalServerErrorResponse("Internal error has occured")
                 //}
-            }
-
-            // Fix this at some point, this is bad style mixing
-            var positionId: Int? = null
-            rMarketOrderProposal.map { marketOrderProposal ->
-                positionId = marketDao.fillMarketOrder(order, marketOrderProposal)
-            }
-            transactionSemaphore.release()
-
-            if (positionId != null) {
-                val filledTick = System.currentTimeMillis()
-
-                return Either.Right(
-                    OrderFilled(
-                        order.ticker,
-                        positionId!!,
-                        filledTick,
-                        order.tradeType,
-                        order.orderType,
-                        order.size,
-                        order.email
+            }.flatMap { marketOrderProposal -> //
+                val positionPair: Pair<Int?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
+                if (positionPair.first != null) {
+                    return@flatMap Either.Right(
+                        OrderFilled(
+                            order.ticker,
+                            positionPair.first!!,
+                            positionPair.second,
+                            order.tradeType,
+                            order.orderType,
+                            order.size,
+                            order.email
+                        )
                     )
-                )
-            } else {
-                logger.error("Position key not set in transaction")
-                return Either.Left(OrderFailedCode.INTERNAL_ERROR)
+                } else {
+                    logger.error("Position key not set in transaction")
+                    return@flatMap Either.Left(OrderFailedCode.INTERNAL_ERROR)
+                }
             }
         } finally {
             transactionSemaphore.release()
