@@ -9,6 +9,7 @@ import org.slf4j.Logger
 import java.time.Duration
 import java.time.Instant
 
+// Should break out the queries here into AuthDao
 class AuthService(
     private val db: DatabaseHelper,
     private val secure: Boolean,
