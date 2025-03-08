@@ -1,9 +1,6 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
-import com.iainschmitt.januaryplaygroundbackend.shared.Order
-import com.iainschmitt.januaryplaygroundbackend.shared.Ticker
-import com.iainschmitt.januaryplaygroundbackend.shared.TradeType
-import com.iainschmitt.januaryplaygroundbackend.shared.getOrderType
+import com.iainschmitt.januaryplaygroundbackend.shared.*
 import java.sql.Statement
 
 // This isn't really a true DAO because that implies more of a 1-to-1 relationship with tables, but
@@ -46,7 +43,7 @@ class MarketDao(
     ): ArrayList<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, price, size, order_type from pending_order where ticker = ? and trade_type = ? and filled_tick != -1")
+            conn.prepareStatement("select id, user, ticker, price, size, order_type, received_tick from pending_order where ticker = ? and trade_type = ? and filled_tick != -1")
                 .use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(
@@ -62,7 +59,8 @@ class MarketDao(
                                     rs.getString("ticker"),
                                     rs.getInt("price"),
                                     rs.getInt("size"),
-                                    getOrderType(rs.getInt("order_type"))
+                                    getOrderType(rs.getInt("order_type")),
+                                    rs.getLong("received_tick")
                                 )
                             )
                         }

@@ -86,10 +86,20 @@ interface OrderCancelRequest : OrderCancel {
 }
 
 // Only needed for market and fill-or-kill
-interface OrderAcknowledged : Order {
+interface IOrderAcknowledged : Order {
     val orderId: Int
     val acknowledgedTick: Long // Will need to include/reference any partial execution!
 }
+
+data class OrderAcknowledged(
+    override val ticker: Ticker,
+    override val orderId: Int,
+    override val acknowledgedTick: Long,
+    override val tradeType: TradeType,
+    override val orderType: OrderType,
+    override val size: Int,
+    override val email: String
+): IOrderAcknowledged
 
 // Can have multiple with a singe
 interface IOrderFilled : Order {
@@ -172,3 +182,16 @@ enum class PositionType {
     LONG,
     SHORT
 }
+
+// Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems
+data class OrderBookEntry(
+    val id: Int,
+    val user: String,
+    val ticker: Ticker,
+    val price: Int,
+    val size: Int,
+    val orderType: OrderType,
+    val receivedTick: Long,
+    var finalSize: Int = 0,
+)
+typealias SortedOrderBook = MutableMap<Int, ArrayList<OrderBookEntry>>

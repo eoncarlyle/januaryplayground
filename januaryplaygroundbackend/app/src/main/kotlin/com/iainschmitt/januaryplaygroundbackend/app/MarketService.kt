@@ -4,18 +4,8 @@ import arrow.core.*
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.BadRequestResponse
 import org.slf4j.Logger
+import java.util.HashMap
 import java.util.concurrent.Semaphore
-
-// Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems
-data class OrderBookEntry(
-    val id: Int,
-    val user: String,
-    val ticker: Ticker,
-    val price: Int,
-    val size: Int,
-    val orderType: OrderType,
-    var finalSize: Int = 0
-)
 
 class MarketService(
     private val db: DatabaseHelper,
@@ -39,11 +29,16 @@ class MarketService(
             }
     }
 
-    fun limitOrderRequest(order: IncomingOrderRequest, recievedTimestamp: Long): Either<OrderFailedCode, IOrderFilled> {
+    fun limitOrderRequest(order: IncomingOrderRequest): Either<OrderFailedCode, IOrderFilled> {
         transactionSemaphore.acquire()
         try {
             //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
             //If a market order immediately crossed, an order success should be sent instead of an order ACK
+
+            // 1) Check if crosses book
+            // 2) Need to populate receivedTimestamp
+            // 3)
+
 
         } finally {
             transactionSemaphore.release()
@@ -56,7 +51,7 @@ class MarketService(
             val userBalance = marketDao.getUserBalance(order.email)
             if (userBalance == null) return Either.Left(OrderFailedCode.UNKNOWN_TRADER)
 
-            val matchingPendingOrders = marketDao.getMatchingOrderBook(
+            val matchingPendingOrders = getSortedMatchingOrderBook(
                 order.ticker,
                 if (order.tradeType == TradeType.Buy) TradeType.Sell else TradeType.Buy
             )
@@ -73,25 +68,26 @@ class MarketService(
                 //    logger.error("Error code '${code}' returned from marketOrderProposal")
                 //    throw InternalServerErrorResponse("Internal error has occured")
                 //}
-            }.flatMap { marketOrderProposal -> //
-                val positionPair: Pair<Int?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
-                if (positionPair.first != null) {
-                    return@flatMap Either.Right(
-                        OrderFilled(
-                            order.ticker,
-                            positionPair.first!!,
-                            positionPair.second,
-                            order.tradeType,
-                            order.orderType,
-                            order.size,
-                            order.email
-                        )
-                    )
-                } else {
-                    logger.error("Position key not set in transaction")
-                    return@flatMap Either.Left(OrderFailedCode.INTERNAL_ERROR)
-                }
             }
+                .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
+                    val positionPair: Pair<Int?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
+                    if (positionPair.first != null) {
+                        return@flatMap Either.Right(
+                            OrderFilled(
+                                order.ticker,
+                                positionPair.first!!,
+                                positionPair.second,
+                                order.tradeType,
+                                order.orderType,
+                                order.size,
+                                order.email
+                            )
+                        )
+                    } else {
+                        logger.error("Position key not set in transaction")
+                        return@flatMap Either.Left(OrderFailedCode.INTERNAL_ERROR)
+                    }
+                }
         } finally {
             transactionSemaphore.release()
         }
@@ -100,38 +96,48 @@ class MarketService(
     private fun getMarketOrderProposal(
         order: IncomingOrderRequest,
         traderBalance: Int,
-        matchingOrderBook: ArrayList<OrderBookEntry>
+        sortedOrderBook: SortedOrderBook
     ): Either<OrderFailedCode, ArrayList<OrderBookEntry>> {
         if (order.orderType != OrderType.Market) {
             throw BadRequestResponse("Illegal arguments: orders of type '${order.orderType}' not matchable by `marketOrderMatch`")
         }
 
         val proposedOrders = ArrayList<OrderBookEntry>()
-        for (orderBookEntry in matchingOrderBook) {
-            val subsequentSize = proposedOrders.sumOf { op -> op.size }
-            if (subsequentSize == order.size) {
-                return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
-                    proposedOrders
-                )
-                else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
-            } else if (subsequentSize > order.size) {
-                // If condition not met, have to split
-                if (orderBookEntry.orderType != OrderType.FillOrKill && orderBookEntry.orderType != OrderType.AllOrNothing) {
-                    val positionsRemaining = subsequentSize - order.size
-                    val finalEntry = orderBookEntry.copy()
-                    finalEntry.finalSize = positionsRemaining
-                    proposedOrders.add(finalEntry)
 
-                    return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
-                        proposedOrders
-                    )
-                    else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
+        val prices = if (order.tradeType == TradeType.Buy) sortedOrderBook.keys.toList()
+            .sorted() else sortedOrderBook.keys.toList().sortedDescending()
+
+        for (price in prices) {
+            //Probably should change over to some Kotlin collections to avoid all this null checking at some point
+            val orderBookEntriesAtPrice = sortedOrderBook[price]
+            if (orderBookEntriesAtPrice != null) {
+                for (orderBookEntry in orderBookEntriesAtPrice) {
+                    val subsequentSize = proposedOrders.sumOf { op -> op.size }
+                    if (subsequentSize == order.size) {
+                        return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
+                            proposedOrders
+                        )
+                        else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
+                    } else if (subsequentSize > order.size) {
+                        // If condition not met, have to split
+                        if (orderBookEntry.orderType != OrderType.FillOrKill && orderBookEntry.orderType != OrderType.AllOrNothing) {
+                            val positionsRemaining = subsequentSize - order.size
+                            val finalEntry = orderBookEntry.copy()
+                            finalEntry.finalSize = positionsRemaining
+                            proposedOrders.add(finalEntry)
+
+                            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
+                                proposedOrders
+                            )
+                            else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
+                        }
+                    } else {
+                        proposedOrders.add(orderBookEntry)
+                    }
                 }
-            } else {
-                proposedOrders.add(orderBookEntry)
             }
+            return Either.Left(OrderFailedCode.INSUFFICIENT_SHARES)
         }
-        return Either.Left(OrderFailedCode.INSUFFICIENT_SHARES)
     }
 
     fun orderCancelRequest(order: IncomingOrderCancelRequest) {
@@ -155,18 +161,30 @@ class MarketService(
         //if (!transactionExists) NotFoundResponse("Transaction '${pendingOrderId}' for user '${email}' not found")
 
         // Need to disambiguate between removed, filled orders
-        if (!transactionExists) return Some(OrderCancelFailedCode.UNKNOWN_ORDER) else return None
+        return if (!transactionExists) Some(OrderCancelFailedCode.UNKNOWN_ORDER) else None
     }
 
-
-    private fun getMatchingOrderBook(
+    private fun getSortedMatchingOrderBook(
         ticker: Ticker,
         pendingOrderTradeType: TradeType
-    ): ArrayList<OrderBookEntry> {
+    ): SortedOrderBook {
         val matchingPendingOrders = marketDao.getMatchingOrderBook(ticker, pendingOrderTradeType)
-        if (pendingOrderTradeType == TradeType.Buy)
-            matchingPendingOrders.sortBy { pendingOrder -> pendingOrder.price }
-        else matchingPendingOrders.sortByDescending { pendingOrder -> pendingOrder.price }
-        return matchingPendingOrders
+        val book: SortedOrderBook = HashMap();
+        matchingPendingOrders.forEach { entry ->
+            if (book.containsKey(entry.price)) {
+                //Probably should change over to some Kotlin collections to avoid all this null checking at some point
+                val ordersAtPrice = book[entry.price]
+                if (ordersAtPrice != null) {
+                    ordersAtPrice.add(entry)
+                    book[entry.price] = ordersAtPrice
+                }
+            } else {
+                book[entry.price] = arrayListOf(entry)
+            }
+        }
+        book.keys.forEach{price ->
+            book[price]?.sortedBy { entry -> entry.receivedTick }
+        }
+        return book
     }
 }
