@@ -18,6 +18,19 @@ class MarketDao(
         }
     }
 
+    fun getUserLongPositions(userEmail: String, ticker: Ticker): ArrayList<Int> {
+        val positions  = ArrayList<Int>()
+        db.query { conn ->
+            conn.prepareStatement("select size from position where email = ? and ticker = ? and type = ?").use { stmt ->
+                stmt.setString(1, userEmail)
+                stmt.setString(2, ticker)
+                stmt.setInt(3, PositionType.LONG.ordinal)
+                stmt.executeQuery().use { rs -> while (rs.next()) rs.getInt("size")  }
+            }
+        }
+        return positions
+    }
+
     fun getTicker(ticker: Ticker): Pair<String, Int>? {
         return db.query { conn ->
             conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->

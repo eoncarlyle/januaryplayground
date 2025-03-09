@@ -31,9 +31,15 @@ typealias Ticker = String
 enum class TradeType {
     //@JsonAlias("buy")
     Buy,
+
     //@JsonAlias("sell")
     Sell;
+    fun isBuy(): Boolean {
+        return this == Buy
+    }
 }
+
+// This is what made the case for extension methods to me
 
 // Much better than the empty interface trick in Java
 
@@ -57,7 +63,7 @@ enum class OrderType {
 }
 
 fun getOrderType(ordinal: Int): OrderType {
-    return when(ordinal) {
+    return when (ordinal) {
         0 -> OrderType.Market
         1 -> OrderType.Limit
         2 -> OrderType.FillOrKill
@@ -100,7 +106,7 @@ data class OrderAcknowledged(
     override val orderType: OrderType,
     override val size: Int,
     override val email: String
-): IOrderAcknowledged
+) : IOrderAcknowledged
 
 // Can have multiple with a singe
 interface IOrderFilled : Order {
@@ -127,7 +133,7 @@ interface OrderPartialFilled : Order {
 enum class OrderFailureCode {
     MARKET_CLOSED,
     UNKNOWN_TICKER,
-    UNKNOWN_TRADER,
+    UNKNOWN_USER,
     INSUFFICIENT_BALANCE,
     INSUFFICIENT_SHARES, // Market, FOK
     INTERNAL_ERROR,
@@ -185,6 +191,14 @@ enum class MarketLifecycleOperation {
 enum class PositionType {
     LONG,
     SHORT
+}
+
+fun getPositionType(ordinal: Int): PositionType {
+    return when (ordinal) {
+        0 -> PositionType.LONG
+        1 -> PositionType.SHORT
+        else -> throw IllegalArgumentException("Illegal OrderType ordinal $ordinal")
+    }
 }
 
 // Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems

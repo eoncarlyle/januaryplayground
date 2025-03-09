@@ -36,6 +36,11 @@ interface IncomingOrderRequest : HttpOrderBody {
     override val orderType: OrderType
 }
 
+fun IncomingOrderRequest.isBuy(): Boolean {
+    return tradeType.isBuy()
+}
+
+
 data class IncomingMarketOrderRequest(
     override val type: String = "incomingOrder",
     override val email: String,

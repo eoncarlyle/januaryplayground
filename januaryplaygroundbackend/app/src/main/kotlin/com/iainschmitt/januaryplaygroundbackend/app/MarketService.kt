@@ -2,7 +2,6 @@ package com.iainschmitt.januaryplaygroundbackend.app
 
 import arrow.core.*
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import io.javalin.http.BadRequestResponse
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
@@ -23,14 +22,14 @@ class MarketService(
             val userBalance = marketDao.getUserBalance(order.email)
                 ?: return Either.Left(
                     Pair(
-                        OrderFailureCode.UNKNOWN_TRADER,
-                        "Unknown trader attempting to transact"
+                        OrderFailureCode.UNKNOWN_USER,
+                        "Unknown user attempting to transact"
                     )
                 )
+            val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
             validateTicker(order.ticker).map { orderFailure -> return Either.Left(orderFailure) }
 
-            val matchingPendingOrders = getSortedMatchingOrderBook(order)
-            val rMarketOrderProposal = getMarketOrderProposal(order, userBalance, matchingPendingOrders)
+            val rMarketOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositions, getSortedMatchingOrderBook(order))
 
             return rMarketOrderProposal
                 .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
@@ -57,18 +56,36 @@ class MarketService(
         }
     }
 
-    fun limitOrderRequest(order: IncomingMarketOrderRequest): Either<OrderFailureCode, IOrderFilled> {
+    fun limitOrderRequest(order: IncomingLimitOrderRequest): OrderResult {
         transactionSemaphore.acquire()
         try {
             //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
-            //If a market order immediately crossed, an order success should be sent instead of an order ACK
-
             // 1) Check if crosses book
             // 2) Need to populate receivedTimestamp
             // 3)
+            val userBalance = marketDao.getUserBalance(order.email)
+                ?: return Either.Left(
+                    Pair(
+                        OrderFailureCode.UNKNOWN_USER,
+                        "Unknown user attempting to transact"
+                    )
+                )
 
             val matchingPendingOrders = getSortedMatchingOrderBook(order)
+            val crossingOrdersCount = matchingPendingOrders.filter { (price, _) ->
+                if (order.isBuy()) price < order.price else price > order.price
+            }.map { (_, matchingPendingOrders) -> matchingPendingOrders.size }.sum()
 
+            return when {
+                crossingOrdersCount > order.size -> immediatelyFilledLimitOrder(
+                    order,
+                    matchingPendingOrders,
+                    userBalance
+                )
+
+                crossingOrdersCount > 0 -> partiallyFilledLimitOrder(order, matchingPendingOrders, userBalance)
+                else -> restingLimitOrder(order)
+            }
 
         } finally {
             transactionSemaphore.release()
@@ -76,23 +93,39 @@ class MarketService(
     }
 
     // Assumes already within transaction semaphore, probably terrible idea
-    private fun restingMarketOrder(order: IncomingMarketOrderRequest): OrderResult {
+    private fun immediatelyFilledLimitOrder(
+        order: IncomingLimitOrderRequest,
+        matchingPendingOrders: SortedOrderBook,
+        userBalance: Int
+    ): OrderResult {
 
+        return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
+    }
+
+    // Assumes already within transaction semaphore, probably terrible idea
+    private fun partiallyFilledLimitOrder(
+        order: IncomingLimitOrderRequest,
+        matchingPendingOrders: SortedOrderBook,
+        userBalance: Int
+    ): OrderResult {
+        return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
+    }
+
+    // Assumes already within transaction semaphore, probably terrible idea
+    private fun restingLimitOrder(order: IncomingLimitOrderRequest): OrderResult {
+        return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
     }
 
     private fun getMarketOrderProposal(
-        order: IncomingMarketOrderRequest,
-        traderBalance: Int,
+        order: IncomingOrderRequest,
+        userBalance: Int,
+        userLongPositions: Int,
         sortedOrderBook: SortedOrderBook
     ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
-        if (order.orderType != OrderType.Market) {
-            throw BadRequestResponse("Illegal arguments: orders of type '${order.orderType}' not matchable by `marketOrderMatch`")
-        }
-
         val proposedOrders = ArrayList<OrderBookEntry>()
 
-        val prices = if (order.tradeType == TradeType.Buy) sortedOrderBook.keys.toList()
-            .sorted() else sortedOrderBook.keys.toList().sortedDescending()
+        val prices =
+            if (order.isBuy()) sortedOrderBook.keys.toList() else sortedOrderBook.keys.toList().sortedDescending()
 
         for (price in prices) {
             //Probably should change over to some Kotlin collections to avoid all this null checking at some point
@@ -101,10 +134,7 @@ class MarketService(
                 for (orderBookEntry in orderBookEntriesAtPrice) {
                     val subsequentSize = proposedOrders.sumOf { op -> op.size }
                     if (subsequentSize == order.size) {
-                        return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
-                            proposedOrders
-                        )
-                        else Either.Left(Pair(OrderFailureCode.INSUFFICIENT_BALANCE, "Insufficient balance for order"))
+                        return getMarketOrderFinalStageOrderProposal(order, proposedOrders, userBalance, userLongPositions)
                     } else if (subsequentSize > order.size) {
                         // If condition not met, have to split
                         if (orderBookEntry.orderType != OrderType.FillOrKill && orderBookEntry.orderType != OrderType.AllOrNothing) {
@@ -113,22 +143,43 @@ class MarketService(
                             finalEntry.finalSize = positionsRemaining
                             proposedOrders.add(finalEntry)
 
-                            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
-                                proposedOrders
-                            )
-                            else Either.Left(
-                                Pair(
-                                    OrderFailureCode.INSUFFICIENT_BALANCE,
-                                    "Insufficient balance for order"
-                                )
-                            )
+                            return getMarketOrderFinalStageOrderProposal(order, proposedOrders, userBalance, userLongPositions)
                         }
                     } else {
                         proposedOrders.add(orderBookEntry)
                     }
                 }
             }
-            return Either.Left(Pair(OrderFailureCode.INSUFFICIENT_SHARES, "Insufficient shares for order"))
+        }
+        return Either.Left(Pair(OrderFailureCode.INSUFFICIENT_SHARES, "Insufficient shares for order"))
+    }
+
+    private fun getMarketOrderFinalStageOrderProposal(
+        order: IncomingOrderRequest,
+        proposedOrders: ArrayList<OrderBookEntry>,
+        userBalance: Int,
+        userLongPositions: Int
+    ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
+        if (order.isBuy()) {
+            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= userBalance) Either.Right(
+                proposedOrders
+            )
+            else Either.Left(
+                Pair(
+                    OrderFailureCode.INSUFFICIENT_BALANCE,
+                    "Insufficient balance for order"
+                )
+            )
+        } else {
+            return if (proposedOrders.sumOf { op -> (op.size) } <= userLongPositions) Either.Right(
+                proposedOrders
+            )
+            else Either.Left(
+                Pair(
+                    OrderFailureCode.INSUFFICIENT_SHARES,
+                    "Insufficient shares for order"
+                )
+            )
         }
     }
 
@@ -169,4 +220,6 @@ class MarketService(
         }
         return book
     }
+
+
 }
