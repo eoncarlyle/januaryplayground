@@ -25,7 +25,7 @@ class MarketDao(
                 stmt.setString(1, userEmail)
                 stmt.setString(2, ticker)
                 stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.executeQuery().use { rs -> while (rs.next()) rs.getInt("size")  }
+                stmt.executeQuery().use { rs -> while (rs.next()) positions.add(rs.getInt("size"))  }
             }
         }
         return positions
