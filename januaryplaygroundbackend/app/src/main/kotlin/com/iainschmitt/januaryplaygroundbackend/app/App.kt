@@ -50,8 +50,9 @@ class App(db: DatabaseHelper, secure: Boolean) {
             )
         }
     })
-    private val authService = AuthService(db, secure, wsUserMap, logger)
 
+    private val authService = AuthService(db, secure, wsUserMap, logger)
+    private val marketService = MarketService(db, secure, wsUserMap, logger, transactionSemaphore)
     fun run() {
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
@@ -61,7 +62,18 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
 
-        this.javalinApp.beforeMatched("/market") { ctx -> authService.evaluateAuth(ctx)}
+        this.javalinApp.beforeMatched("/orders") { ctx -> authService.evaluateAuth(ctx)}
+        this.javalinApp.post("/orders/market") { ctx ->
+            val dto = ctx.bodyAsClass(IncomingMarketOrderRequest::class.java)
+            val orderResult = marketService.marketOrderRequest(dto)
+            //TODO Pattern match the resulting order, probably a function common to market, limit
+        }
+        this.javalinApp.post("/orders/limit") { ctx ->
+
+        }
+
+
+
         // Note about market orders: they need to be ordered by received time in order to be treated correctly
 
         this.javalinApp.ws("/ws") { ws ->

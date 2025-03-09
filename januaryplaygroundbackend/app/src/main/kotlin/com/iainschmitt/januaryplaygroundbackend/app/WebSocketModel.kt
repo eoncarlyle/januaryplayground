@@ -41,7 +41,7 @@ enum class WebSocketLifecycleOperation {
         value = IncomingSocketLifecycleMessage::class,
         name = "incomingLifecycle"
     ),
-    JsonSubTypes.Type(value = IncomingOrderRequest::class, name = "incomingOrder")
+    JsonSubTypes.Type(value = IncomingMarketOrderRequest::class, name = "incomingOrder")
 )
 interface WebSocketMessage {
     val type: String // Needed for deserialisation

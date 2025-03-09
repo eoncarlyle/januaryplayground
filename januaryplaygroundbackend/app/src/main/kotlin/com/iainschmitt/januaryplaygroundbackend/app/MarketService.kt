@@ -4,8 +4,8 @@ import arrow.core.*
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.BadRequestResponse
 import org.slf4j.Logger
-import java.util.HashMap
 import java.util.concurrent.Semaphore
+import kotlin.collections.HashMap
 
 class MarketService(
     private val db: DatabaseHelper,
@@ -17,58 +17,22 @@ class MarketService(
 
     private val marketDao = MarketDao(db)
 
-    fun orderRequest(order: IncomingOrderRequest): Either<OrderFailedCode, IOrderFilled> {
-        return validateTicker(order.ticker).map { code -> Either.Left(code) }
-            .getOrElse {
-                val receivedTimestamp = System.currentTimeMillis()
-                when (order.orderType) {
-                    OrderType.Market -> marketOrderRequest(order)
-                    //OrderType.Limit -> limitOrderRequest(order, receivedTimestamp)
-                    else -> Either.Left(OrderFailedCode.NOT_IMPLEMENTED)
-                }
-            }
-    }
-
-    fun limitOrderRequest(order: IncomingOrderRequest): Either<OrderFailedCode, IOrderFilled> {
-        transactionSemaphore.acquire()
-        try {
-            //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
-            //If a market order immediately crossed, an order success should be sent instead of an order ACK
-
-            // 1) Check if crosses book
-            // 2) Need to populate receivedTimestamp
-            // 3)
-
-
-        } finally {
-            transactionSemaphore.release()
-        }
-    }
-
-    fun marketOrderRequest(order: IncomingOrderRequest): Either<OrderFailedCode, IOrderFilled> {
+    fun marketOrderRequest(order: IncomingMarketOrderRequest): OrderResult {
         transactionSemaphore.acquire()
         try {
             val userBalance = marketDao.getUserBalance(order.email)
-            if (userBalance == null) return Either.Left(OrderFailedCode.UNKNOWN_TRADER)
+                ?: return Either.Left(
+                    Pair(
+                        OrderFailureCode.UNKNOWN_TRADER,
+                        "Unknown trader attempting to transact"
+                    )
+                )
+            validateTicker(order.ticker).map { orderFailure -> return Either.Left(orderFailure) }
 
-            val matchingPendingOrders = getSortedMatchingOrderBook(
-                order.ticker,
-                if (order.tradeType == TradeType.Buy) TradeType.Sell else TradeType.Buy
-            )
-
+            val matchingPendingOrders = getSortedMatchingOrderBook(order)
             val rMarketOrderProposal = getMarketOrderProposal(order, userBalance, matchingPendingOrders)
 
-            return rMarketOrderProposal.mapLeft { code ->
-                return@mapLeft code
-                //if (code == OrderFailedCode.INSUFFICIENT_SHARES) {
-                //    throw BadRequestResponse("Insufficient shares for order")
-                //} else if (code === OrderFailedCode.INSUFFICIENT_BALANCE) {
-                //    throw BadRequestResponse("Insufficient balance for order")
-                //} else {
-                //    logger.error("Error code '${code}' returned from marketOrderProposal")
-                //    throw InternalServerErrorResponse("Internal error has occured")
-                //}
-            }
+            return rMarketOrderProposal
                 .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
                     val positionPair: Pair<Int?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
                     if (positionPair.first != null) {
@@ -85,7 +49,7 @@ class MarketService(
                         )
                     } else {
                         logger.error("Position key not set in transaction")
-                        return@flatMap Either.Left(OrderFailedCode.INTERNAL_ERROR)
+                        return@flatMap Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "An internal error occured"))
                     }
                 }
         } finally {
@@ -93,11 +57,34 @@ class MarketService(
         }
     }
 
+    fun limitOrderRequest(order: IncomingMarketOrderRequest): Either<OrderFailureCode, IOrderFilled> {
+        transactionSemaphore.acquire()
+        try {
+            //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
+            //If a market order immediately crossed, an order success should be sent instead of an order ACK
+
+            // 1) Check if crosses book
+            // 2) Need to populate receivedTimestamp
+            // 3)
+
+            val matchingPendingOrders = getSortedMatchingOrderBook(order)
+
+
+        } finally {
+            transactionSemaphore.release()
+        }
+    }
+
+    // Assumes already within transaction semaphore, probably terrible idea
+    private fun restingMarketOrder(order: IncomingMarketOrderRequest): OrderResult {
+
+    }
+
     private fun getMarketOrderProposal(
-        order: IncomingOrderRequest,
+        order: IncomingMarketOrderRequest,
         traderBalance: Int,
         sortedOrderBook: SortedOrderBook
-    ): Either<OrderFailedCode, ArrayList<OrderBookEntry>> {
+    ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
         if (order.orderType != OrderType.Market) {
             throw BadRequestResponse("Illegal arguments: orders of type '${order.orderType}' not matchable by `marketOrderMatch`")
         }
@@ -117,7 +104,7 @@ class MarketService(
                         return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
                             proposedOrders
                         )
-                        else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
+                        else Either.Left(Pair(OrderFailureCode.INSUFFICIENT_BALANCE, "Insufficient balance for order"))
                     } else if (subsequentSize > order.size) {
                         // If condition not met, have to split
                         if (orderBookEntry.orderType != OrderType.FillOrKill && orderBookEntry.orderType != OrderType.AllOrNothing) {
@@ -129,14 +116,19 @@ class MarketService(
                             return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= traderBalance) Either.Right(
                                 proposedOrders
                             )
-                            else Either.Left(OrderFailedCode.INSUFFICIENT_BALANCE)
+                            else Either.Left(
+                                Pair(
+                                    OrderFailureCode.INSUFFICIENT_BALANCE,
+                                    "Insufficient balance for order"
+                                )
+                            )
                         }
                     } else {
                         proposedOrders.add(orderBookEntry)
                     }
                 }
             }
-            return Either.Left(OrderFailedCode.INSUFFICIENT_SHARES)
+            return Either.Left(Pair(OrderFailureCode.INSUFFICIENT_SHARES, "Insufficient shares for order"))
         }
     }
 
@@ -144,16 +136,14 @@ class MarketService(
         // Will need to include/reference any partial execution of an order between submission and cancelation request
     }
 
-    private fun validateTicker(ticker: Ticker): Option<OrderFailedCode> {
+    private fun validateTicker(ticker: Ticker): Option<OrderFailure> {
         val pair = marketDao.getTicker(ticker)
 
-        if (pair == null) {
-            //throw NotFoundResponse("Ticker symbol '${ticker}' not found")
-            return Some(OrderFailedCode.UNKNOWN_TICKER)
+        return if (pair == null) {
+            Some(Pair(OrderFailureCode.UNKNOWN_TICKER, "Ticker symbol '${ticker}' not found"))
         } else if (pair.second == 0) {
-            //throw BadRequestResponse("Ticker symbol '${ticker}' not open for transactions")
-            return Some(OrderFailedCode.MARKET_CLOSED)
-        } else return None
+            Some(Pair(OrderFailureCode.MARKET_CLOSED, "Ticker symbol '${ticker}' not open for transactions"))
+        } else None
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<OrderCancelFailedCode> {
@@ -165,25 +155,17 @@ class MarketService(
     }
 
     private fun getSortedMatchingOrderBook(
-        ticker: Ticker,
-        pendingOrderTradeType: TradeType
+        order: IncomingOrderRequest
     ): SortedOrderBook {
-        val matchingPendingOrders = marketDao.getMatchingOrderBook(ticker, pendingOrderTradeType)
+        val matchingPendingOrders = marketDao.getMatchingOrderBook(order.ticker, order.tradeType)
         val book: SortedOrderBook = HashMap();
+        // Previous function was much clunkier
         matchingPendingOrders.forEach { entry ->
-            if (book.containsKey(entry.price)) {
-                //Probably should change over to some Kotlin collections to avoid all this null checking at some point
-                val ordersAtPrice = book[entry.price]
-                if (ordersAtPrice != null) {
-                    ordersAtPrice.add(entry)
-                    book[entry.price] = ordersAtPrice
-                }
-            } else {
-                book[entry.price] = arrayListOf(entry)
-            }
+            book.getOrPut(entry.price) { ArrayList() }.add(entry)
         }
-        book.keys.forEach{price ->
-            book[price]?.sortedBy { entry -> entry.receivedTick }
+
+        book.forEach { (price, orders) ->
+            book[price] = orders.sortedBy { it.receivedTick } as ArrayList
         }
         return book
     }

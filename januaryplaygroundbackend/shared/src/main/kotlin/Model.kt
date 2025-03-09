@@ -2,6 +2,7 @@ package com.iainschmitt.januaryplaygroundbackend.shared
 
 import com.fasterxml.jackson.annotation.JsonAlias
 import java.math.BigDecimal
+import arrow.core.*
 
 typealias Ticker = String
 
@@ -123,7 +124,7 @@ interface OrderPartialFilled : Order {
     val finalSize: Long // The size in `Order` corresponds to the transacted size
 }
 
-enum class OrderFailedCode {
+enum class OrderFailureCode {
     MARKET_CLOSED,
     UNKNOWN_TICKER,
     UNKNOWN_TRADER,
@@ -133,9 +134,12 @@ enum class OrderFailedCode {
     NOT_IMPLEMENTED
 }
 
+typealias OrderFailure = Pair<OrderFailureCode, String>
+typealias OrderResult = Either<OrderFailure, IOrderFilled>
+
 interface OrderFailed : Order {
     val failedTick: Long
-    val orderFailedCode: OrderFailedCode
+    val orderFailedCode: OrderFailureCode
 }
 
 enum class OrderCancelFailedCode {

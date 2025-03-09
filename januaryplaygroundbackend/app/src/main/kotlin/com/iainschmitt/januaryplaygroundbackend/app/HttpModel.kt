@@ -9,7 +9,7 @@ import com.iainschmitt.januaryplaygroundbackend.shared.*
 //     JsonSubTypes.Type(value = OutgoingOrderAcknowledged::class, name = "outgoingOrderAcknowledged"),
 //     JsonSubTypes.Type(value = OutgoingOrderFilled::class, name = "outgoingOrderFilled"),
 // )
-interface HttpOrderBody: Order {
+interface HttpOrderBody : Order {
     override val email: String
     val type: String
 }
@@ -22,19 +22,39 @@ interface HttpOrderBody: Order {
 //    JsonSubTypes.Type(value = OutgoingOrderCancelConfirmed::class, name = "outgoingOrderCancel"),
 //    JsonSubTypes.Type(value = OutgoingOrderCancelFailed::class, name = "outgoingOrderCancelFailed"),
 //)
-interface HttpOrderCancelledBody: OrderCancel {
+interface HttpOrderCancelledBody : OrderCancel {
     override val email: String
     val type: String
 }
 
-data class IncomingOrderRequest(
+interface IncomingOrderRequest : HttpOrderBody {
+    override val type: String
+    override val email: String
+    override val ticker: Ticker
+    override val size: Int
+    override val tradeType: TradeType
+    override val orderType: OrderType
+}
+
+data class IncomingMarketOrderRequest(
     override val type: String = "incomingOrder",
     override val email: String,
     override val ticker: Ticker,
     override val size: Int,
     override val tradeType: TradeType,
-    override val orderType: OrderType,
-) : HttpOrderBody
+    override val orderType: OrderType = OrderType.Market
+) : IncomingOrderRequest
+
+data class IncomingLimitOrderRequest(
+    override val type: String = "incomingOrder",
+    override val email: String,
+    override val ticker: Ticker,
+    override val size: Int,
+    override val tradeType: TradeType,
+    override val orderType: OrderType = OrderType.Limit,
+    val price: Int
+) : IncomingOrderRequest
+
 
 data class OutgoingOrderAcknowledged(
     override val type: String = "outgoingOrderAcknowledged",
@@ -70,7 +90,7 @@ data class OutgoingOrderFailed(
     override val size: Int,
     override val tradeType: TradeType,
     override val orderType: OrderType,
-    override val orderFailedCode: OrderFailedCode,
+    override val orderFailedCode: OrderFailureCode,
     override val failedTick: Long
 ) : OrderFailed
 

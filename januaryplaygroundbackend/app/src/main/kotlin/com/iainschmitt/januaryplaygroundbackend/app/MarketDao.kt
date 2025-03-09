@@ -70,7 +70,7 @@ class MarketDao(
         return matchingPendingOrders
     }
 
-    fun fillMarketOrder(order: IncomingOrderRequest, marketOrderProposal: ArrayList<OrderBookEntry>): Pair<Int?, Long> {
+    fun fillMarketOrder(order: IncomingMarketOrderRequest, marketOrderProposal: ArrayList<OrderBookEntry>): Pair<Int?, Long> {
         var positionId: Int? = null
         val filledTick: Long = System.currentTimeMillis()
         val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
