@@ -80,6 +80,10 @@ interface Order {
     val email: String;
 }
 
+fun Order.sign(): Int {
+    return if (this.tradeType == TradeType.Buy) 1 else -1
+}
+
 interface OrderRequest : Order {
 }
 
@@ -92,39 +96,48 @@ interface OrderCancelRequest : OrderCancel {
 
 }
 
+
 // Only needed for market and fill-or-kill
 interface IOrderAcknowledged : Order {
-    val orderId: Int
-    val acknowledgedTick: Long // Will need to include/reference any partial execution!
+    val orderId: Long
+    val receivedTick: Long // Will need to include/reference any partial execution!
 }
 
 data class OrderAcknowledged(
     override val ticker: Ticker,
-    override val orderId: Int,
-    override val acknowledgedTick: Long,
+    override val orderId: Long,
+    override val receivedTick: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
     override val email: String
-) : IOrderAcknowledged
+) : IOrderAcknowledged, LimitOrderRespponse
 
 // Can have multiple with a singe
 interface IOrderFilled : Order {
-    val positionId: Int
+    val positionId: Long
     val filledTime: Long
+}
+
+interface MarketOrderResponse {
+
+}
+
+interface LimitOrderRespponse {
+
 }
 
 data class OrderFilled(
     override val ticker: Ticker,
-    override val positionId: Int,
+    override val positionId: Long,
     override val filledTime: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
     override val email: String
-) : IOrderFilled
+) : IOrderFilled, MarketOrderResponse, LimitOrderRespponse
 
-interface OrderPartialFilled : Order {
+interface IOrderPartialFilled : Order {
     val orderId: Int
     val filledTick: Long
     val finalSize: Long // The size in `Order` corresponds to the transacted size
@@ -140,8 +153,9 @@ enum class OrderFailureCode {
     NOT_IMPLEMENTED
 }
 
+// Should really split out incoming, outgoing order types
 typealias OrderFailure = Pair<OrderFailureCode, String>
-typealias OrderResult = Either<OrderFailure, IOrderFilled>
+typealias OrderResult<T> = Either<OrderFailure, T>
 
 interface OrderFailed : Order {
     val failedTick: Long

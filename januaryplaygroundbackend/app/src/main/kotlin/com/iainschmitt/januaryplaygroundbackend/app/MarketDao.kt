@@ -19,13 +19,13 @@ class MarketDao(
     }
 
     fun getUserLongPositions(userEmail: String, ticker: Ticker): ArrayList<Int> {
-        val positions  = ArrayList<Int>()
+        val positions = ArrayList<Int>()
         db.query { conn ->
             conn.prepareStatement("select size from position where email = ? and ticker = ? and type = ?").use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setString(2, ticker)
                 stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.executeQuery().use { rs -> while (rs.next()) positions.add(rs.getInt("size"))  }
+                stmt.executeQuery().use { rs -> while (rs.next()) positions.add(rs.getInt("size")) }
             }
         }
         return positions
@@ -42,11 +42,12 @@ class MarketDao(
 
     fun pendingOrderExists(pendingOrderId: Int, email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select id from pending_order where id = ? and user = ? and filled_tick != -1").use { stmt ->
-                stmt.setInt(1, pendingOrderId)
-                stmt.setString(2, email)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
+            conn.prepareStatement("select id from pending_order where id = ? and user = ? and filled_tick != -1")
+                .use { stmt ->
+                    stmt.setInt(1, pendingOrderId)
+                    stmt.setString(2, email)
+                    stmt.executeQuery().use { rs -> rs.next() }
+                }
         }
     }
 
@@ -83,14 +84,16 @@ class MarketDao(
         return matchingPendingOrders
     }
 
-    fun fillMarketOrder(order: IncomingMarketOrderRequest, marketOrderProposal: ArrayList<OrderBookEntry>): Pair<Int?, Long> {
-        var positionId: Int? = null
+    fun fillMarketOrder(
+        order: IncomingMarketOrderRequest,
+        marketOrderProposal: ArrayList<OrderBookEntry>
+    ): Pair<Long?, Long> {
+        var positionId: Long? = null
         val filledTick: Long = System.currentTimeMillis()
         val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
         val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
         // From perspective of the counterparties:
         // this is the direction that the counterparty balances will go
-        val orderSign = if (order.tradeType == TradeType.Buy) 1 else -1
         db.query { conn ->
             // Addressing complete orders
             conn.prepareStatement("update pending_order set filled_tick = ? where id in ?").use { stmt ->
@@ -101,7 +104,7 @@ class MarketDao(
             // TODO: There is certainly a way to do this in a single query
             for (completeOrder in completeOrders) {
                 conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, completeOrder.size * completeOrder.price * orderSign)
+                    stmt.setInt(1, completeOrder.size * completeOrder.price * order.sign())
                     stmt.setString(2, completeOrder.user)
                     stmt.executeUpdate()
                 }
@@ -117,14 +120,14 @@ class MarketDao(
                 }
 
                 conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, partialOrder.size * partialOrder.price * orderSign)
+                    stmt.setInt(1, partialOrder.size * partialOrder.price * order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.executeUpdate()
                 }
             }
             // Addressing orderer
             conn.prepareStatement("update user set balance = balance - ? where email = ?").use { stmt ->
-                stmt.setInt(1, marketOrderProposal.sumOf { entry -> entry.size * entry.price } * orderSign)
+                stmt.setInt(1, marketOrderProposal.sumOf { entry -> entry.size * entry.price } * order.sign())
                 stmt.setString(2, order.email)
                 stmt.executeUpdate()
             }
@@ -143,9 +146,34 @@ class MarketDao(
                 stmt.executeUpdate()
 
                 val rs = stmt.generatedKeys
-                if (rs.next()) rs.getInt(1) else -1
+                if (rs.next()) rs.getLong(1) else -1
             }
         }
         return Pair(positionId, filledTick)
+    }
+
+    fun createLimitPendingOrder(order: IncomingLimitOrderRequest): Pair<Long?, Long> {
+        var orderId: Long? = null
+        val receivedTick: Long = System.currentTimeMillis()
+
+        db.query { conn ->
+            orderId = conn.prepareStatement("""insert into pending_order (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
+                values (?, ?, ?, ?, ?, ?, ?) 
+            """
+            ).use { stmt ->
+                stmt.setString(1, order.email)
+                stmt.setString(2, order.ticker)
+                stmt.setInt(3, order.tradeType.ordinal)
+                stmt.setInt(4, order.size)
+                stmt.setInt(5, order.price)
+                stmt.setInt(6, order.orderType.ordinal)
+                stmt.setLong(7, -1L)
+                stmt.setLong(8, receivedTick)
+
+                val rs = stmt.generatedKeys
+                if (rs.next()) rs.getLong(1) else -1
+            }
+        }
+        return Pair(orderId, receivedTick)
     }
 }

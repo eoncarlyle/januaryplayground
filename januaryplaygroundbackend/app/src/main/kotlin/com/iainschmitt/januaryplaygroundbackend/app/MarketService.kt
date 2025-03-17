@@ -1,6 +1,7 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
 import arrow.core.*
+import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
@@ -16,7 +17,7 @@ class MarketService(
 
     private val marketDao = MarketDao(db)
 
-    fun marketOrderRequest(order: IncomingMarketOrderRequest): OrderResult {
+    fun marketOrderRequest(order: IncomingMarketOrderRequest): OrderResult<MarketOrderResponse> {
         transactionSemaphore.acquire()
         try {
             val userBalance = marketDao.getUserBalance(order.email)
@@ -29,11 +30,12 @@ class MarketService(
             val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
             validateTicker(order.ticker).map { orderFailure -> return Either.Left(orderFailure) }
 
-            val rMarketOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositions, getSortedMatchingOrderBook(order))
+            val rMarketOrderProposal =
+                getMarketOrderProposal(order, userBalance, userLongPositions, getSortedMatchingOrderBook(order))
 
             return rMarketOrderProposal
                 .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
-                    val positionPair: Pair<Int?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
+                    val positionPair: Pair<Long?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
                     if (positionPair.first != null) {
                         return@flatMap Either.Right(
                             OrderFilled(
@@ -56,13 +58,9 @@ class MarketService(
         }
     }
 
-    fun limitOrderRequest(order: IncomingLimitOrderRequest): OrderResult {
+    fun limitOrderRequest(order: IncomingLimitOrderRequest): OrderResult<LimitOrderRespponse> {
         transactionSemaphore.acquire()
         try {
-            //TODO: Ensure market order timing is recorded for order book to be accurate! Impacts limits too
-            // 1) Check if crosses book
-            // 2) Need to populate receivedTimestamp
-            // 3)
             val userBalance = marketDao.getUserBalance(order.email)
                 ?: return Either.Left(
                     Pair(
@@ -97,7 +95,7 @@ class MarketService(
         order: IncomingLimitOrderRequest,
         matchingPendingOrders: SortedOrderBook,
         userBalance: Int
-    ): OrderResult {
+    ): OrderResult<LimitOrderRespponse> {
 
         return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
     }
@@ -107,13 +105,27 @@ class MarketService(
         order: IncomingLimitOrderRequest,
         matchingPendingOrders: SortedOrderBook,
         userBalance: Int
-    ): OrderResult {
+    ): OrderResult<LimitOrderRespponse> {
         return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
     }
 
     // Assumes already within transaction semaphore, probably terrible idea
-    private fun restingLimitOrder(order: IncomingLimitOrderRequest): OrderResult {
-        return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
+    private fun restingLimitOrder(order: IncomingLimitOrderRequest): OrderResult<LimitOrderRespponse> {
+        val orderPair: Pair<Long?, Long> = marketDao.createLimitPendingOrder(order)
+
+        return if (orderPair.first != null) {
+            Either.Right(OrderAcknowledged(
+                order.ticker,
+                orderPair.first!!,
+                orderPair.second,
+                order.tradeType,
+                order.orderType,
+                order.size,
+                order.email
+            ))
+        } else {
+            Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "Internal error"))
+        }
     }
 
     private fun getMarketOrderProposal(
@@ -134,7 +146,12 @@ class MarketService(
                 for (orderBookEntry in orderBookEntriesAtPrice) {
                     val subsequentSize = proposedOrders.sumOf { op -> op.size }
                     if (subsequentSize == order.size) {
-                        return getMarketOrderFinalStageOrderProposal(order, proposedOrders, userBalance, userLongPositions)
+                        return getMarketOrderFinalStageOrderProposal(
+                            order,
+                            proposedOrders,
+                            userBalance,
+                            userLongPositions
+                        )
                     } else if (subsequentSize > order.size) {
                         // If condition not met, have to split
                         if (orderBookEntry.orderType != OrderType.FillOrKill && orderBookEntry.orderType != OrderType.AllOrNothing) {
@@ -143,7 +160,12 @@ class MarketService(
                             finalEntry.finalSize = positionsRemaining
                             proposedOrders.add(finalEntry)
 
-                            return getMarketOrderFinalStageOrderProposal(order, proposedOrders, userBalance, userLongPositions)
+                            return getMarketOrderFinalStageOrderProposal(
+                                order,
+                                proposedOrders,
+                                userBalance,
+                                userLongPositions
+                            )
                         }
                     } else {
                         proposedOrders.add(orderBookEntry)

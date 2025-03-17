@@ -69,13 +69,13 @@ data class OutgoingOrderAcknowledged(
     override val size: Int,
     override val tradeType: TradeType,
     override val orderType: OrderType,
-    override val acknowledgedTick: Long
+    override val receivedTick: Long
 ) : IOrderAcknowledged, HttpOrderBody
 
 data class OutgoingIOrderFilled(
     override val type: String = "outgoingOrderFilled",
     override val email: String,
-    override val positionId: Int,
+    override val positionId: Long,
     override val ticker: Ticker,
     override val size: Int,
     override val tradeType: TradeType,
