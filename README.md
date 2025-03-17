@@ -13,6 +13,12 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `edd10ca`
+- Last two steps before testing are
+  - Large scale order cancelation
+  - Refactoring to more rational types (sort inbound/outbound, make the model vs. http model make more sense)
+  - WebSocket notification of prices
+
 ### `ac5e8f8`
 - The market order matching logic in getMarketOrderProposal could benefit from better organization
 -  The error handling could be more granular, could add:

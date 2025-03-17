@@ -8,7 +8,7 @@ import kotlin.collections.HashMap
 import kotlin.math.E
 
 class MarketService(
-    private val db: DatabaseHelper,
+    db: DatabaseHelper,
     private val secure: Boolean,
     private val wsUserMap: WsUserMap,
     private val logger: Logger,
@@ -123,6 +123,7 @@ class MarketService(
         return fillOrder(order, immediateOrderProposal)
             .flatMap { filledOrder ->
                 val resizedOrder = order.getResizedOrder(order.size - getPositionCount(crossingOrders))
+                // This kind of is asking for problems if the `fillOrder` succeeds and the `createRestinLimitOrder` fails
                 createRestingLimitOrder(resizedOrder).map { restingOrder ->
                     OrderPartiallyFilled(
                         order.ticker,
