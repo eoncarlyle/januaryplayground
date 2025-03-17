@@ -84,8 +84,10 @@ class MarketDao(
         return matchingPendingOrders
     }
 
-    fun fillMarketOrder(
-        order: IncomingMarketOrderRequest,
+    //TODO: I need to re-read this to better understand if there are any issues with limit order usages
+    //TODO: Some async method for notifying limit orders
+    fun fillOrder(
+        order: Order,
         marketOrderProposal: ArrayList<OrderBookEntry>
     ): Pair<Long?, Long> {
         var positionId: Long? = null

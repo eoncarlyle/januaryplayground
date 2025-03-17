@@ -40,7 +40,6 @@ fun IncomingOrderRequest.isBuy(): Boolean {
     return tradeType.isBuy()
 }
 
-
 data class IncomingMarketOrderRequest(
     override val type: String = "incomingOrder",
     override val email: String,
@@ -58,13 +57,26 @@ data class IncomingLimitOrderRequest(
     override val tradeType: TradeType,
     override val orderType: OrderType = OrderType.Limit,
     val price: Int
-) : IncomingOrderRequest
+) : IncomingOrderRequest {
+    fun getResizedOrder(newSize: Int): IncomingLimitOrderRequest {
+        return IncomingLimitOrderRequest(
+            this.type,
+            this.email,
+            this.ticker,
+            newSize,
+            this.tradeType,
+            this.orderType,
+            this.price
+        )
+    }
+}
+
 
 
 data class OutgoingOrderAcknowledged(
     override val type: String = "outgoingOrderAcknowledged",
     override val email: String,
-    override val orderId: Int,
+    override val orderId: Long,
     override val ticker: Ticker,
     override val size: Int,
     override val tradeType: TradeType,

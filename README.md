@@ -153,8 +153,11 @@ private fun startServerEventSimulation() {
 - Need to destinguish between position type and order types, come back to this
 - I don't think that the non-market `OrderTypes` need to include prices given that they will be reflected elsewhere
 - A user's portfolio includes both `positions` and `pending_orders`: an order request or order cancelation converts between the two
-  - However: only _sell_ orders in `pending_orders` are part of the portfolio 
+  - However: only _sell_ orders in `pending_orders` are part of the portfolio
 - All orders will need to have time recorded in order to respect FIFO ordering
+- Something that dramatically simplifies the market design is by treating cash in the exact same way as shares for limit orders
+  - Once something is a pending order, is is committed: credits comitted to a limit order are tied up in a limit order until the order is filled or cancelled
+  - This isn't the most realistic treatment, but it simplifies some things for me for now
 
 ## Previous Topic Notes
 

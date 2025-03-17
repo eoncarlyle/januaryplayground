@@ -80,6 +80,7 @@ interface Order {
     val email: String;
 }
 
+
 fun Order.sign(): Int {
     return if (this.tradeType == TradeType.Buy) 1 else -1
 }
@@ -111,7 +112,7 @@ data class OrderAcknowledged(
     override val orderType: OrderType,
     override val size: Int,
     override val email: String
-) : IOrderAcknowledged, LimitOrderRespponse
+) : IOrderAcknowledged, LimitOrderResponse
 
 // Can have multiple with a singe
 interface IOrderFilled : Order {
@@ -123,7 +124,7 @@ interface MarketOrderResponse {
 
 }
 
-interface LimitOrderRespponse {
+interface LimitOrderResponse {
 
 }
 
@@ -135,13 +136,24 @@ data class OrderFilled(
     override val orderType: OrderType,
     override val size: Int,
     override val email: String
-) : IOrderFilled, MarketOrderResponse, LimitOrderRespponse
+) : IOrderFilled, MarketOrderResponse, LimitOrderResponse
 
-interface IOrderPartialFilled : Order {
+interface IOrderPartiallyFilled : Order {
     val orderId: Int
     val filledTick: Long
     val finalSize: Long // The size in `Order` corresponds to the transacted size
 }
+
+data class OrderPartiallyFilled(
+    override val ticker: Ticker,
+    override val positionId: Long,
+    val restingOrderId: Long,
+    override val filledTime: Long,
+    override val tradeType: TradeType,
+    override val orderType: OrderType,
+    override val size: Int,
+    override val email: String
+): IOrderFilled, LimitOrderResponse
 
 enum class OrderFailureCode {
     MARKET_CLOSED,

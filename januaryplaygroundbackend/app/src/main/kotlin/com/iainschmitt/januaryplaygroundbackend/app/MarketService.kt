@@ -1,11 +1,11 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
 import arrow.core.*
-import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
+import kotlin.math.E
 
 class MarketService(
     private val db: DatabaseHelper,
@@ -16,7 +16,7 @@ class MarketService(
 ) {
 
     private val marketDao = MarketDao(db)
-
+    // TODO: Typing is not organized: mix of Model and HttpModel types are used, should be organised
     fun marketOrderRequest(order: IncomingMarketOrderRequest): OrderResult<MarketOrderResponse> {
         transactionSemaphore.acquire()
         try {
@@ -30,35 +30,42 @@ class MarketService(
             val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
             validateTicker(order.ticker).map { orderFailure -> return Either.Left(orderFailure) }
 
-            val rMarketOrderProposal =
+            val marketOrderProposal =
                 getMarketOrderProposal(order, userBalance, userLongPositions, getSortedMatchingOrderBook(order))
 
-            return rMarketOrderProposal
-                .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
-                    val positionPair: Pair<Long?, Long> = marketDao.fillMarketOrder(order, marketOrderProposal)
-                    if (positionPair.first != null) {
-                        return@flatMap Either.Right(
-                            OrderFilled(
-                                order.ticker,
-                                positionPair.first!!,
-                                positionPair.second,
-                                order.tradeType,
-                                order.orderType,
-                                order.size,
-                                order.email
-                            )
-                        )
-                    } else {
-                        logger.error("Position key not set in transaction")
-                        return@flatMap Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "An internal error occured"))
-                    }
-                }
+            return fillOrder(order, marketOrderProposal)
         } finally {
             transactionSemaphore.release()
         }
     }
 
-    fun limitOrderRequest(order: IncomingLimitOrderRequest): OrderResult<LimitOrderRespponse> {
+    private fun fillOrder(
+        order: Order,
+        orderProposal: Either<OrderFailure, ArrayList<OrderBookEntry>>
+    ): Either<OrderFailure, OrderFilled> {
+        return orderProposal
+            .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
+                val positionPair: Pair<Long?, Long> = marketDao.fillOrder(order, marketOrderProposal)
+                if (positionPair.first != null) {
+                    return@flatMap Either.Right(
+                        OrderFilled(
+                            order.ticker,
+                            positionPair.first!!,
+                            positionPair.second,
+                            order.tradeType,
+                            order.orderType,
+                            order.size,
+                            order.email
+                        )
+                    )
+                } else {
+                    logger.error("Position key not set in transaction")
+                    return@flatMap Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "An internal error occurred"))
+                }
+            }
+    }
+
+    fun limitOrderRequest(order: IncomingLimitOrderRequest): OrderResult<LimitOrderResponse> {
         transactionSemaphore.acquire()
         try {
             val userBalance = marketDao.getUserBalance(order.email)
@@ -70,19 +77,21 @@ class MarketService(
                 )
 
             val matchingPendingOrders = getSortedMatchingOrderBook(order)
-            val crossingOrdersCount = matchingPendingOrders.filter { (price, _) ->
+            val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
                 if (order.isBuy()) price < order.price else price > order.price
-            }.map { (_, matchingPendingOrders) -> matchingPendingOrders.size }.sum()
+            } as SortedOrderBook
+
+            val crossingOrderTotal = getPositionCount(crossingOrders)
 
             return when {
-                crossingOrdersCount > order.size -> immediatelyFilledLimitOrder(
+                crossingOrderTotal > order.size -> immediatelyFilledLimitOrder(
                     order,
-                    matchingPendingOrders,
+                    crossingOrders,
                     userBalance
                 )
 
-                crossingOrdersCount > 0 -> partiallyFilledLimitOrder(order, matchingPendingOrders, userBalance)
-                else -> restingLimitOrder(order)
+                crossingOrderTotal > 0 -> partiallyFilledLimitOrder(order, crossingOrders, userBalance)
+                else -> createRestingLimitOrder(order)
             }
 
         } finally {
@@ -93,36 +102,58 @@ class MarketService(
     // Assumes already within transaction semaphore, probably terrible idea
     private fun immediatelyFilledLimitOrder(
         order: IncomingLimitOrderRequest,
-        matchingPendingOrders: SortedOrderBook,
+        crossingOrders: SortedOrderBook,
         userBalance: Int
-    ): OrderResult<LimitOrderRespponse> {
-
-        return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
+    ): OrderResult<LimitOrderResponse> {
+        val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
+        val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositions, crossingOrders)
+        return fillOrder(order, immediateOrderProposal)
     }
 
     // Assumes already within transaction semaphore, probably terrible idea
     private fun partiallyFilledLimitOrder(
         order: IncomingLimitOrderRequest,
-        matchingPendingOrders: SortedOrderBook,
+        crossingOrders: SortedOrderBook,
         userBalance: Int
-    ): OrderResult<LimitOrderRespponse> {
-        return Either.Left(Pair(OrderFailureCode.NOT_IMPLEMENTED, "Oops"))
+    ): OrderResult<OrderPartiallyFilled> {
+
+        val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
+        val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositions, crossingOrders)
+
+        return fillOrder(order, immediateOrderProposal)
+            .flatMap { filledOrder ->
+                val resizedOrder = order.getResizedOrder(order.size - getPositionCount(crossingOrders))
+                createRestingLimitOrder(resizedOrder).map { restingOrder ->
+                    OrderPartiallyFilled(
+                        order.ticker,
+                        filledOrder.positionId,
+                        restingOrder.orderId,
+                        filledOrder.filledTime,
+                        order.tradeType,
+                        order.orderType,
+                        order.size,
+                        order.email
+                    )
+                }
+            }
     }
 
     // Assumes already within transaction semaphore, probably terrible idea
-    private fun restingLimitOrder(order: IncomingLimitOrderRequest): OrderResult<LimitOrderRespponse> {
+    private fun createRestingLimitOrder(order: IncomingLimitOrderRequest): OrderResult<OrderAcknowledged> {
         val orderPair: Pair<Long?, Long> = marketDao.createLimitPendingOrder(order)
 
         return if (orderPair.first != null) {
-            Either.Right(OrderAcknowledged(
-                order.ticker,
-                orderPair.first!!,
-                orderPair.second,
-                order.tradeType,
-                order.orderType,
-                order.size,
-                order.email
-            ))
+            Either.Right(
+                OrderAcknowledged(
+                    order.ticker,
+                    orderPair.first!!,
+                    orderPair.second,
+                    order.tradeType,
+                    order.orderType,
+                    order.size,
+                    order.email
+                )
+            )
         } else {
             Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "Internal error"))
         }
@@ -205,6 +236,7 @@ class MarketService(
         }
     }
 
+    // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun orderCancelRequest(order: IncomingOrderCancelRequest) {
         // Will need to include/reference any partial execution of an order between submission and cancelation request
     }
@@ -243,5 +275,8 @@ class MarketService(
         return book
     }
 
+    private fun getPositionCount(sortedOrderBook: SortedOrderBook): Int {
+        return sortedOrderBook.map { (_, matchingPendingOrders) -> matchingPendingOrders.size }.sum()
+    }
 
 }
