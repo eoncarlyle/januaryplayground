@@ -29,12 +29,12 @@ typealias Ticker = String
 
 enum class TradeType {
     //@JsonAlias("buy")
-    Buy,
+    BUY,
 
     //@JsonAlias("sell")
-    Sell;
+    SELL;
     fun isBuy(): Boolean {
-        return this == Buy
+        return this == BUY
     }
 }
 
@@ -120,4 +120,12 @@ fun getOrderType(ordinal: Int): OrderType {
         3 -> OrderType.AllOrNothing
         else -> throw IllegalArgumentException("Illegal OrderType ordinal $ordinal")
     }
+}
+
+interface Order {
+    val ticker: Ticker;
+    val tradeType: TradeType;
+    val orderType: OrderType;
+    val size: Int;
+    val email: String;
 }

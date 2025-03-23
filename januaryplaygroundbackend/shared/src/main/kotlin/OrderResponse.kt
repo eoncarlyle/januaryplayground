@@ -2,66 +2,8 @@ package com.iainschmitt.januaryplaygroundbackend.shared
 
 import arrow.core.Either
 
-interface Order {
-    val ticker: Ticker;
-    val tradeType: TradeType;
-    val orderType: OrderType;
-    val size: Int;
-    val email: String;
-}
-interface OrderRequest: Order {
-    val type: String
-    override val email: String
-    override val ticker: Ticker
-    override val size: Int
-    override val tradeType: TradeType
-    override val orderType: OrderType
-}
-
-fun OrderRequest.isBuy(): Boolean {
-    return tradeType.isBuy()
-}
-
-fun Order.sign(): Int {
-    return if (this.tradeType == TradeType.Buy) 1 else -1
-}
-
-data class MarketOrderRequest(
-    override val type: String = "incomingOrder",
-    override val email: String,
-    override val ticker: Ticker,
-    override val size: Int,
-    override val tradeType: TradeType,
-    override val orderType: OrderType = OrderType.Market
-) : OrderRequest
-
-data class LimitOrderRequest(
-    override val type: String = "incomingOrder",
-    override val email: String,
-    override val ticker: Ticker,
-    override val size: Int,
-    override val tradeType: TradeType,
-    override val orderType: OrderType = OrderType.Limit,
-    val price: Int
-) : OrderRequest {
-    fun getResizedOrder(newSize: Int): LimitOrderRequest {
-        return LimitOrderRequest(
-            this.type,
-            this.email,
-            this.ticker,
-            newSize,
-            this.tradeType,
-            this.orderType,
-            this.price
-        )
-    }
-}
-
-data class OrderCancelRequest(
-    override val type: String = "incomingOrderCancel",
-    override val email: String,
-    override val orderId: Int,
-) : OrderCancel
+typealias OrderFailure = Pair<OrderFailureCode, String>
+typealias OrderResult<T> = Either<OrderFailure, T>
 
 interface OrderCancel {
     val orderId: Int
@@ -130,12 +72,15 @@ enum class OrderFailureCode {
     NOT_IMPLEMENTED
 }
 
-typealias OrderFailure = Pair<OrderFailureCode, String>
-typealias OrderResult<T> = Either<OrderFailure, T>
-
 enum class OrderCancelFailedCode {
     UNKNOWN_ORDER,
     UNKNOWN_TRADER,
     ORDER_FILLED,
     INTERNAL_ERROR
 }
+
+data class OrderCancelRequest(
+    override val type: String = "incomingOrderCancel",
+    override val email: String,
+    override val orderId: Int,
+) : OrderCancel

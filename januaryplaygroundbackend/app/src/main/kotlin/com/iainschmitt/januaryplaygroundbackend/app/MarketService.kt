@@ -15,7 +15,6 @@ class MarketService(
 ) {
 
     private val marketDao = MarketDao(db)
-    // TODO: Typing is not organized: mix of Model and HttpModel types are used, should be organised
     fun marketOrderRequest(order: MarketOrderRequest): OrderResult<MarketOrderResponse> {
         transactionSemaphore.acquire()
         try {
