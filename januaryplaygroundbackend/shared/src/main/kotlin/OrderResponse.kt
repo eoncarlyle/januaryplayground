@@ -4,7 +4,7 @@ import arrow.core.Either
 
 typealias OrderFailure = Pair<OrderFailureCode, String>
 typealias OrderResult<T> = Either<OrderFailure, T>
-typealias OrderCancelResult<L, R> = Either<Pair<L, String>, R>
+
 interface OrderCancel {
     val orderId: Int
     val email: String
@@ -30,7 +30,7 @@ data class OrderAcknowledged(
 // Can have multiple with a singe
 interface IOrderFilled : Order {
     val positionId: Long
-    val filledTick: Long
+    val filledTime: Long
 }
 
 interface MarketOrderResponse {
@@ -44,7 +44,7 @@ interface LimitOrderResponse {
 data class OrderFilled(
     override val ticker: Ticker,
     override val positionId: Long,
-    override val filledTick: Long,
+    override val filledTime: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
@@ -55,7 +55,7 @@ data class OrderPartiallyFilled(
     override val ticker: Ticker,
     override val positionId: Long,
     val restingOrderId: Long,
-    override val filledTick: Long,
+    override val filledTime: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
@@ -72,20 +72,15 @@ enum class OrderFailureCode {
     NOT_IMPLEMENTED
 }
 
-enum class SingleOrderCancelFailureCode {
+enum class OrderCancelFailedCode {
     UNKNOWN_ORDER,
     UNKNOWN_TRADER,
     ORDER_FILLED,
     INTERNAL_ERROR
 }
 
-enum class AllOrderCancelFailureCode {
-    UNKNOWN_TICKER,
-    INSUFFICIENT_SHARES
-}
-
-data class AllOrderCancelResponse(
-    val ticker: Ticker,
-    val cancelledTick: Long,
-    val orders: Int
-)
+data class OrderCancelRequest(
+    override val type: String = "incomingOrderCancel",
+    override val email: String,
+    override val orderId: Int,
+) : OrderCancel

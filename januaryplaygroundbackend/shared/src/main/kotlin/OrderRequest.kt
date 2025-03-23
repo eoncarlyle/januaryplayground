@@ -47,15 +47,3 @@ data class LimitOrderRequest(
         )
     }
 }
-
-data class SingleOrderCancelRequest(
-    val type: String = "singleOrderCancelRequest",
-    val email: String,
-    val orderId: Int,
-)
-
-data class AllOrderCancelRequest(
-    val type: String = "incomingOrderCancel",
-    val email: String,
-    val ticker: Ticker,
-)

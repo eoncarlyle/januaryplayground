@@ -1,9 +1,7 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
-import com.iainschmitt.januaryplaygroundbackend.shared.*
+import com.iainschmitt.januaryplaygroundbackend.shared.MarketOrderRequest
 import io.javalin.Javalin
-import io.javalin.http.Context
-import io.javalin.http.bodyAsClass
 import io.javalin.http.util.NaiveRateLimit
 import io.javalin.websocket.WsContext
 import org.slf4j.LoggerFactory
@@ -56,17 +54,6 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
     private val authService = AuthService(db, secure, wsUserMap, logger)
     private val marketService = MarketService(db, secure, wsUserMap, logger, transactionSemaphore)
-
-    private fun orderFailureHandler(ctx: Context, orderFailure: OrderFailure) {
-        ctx.json(mapOf("message" to orderFailure.second))
-        when (orderFailure.first) {
-            OrderFailureCode.INTERNAL_ERROR -> ctx.status(500)
-            OrderFailureCode.UNKNOWN_TICKER -> ctx.status(404)
-            OrderFailureCode.UNKNOWN_USER -> ctx.status(404)
-            else -> ctx.status(400)
-        }
-    }
-
     fun run() {
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
@@ -76,46 +63,16 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
 
-        this.javalinApp.beforeMatched("/orders") { ctx ->
-            val email = ctx.bodyAsClass<Map<String, Any>>()["email"] ?: ""
-            if (authService.evaluateUserAuth(ctx, email.toString()) == null) {
-                ctx.json(mapOf("message" to "Auth for user $email is invalid"))
-                ctx.status(403)
-            }
-        }
-
+        this.javalinApp.beforeMatched("/orders") { ctx -> authService.evaluateAuth(ctx)}
         this.javalinApp.post("/orders/market") { ctx ->
-            marketService.marketOrderRequest(ctx.bodyAsClass<MarketOrderRequest>())
-                .onRight { response ->
-                    ctx.status(201)
-                    ctx.json(response)
-                }
-                .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+            val dto = ctx.bodyAsClass(MarketOrderRequest::class.java)
+            val orderResult = marketService.marketOrderRequest(dto)
+            //TODO Pattern match the resulting order, probably a function common to market, limit
         }
-
         this.javalinApp.post("/orders/limit") { ctx ->
-            marketService.limitOrderRequest(ctx.bodyAsClass<LimitOrderRequest>())
-                .onRight { response ->
-                    ctx.status(201)
-                    ctx.json(response)
-                }
-                .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+
         }
 
-        this.javalinApp.post("/orders/cancel_all") { ctx ->
-            marketService.allOrderCancel(ctx.bodyAsClass<AllOrderCancelRequest>())
-                .onRight { response ->
-                    ctx.status(201)
-                    ctx.json(response)
-                }
-                .onLeft { cancelFailure ->
-                    ctx.json(mapOf("message" to cancelFailure.second))
-                    when (cancelFailure.first) {
-                        AllOrderCancelFailureCode.UNKNOWN_TICKER -> ctx.status(404)
-                        else -> ctx.status(400)
-                    }
-                }
-        }
 
 
         // Note about market orders: they need to be ordered by received time in order to be treated correctly
