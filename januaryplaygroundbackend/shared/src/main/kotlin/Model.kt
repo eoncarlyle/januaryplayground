@@ -5,28 +5,6 @@ import java.math.BigDecimal
 
 typealias Ticker = String
 
-// As much as I like the Wlaschin typing, let's keep this simple for now
-
-//class Ticker private constructor(private val symbol: String) {
-//    override fun toString(): String = symbol
-//
-//    companion object {
-//        fun factoryOf(symbols: Set<String>): TickerFactory {
-//            return TickerFactory(symbols)
-//        }
-//    }
-//
-//    class TickerFactory internal constructor(private val validSymbols: Set<String>) {
-//        fun create(symbol: String): Ticker? {
-//            return if (symbol in validSymbols) {
-//                Ticker(symbol)
-//            } else {
-//                null
-//            }
-//        }
-//    }
-//}
-
 enum class TradeType {
     //@JsonAlias("buy")
     BUY,
@@ -38,29 +16,12 @@ enum class TradeType {
     }
 }
 
-// This is what made the case for extension methods to me
-
-// Much better than the empty interface trick in Java
-
-/*
-sealed interface OrderType {
-    // Don't understand the `object` vs. class distinction here
-    data object Market : OrderType
-    data class Limit(final val price: BigDecimal) : OrderType
-
-    // May need more terms for these other two
-    data class FillOrKill(final val price: BigDecimal) : OrderType
-    data class AllOrNothing(final val price: BigDecimal) : OrderType
-}
- */
-
 enum class OrderType {
     Market,
     Limit,
     FillOrKill,
     AllOrNothing
 }
-
 
 enum class MarketLifecycleOperation {
     @JsonAlias("open")

@@ -42,7 +42,7 @@ class MarketService(
         orderProposal: Either<OrderFailure, ArrayList<OrderBookEntry>>
     ): Either<OrderFailure, OrderFilled> {
         return orderProposal
-            .flatMap { marketOrderProposal -> //a "oh I get it" moment was when the types didn't work on map but did on `flatMap`
+            .flatMap { marketOrderProposal ->
                 val positionPair: Pair<Long?, Long> = marketDao.fillOrder(order, marketOrderProposal)
                 if (positionPair.first != null) {
                     return@flatMap Either.Right(
