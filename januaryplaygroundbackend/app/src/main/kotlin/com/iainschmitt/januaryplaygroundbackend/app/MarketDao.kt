@@ -21,7 +21,7 @@ class MarketDao(
     fun getUserLongPositions(userEmail: String, ticker: Ticker): ArrayList<Int> {
         val positions = ArrayList<Int>()
         db.query { conn ->
-            conn.prepareStatement("select size from position where email = ? and ticker = ? and type = ?").use { stmt ->
+            conn.prepareStatement("select size from position_records where user = ? and ticker = ? and position_type = ?").use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setString(2, ticker)
                 stmt.setInt(3, PositionType.LONG.ordinal)
@@ -40,9 +40,9 @@ class MarketDao(
         }
     }
 
-    fun pendingOrderExists(pendingOrderId: Int, email: String): Boolean {
+    fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select id from order where id = ? and user = ? and filled_tick != -1")
+            conn.prepareStatement("select id from order_records where id = ? and user = ? and filled_tick = -1")
                 .use { stmt ->
                     stmt.setInt(1, pendingOrderId)
                     stmt.setString(2, email)
@@ -57,7 +57,7 @@ class MarketDao(
     ): ArrayList<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, price, size, order_type, received_tick from order where ticker = ? and trade_type = ? and filled_tick != -1")
+            conn.prepareStatement("select id, user, ticker, price, size, order_type, received_tick from order_records where ticker = ? and trade_type = ? and filled_tick = -1")
                 .use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(
@@ -96,11 +96,18 @@ class MarketDao(
         val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
         // From perspective of the counterparties:
         // this is the direction that the counterparty balances will go
+
         db.query { conn ->
+            val completeOrderIds = completeOrders.map { it.id }
+            val orderIdSqlList = completeOrderIds.joinToString(prefix = "(", postfix = ")") { "?" }
+            val completeOrderUpdate = "update order_records set filled_tick = ? where id in $orderIdSqlList"
+
             // Addressing complete orders
-            conn.prepareStatement("update order set filled_tick = ? where id in ?").use { stmt ->
+            conn.prepareStatement(completeOrderUpdate).use { stmt ->
                 stmt.setLong(1, filledTick)
-                stmt.setArray(2, conn.createArrayOf("text", completeOrders.map { it.id }.toTypedArray()))
+                completeOrderIds.forEachIndexed {index, completeOrderId ->
+                    stmt.setInt(index + 2, completeOrderId)
+                }
                 stmt.executeUpdate()
             }
             // TODO: There is certainly a way to do this in a single query
@@ -115,7 +122,7 @@ class MarketDao(
             // Addressing partial orders
             // There really only should be _one_ of these ever run
             for (partialOrder in partialOrders) {
-                conn.prepareStatement("update order set size = ? where id = ?").use { stmt ->
+                conn.prepareStatement("update order_records set size = ? where id = ?").use { stmt ->
                     stmt.setInt(1, partialOrder.finalSize)
                     stmt.setInt(2, partialOrder.id)
                     stmt.executeUpdate()
@@ -138,12 +145,12 @@ class MarketDao(
             // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
             //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
             positionId = conn.prepareStatement(
-                "insert into position values ( ?, ?, ?, ? )",
+                "insert into position_records (user, ticker, position_type, size) values (?, ?, ?, ? )",
                 Statement.RETURN_GENERATED_KEYS
             ).use { stmt ->
                 stmt.setString(1, order.email)
                 stmt.setString(2, order.ticker)
-                stmt.setInt(3, order.tradeType.ordinal)
+                stmt.setInt(3, PositionType.LONG.ordinal) //TODO: think about long/short orders
                 stmt.setInt(4, order.size)
                 stmt.executeUpdate()
 
@@ -159,8 +166,8 @@ class MarketDao(
         val receivedTick: Long = System.currentTimeMillis()
 
         db.query { conn ->
-            orderId = conn.prepareStatement("""insert into order (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
-                values (?, ?, ?, ?, ?, ?, ?) 
+            orderId = conn.prepareStatement("""insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
+                values (?, ?, ?, ?, ?, ?, ?, ?) 
             """
             ).use { stmt ->
                 stmt.setString(1, order.email)
@@ -182,7 +189,7 @@ class MarketDao(
     fun deleteAllUserLongPositions(userEmail: String, ticker: Ticker): Pair<Int, Long> {
         var orderCount = 0
         db.query { conn ->
-            orderCount = conn.prepareStatement("delete from \"order\" where user = ? and ticker = ? and filled_tick = -1")
+            orderCount = conn.prepareStatement("delete from order_records where user = ? and ticker = ? and filled_tick = -1")
                 .use { stmt ->
                     stmt.setString(1, userEmail)
                     stmt.setString(2, ticker)

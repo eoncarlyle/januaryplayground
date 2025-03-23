@@ -220,7 +220,7 @@ class AuthService(
                         stmt.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
                     }
             }
-        return expireTimestamp != null && expireTimestamp > Instant.now().epochSecond
+        return expireTimestamp != null && expireTimestamp > Instant.now().toEpochMilli()
     }
 
     private fun evaluateUserAuth(token: String): Pair<String, Long>? {
@@ -232,7 +232,7 @@ class AuthService(
                         stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
                     }
             }
-        return if (pair == null || pair.second < Instant.now().epochSecond) {
+        return if (pair == null || pair.second < Instant.now().toEpochMilli()) {
             null
         } else {
             pair
@@ -249,7 +249,7 @@ class AuthService(
                         stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
                     }
             }
-        return if (pair == null || pair.second < Instant.now().epochSecond) {
+        return if (pair == null || pair.second < Instant.now().toEpochMilli()) {
             null
         } else {
             pair
@@ -270,7 +270,7 @@ class AuthService(
         cookieLifetime: Duration = Duration.ofHours(24),
         isHttpOnly: Boolean = true
     ): Pair<Cookie, Long> {
-        val expireTimestamp = Instant.now().plus(cookieLifetime).epochSecond
+        val expireTimestamp = Instant.now().plus(cookieLifetime).toEpochMilli()
         // Do not like that I can't specify a timestamp as `maxAge`
         val token = Generators.randomBasedGenerator().generate().toString()
         val cookie =

@@ -174,8 +174,9 @@ class MarketService(
             val orderBookEntriesAtPrice = sortedOrderBook[price]
             if (orderBookEntriesAtPrice != null) {
                 for (orderBookEntry in orderBookEntriesAtPrice) {
-                    val subsequentSize = proposedOrders.sumOf { op -> op.size }
+                    val subsequentSize = proposedOrders.sumOf { op -> op.size } + orderBookEntry.size
                     if (subsequentSize == order.size) {
+                        proposedOrders.add(orderBookEntry)
                         return getMarketOrderFinalStageOrderProposal(
                             order,
                             proposedOrders,
@@ -266,7 +267,7 @@ class MarketService(
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {
-        val transactionExists = marketDao.pendingOrderExists(pendingOrderId, email)
+        val transactionExists = marketDao.unfilledOrderExists(pendingOrderId, email)
         //if (!transactionExists) NotFoundResponse("Transaction '${pendingOrderId}' for user '${email}' not found")
 
         // Need to disambiguate between removed, filled orders
@@ -284,7 +285,7 @@ class MarketService(
         }
 
         book.forEach { (price, orders) ->
-            book[price] = orders.sortedBy { it.receivedTick } as ArrayList
+            book[price] = ArrayList(orders.sortedBy { it.receivedTick })
         }
         return book
     }
