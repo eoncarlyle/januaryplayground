@@ -238,6 +238,23 @@ class AuthService(
             pair
         }
     }
+    fun evaluateUserAuth(ctx: Context, email: String): Pair<String, Long>? {
+        val token = ctx.cookie(session)
+        val pair =
+            db.query { conn ->
+                conn.prepareStatement("select email, expire_timestamp from session where token = ? and email = ?")
+                    .use { stmt ->
+                        stmt.setString(1, token)
+                        stmt.setString(2, email)
+                        stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
+                    }
+            }
+        return if (pair == null || pair.second < Instant.now().epochSecond) {
+            null
+        } else {
+            pair
+        }
+    }
 
     private fun emailPresent(email: String): Boolean {
         return db.query { conn ->
