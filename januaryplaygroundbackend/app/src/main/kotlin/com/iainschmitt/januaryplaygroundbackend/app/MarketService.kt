@@ -127,7 +127,7 @@ class MarketService(
                         order.ticker,
                         filledOrder.positionId,
                         restingOrder.orderId,
-                        filledOrder.filledTime,
+                        filledOrder.filledTick,
                         order.tradeType,
                         order.orderType,
                         order.size,
@@ -236,8 +236,23 @@ class MarketService(
     }
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
-    fun orderCancelRequest(order: OrderCancelRequest) {
-        // Will need to include/reference any partial execution of an order between submission and cancelation request
+    fun allOrderCancel(order: AllOrderCancelRequest): OrderCancelResult<AllOrderCancelFailureCode, AllOrderCancelResponse> {
+        transactionSemaphore.acquire()
+        try {
+            if (marketDao.getTicker(order.ticker) == null) {
+                return Either.Left(Pair(AllOrderCancelFailureCode.UNKNOWN_TICKER, "Ticker symbol '${order.ticker}' not found"))
+            }
+
+            val pair = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
+
+            return when {
+                pair.first > 0 -> Either.Right(AllOrderCancelResponse(order.ticker, pair.second, pair.first))
+                else -> Either.Left(Pair(AllOrderCancelFailureCode.INSUFFICIENT_SHARES, "No unfilled orders to cancel"))
+            }
+
+        } finally {
+            transactionSemaphore.release()
+        }
     }
 
     private fun validateTicker(ticker: Ticker): Option<OrderFailure> {
@@ -250,12 +265,12 @@ class MarketService(
         } else None
     }
 
-    private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<OrderCancelFailedCode> {
+    private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {
         val transactionExists = marketDao.pendingOrderExists(pendingOrderId, email)
         //if (!transactionExists) NotFoundResponse("Transaction '${pendingOrderId}' for user '${email}' not found")
 
         // Need to disambiguate between removed, filled orders
-        return if (!transactionExists) Some(OrderCancelFailedCode.UNKNOWN_ORDER) else None
+        return if (!transactionExists) Some(SingleOrderCancelFailureCode.UNKNOWN_ORDER) else None
     }
 
     private fun getSortedMatchingOrderBook(
@@ -277,5 +292,4 @@ class MarketService(
     private fun getPositionCount(sortedOrderBook: SortedOrderBook): Int {
         return sortedOrderBook.map { (_, matchingPendingOrders) -> matchingPendingOrders.size }.sum()
     }
-
 }

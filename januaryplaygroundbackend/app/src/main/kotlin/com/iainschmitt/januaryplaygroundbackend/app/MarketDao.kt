@@ -42,7 +42,7 @@ class MarketDao(
 
     fun pendingOrderExists(pendingOrderId: Int, email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select id from pending_order where id = ? and user = ? and filled_tick != -1")
+            conn.prepareStatement("select id from order where id = ? and user = ? and filled_tick != -1")
                 .use { stmt ->
                     stmt.setInt(1, pendingOrderId)
                     stmt.setString(2, email)
@@ -57,7 +57,7 @@ class MarketDao(
     ): ArrayList<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, price, size, order_type, received_tick from pending_order where ticker = ? and trade_type = ? and filled_tick != -1")
+            conn.prepareStatement("select id, user, ticker, price, size, order_type, received_tick from order where ticker = ? and trade_type = ? and filled_tick != -1")
                 .use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(
@@ -98,7 +98,7 @@ class MarketDao(
         // this is the direction that the counterparty balances will go
         db.query { conn ->
             // Addressing complete orders
-            conn.prepareStatement("update pending_order set filled_tick = ? where id in ?").use { stmt ->
+            conn.prepareStatement("update order set filled_tick = ? where id in ?").use { stmt ->
                 stmt.setLong(1, filledTick)
                 stmt.setArray(2, conn.createArrayOf("text", completeOrders.map { it.id }.toTypedArray()))
                 stmt.executeUpdate()
@@ -115,7 +115,7 @@ class MarketDao(
             // Addressing partial orders
             // There really only should be _one_ of these ever run
             for (partialOrder in partialOrders) {
-                conn.prepareStatement("update pending_order set size = ? where id = ?").use { stmt ->
+                conn.prepareStatement("update order set size = ? where id = ?").use { stmt ->
                     stmt.setInt(1, partialOrder.finalSize)
                     stmt.setInt(2, partialOrder.id)
                     stmt.executeUpdate()
@@ -159,7 +159,7 @@ class MarketDao(
         val receivedTick: Long = System.currentTimeMillis()
 
         db.query { conn ->
-            orderId = conn.prepareStatement("""insert into pending_order (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
+            orderId = conn.prepareStatement("""insert into order (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
                 values (?, ?, ?, ?, ?, ?, ?) 
             """
             ).use { stmt ->
@@ -177,5 +177,18 @@ class MarketDao(
             }
         }
         return Pair(orderId, receivedTick)
+    }
+
+    fun deleteAllUserLongPositions(userEmail: String, ticker: Ticker): Pair<Int, Long> {
+        var orderCount = 0
+        db.query { conn ->
+            orderCount = conn.prepareStatement("delete from \"order\" where user = ? and ticker = ? and filled_tick = -1")
+                .use { stmt ->
+                    stmt.setString(1, userEmail)
+                    stmt.setString(2, ticker)
+                    stmt.executeUpdate()
+                }
+        }
+        return Pair(orderCount, System.currentTimeMillis())
     }
 }
