@@ -1,5 +1,6 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
+import com.iainschmitt.januaryplaygroundbackend.shared.MarketOrderRequest
 import io.javalin.Javalin
 import io.javalin.http.util.NaiveRateLimit
 import io.javalin.websocket.WsContext
@@ -64,7 +65,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
         this.javalinApp.beforeMatched("/orders") { ctx -> authService.evaluateAuth(ctx)}
         this.javalinApp.post("/orders/market") { ctx ->
-            val dto = ctx.bodyAsClass(IncomingMarketOrderRequest::class.java)
+            val dto = ctx.bodyAsClass(MarketOrderRequest::class.java)
             val orderResult = marketService.marketOrderRequest(dto)
             //TODO Pattern match the resulting order, probably a function common to market, limit
         }

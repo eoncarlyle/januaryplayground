@@ -5,7 +5,6 @@ import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
-import kotlin.math.E
 
 class MarketService(
     db: DatabaseHelper,
@@ -17,7 +16,7 @@ class MarketService(
 
     private val marketDao = MarketDao(db)
     // TODO: Typing is not organized: mix of Model and HttpModel types are used, should be organised
-    fun marketOrderRequest(order: IncomingMarketOrderRequest): OrderResult<MarketOrderResponse> {
+    fun marketOrderRequest(order: MarketOrderRequest): OrderResult<MarketOrderResponse> {
         transactionSemaphore.acquire()
         try {
             val userBalance = marketDao.getUserBalance(order.email)
@@ -65,7 +64,7 @@ class MarketService(
             }
     }
 
-    fun limitOrderRequest(order: IncomingLimitOrderRequest): OrderResult<LimitOrderResponse> {
+    fun limitOrderRequest(order: LimitOrderRequest): OrderResult<LimitOrderResponse> {
         transactionSemaphore.acquire()
         try {
             val userBalance = marketDao.getUserBalance(order.email)
@@ -101,7 +100,7 @@ class MarketService(
 
     // Assumes already within transaction semaphore, probably terrible idea
     private fun immediatelyFilledLimitOrder(
-        order: IncomingLimitOrderRequest,
+        order: LimitOrderRequest,
         crossingOrders: SortedOrderBook,
         userBalance: Int
     ): OrderResult<LimitOrderResponse> {
@@ -112,7 +111,7 @@ class MarketService(
 
     // Assumes already within transaction semaphore, probably terrible idea
     private fun partiallyFilledLimitOrder(
-        order: IncomingLimitOrderRequest,
+        order: LimitOrderRequest,
         crossingOrders: SortedOrderBook,
         userBalance: Int
     ): OrderResult<OrderPartiallyFilled> {
@@ -140,7 +139,7 @@ class MarketService(
     }
 
     // Assumes already within transaction semaphore, probably terrible idea
-    private fun createRestingLimitOrder(order: IncomingLimitOrderRequest): OrderResult<OrderAcknowledged> {
+    private fun createRestingLimitOrder(order: LimitOrderRequest): OrderResult<OrderAcknowledged> {
         val orderPair: Pair<Long?, Long> = marketDao.createLimitPendingOrder(order)
 
         return if (orderPair.first != null) {
@@ -161,7 +160,7 @@ class MarketService(
     }
 
     private fun getMarketOrderProposal(
-        order: IncomingOrderRequest,
+        order: OrderRequest,
         userBalance: Int,
         userLongPositions: Int,
         sortedOrderBook: SortedOrderBook
@@ -209,7 +208,7 @@ class MarketService(
     }
 
     private fun getMarketOrderFinalStageOrderProposal(
-        order: IncomingOrderRequest,
+        order: OrderRequest,
         proposedOrders: ArrayList<OrderBookEntry>,
         userBalance: Int,
         userLongPositions: Int
@@ -238,7 +237,7 @@ class MarketService(
     }
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
-    fun orderCancelRequest(order: IncomingOrderCancelRequest) {
+    fun orderCancelRequest(order: OrderCancelRequest) {
         // Will need to include/reference any partial execution of an order between submission and cancelation request
     }
 
@@ -261,7 +260,7 @@ class MarketService(
     }
 
     private fun getSortedMatchingOrderBook(
-        order: IncomingOrderRequest
+        order: OrderRequest
     ): SortedOrderBook {
         val matchingPendingOrders = marketDao.getMatchingOrderBook(order.ticker, order.tradeType)
         val book: SortedOrderBook = HashMap();

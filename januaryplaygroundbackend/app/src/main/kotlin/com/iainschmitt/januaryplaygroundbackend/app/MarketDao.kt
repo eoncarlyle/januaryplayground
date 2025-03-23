@@ -154,7 +154,7 @@ class MarketDao(
         return Pair(positionId, filledTick)
     }
 
-    fun createLimitPendingOrder(order: IncomingLimitOrderRequest): Pair<Long?, Long> {
+    fun createLimitPendingOrder(order: LimitOrderRequest): Pair<Long?, Long> {
         var orderId: Long? = null
         val receivedTick: Long = System.currentTimeMillis()
 
