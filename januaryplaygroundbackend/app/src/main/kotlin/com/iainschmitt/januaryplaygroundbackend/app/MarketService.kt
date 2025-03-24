@@ -120,8 +120,9 @@ class MarketService(
 
         return fillOrder(order, immediateOrderProposal)
             .flatMap { filledOrder ->
-                val resizedOrder = order.getResizedOrder(order.size - getPositionCount(crossingOrders))
                 // This kind of is asking for problems if the `fillOrder` succeeds and the `createRestinLimitOrder` fails
+                // TODO: Use result handling to fix the issue above
+                val resizedOrder = order.getResizedOrder(order.size - getPositionCount(crossingOrders))
                 createRestingLimitOrder(resizedOrder).map { restingOrder ->
                     OrderPartiallyFilled(
                         order.ticker,

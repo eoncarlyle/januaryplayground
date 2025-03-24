@@ -84,6 +84,9 @@ class App(db: DatabaseHelper, secure: Boolean) {
             }
         }
 
+        //TODO: Before orders return, write 'start price' message to channel...
+        //TODO: ...and after channel write the final price, send to websocket...
+        //TODO: ...if there is a difference
         this.javalinApp.post("/orders/market") { ctx ->
             marketService.marketOrderRequest(ctx.bodyAsClass<MarketOrderRequest>())
                 .onRight { response ->
