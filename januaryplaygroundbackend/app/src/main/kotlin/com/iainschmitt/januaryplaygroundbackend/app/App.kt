@@ -87,6 +87,9 @@ class App(db: DatabaseHelper, secure: Boolean) {
         //TODO: Before orders return, write 'start price' message to channel...
         //TODO: ...and after channel write the final price, send to websocket...
         //TODO: ...if there is a difference
+
+        //TODO: Use reader/writer pattern, specific to ticker?
+
         this.javalinApp.post("/orders/market") { ctx ->
             marketService.marketOrderRequest(ctx.bodyAsClass<MarketOrderRequest>())
                 .onRight { response ->
@@ -120,9 +123,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 }
         }
 
-
         // Note about market orders: they need to be ordered by received time in order to be treated correctly
-
         this.javalinApp.ws("/ws") { ws ->
             ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
             ws.onMessage { ctx ->

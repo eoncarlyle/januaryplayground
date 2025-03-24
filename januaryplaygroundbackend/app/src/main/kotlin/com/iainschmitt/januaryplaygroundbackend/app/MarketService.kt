@@ -1,6 +1,8 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
 import arrow.core.*
+import arrow.core.raise.either
+import arrow.core.raise.ensure
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
@@ -18,20 +20,12 @@ class MarketService(
     fun marketOrderRequest(order: MarketOrderRequest): OrderResult<MarketOrderResponse> {
         transactionSemaphore.acquire()
         try {
-            val userBalance = marketDao.getUserBalance(order.email)
-                ?: return Either.Left(
-                    Pair(
-                        OrderFailureCode.UNKNOWN_USER,
-                        "Unknown user attempting to transact"
-                    )
-                )
-            val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
-            validateTicker(order.ticker).map { orderFailure -> return Either.Left(orderFailure) }
-
-            val marketOrderProposal =
-                getMarketOrderProposal(order, userBalance, userLongPositions, getSortedMatchingOrderBook(order))
-
-            return fillOrder(order, marketOrderProposal)
+            return validateOrder(order).map { (validOrder, userBalance) ->
+                val userLongPositions = marketDao.getUserLongPositions(validOrder.email, validOrder.ticker).sum()
+                val marketOrderProposal =
+                    getMarketOrderProposal(validOrder, userBalance, userLongPositions, getSortedMatchingOrderBook(validOrder))
+                return fillOrder(validOrder, marketOrderProposal)
+            }
         } finally {
             transactionSemaphore.release()
         }
@@ -66,32 +60,25 @@ class MarketService(
     fun limitOrderRequest(order: LimitOrderRequest): OrderResult<LimitOrderResponse> {
         transactionSemaphore.acquire()
         try {
-            val userBalance = marketDao.getUserBalance(order.email)
-                ?: return Either.Left(
-                    Pair(
-                        OrderFailureCode.UNKNOWN_USER,
-                        "Unknown user attempting to transact"
+            return validateOrder(order).map { (validOrder, userBalance) ->
+                val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
+                val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
+                    if (validOrder.isBuy()) price < validOrder.price else price > validOrder.price
+                } as SortedOrderBook
+
+                val crossingOrderTotal = getPositionCount(crossingOrders)
+
+                return when {
+                    crossingOrderTotal > validOrder.size -> immediatelyFilledLimitOrder(
+                        validOrder,
+                        crossingOrders,
+                        userBalance
                     )
-                )
 
-            val matchingPendingOrders = getSortedMatchingOrderBook(order)
-            val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
-                if (order.isBuy()) price < order.price else price > order.price
-            } as SortedOrderBook
-
-            val crossingOrderTotal = getPositionCount(crossingOrders)
-
-            return when {
-                crossingOrderTotal > order.size -> immediatelyFilledLimitOrder(
-                    order,
-                    crossingOrders,
-                    userBalance
-                )
-
-                crossingOrderTotal > 0 -> partiallyFilledLimitOrder(order, crossingOrders, userBalance)
-                else -> createRestingLimitOrder(order)
+                    crossingOrderTotal > 0 -> partiallyFilledLimitOrder(validOrder, crossingOrders, userBalance)
+                    else -> createRestingLimitOrder(validOrder)
+                }
             }
-
         } finally {
             transactionSemaphore.release()
         }
@@ -242,7 +229,12 @@ class MarketService(
         transactionSemaphore.acquire()
         try {
             if (marketDao.getTicker(order.ticker) == null) {
-                return Either.Left(Pair(AllOrderCancelFailureCode.UNKNOWN_TICKER, "Ticker symbol '${order.ticker}' not found"))
+                return Either.Left(
+                    Pair(
+                        AllOrderCancelFailureCode.UNKNOWN_TICKER,
+                        "Ticker symbol '${order.ticker}' not found"
+                    )
+                )
             }
 
             val pair = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
@@ -257,14 +249,23 @@ class MarketService(
         }
     }
 
-    private fun validateTicker(ticker: Ticker): Option<OrderFailure> {
-        val pair = marketDao.getTicker(ticker)
-
-        return if (pair == null) {
-            Some(Pair(OrderFailureCode.UNKNOWN_TICKER, "Ticker symbol '${ticker}' not found"))
-        } else if (pair.second == 0) {
-            Some(Pair(OrderFailureCode.MARKET_CLOSED, "Ticker symbol '${ticker}' not open for transactions"))
-        } else None
+    private fun <T: OrderRequest> validateOrder(order: T): Either<OrderFailure, Pair<T, Int>> = either {
+        val tickerPair = marketDao.getTicker(order.ticker)
+        ensure(tickerPair != null) {
+            Pair(
+                OrderFailureCode.UNKNOWN_TICKER,
+                "Ticker symbol '${order.ticker}' not found"
+            )
+        }
+        ensure(tickerPair.second != 0) {
+            Pair(
+                OrderFailureCode.MARKET_CLOSED,
+                "Ticker symbol '${order.ticker}' not open for transactions"
+            )
+        }
+        val userBalance = marketDao.getUserBalance(order.email)
+        ensure(userBalance != null) { Pair(OrderFailureCode.UNKNOWN_USER, "Unknown user attempting to transact") }
+        Pair(order, userBalance)
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {
