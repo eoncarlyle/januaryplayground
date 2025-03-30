@@ -5,6 +5,7 @@ import java.math.BigDecimal
 
 typealias Ticker = String
 
+
 enum class TradeType {
     //@JsonAlias("buy")
     BUY,

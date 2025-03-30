@@ -37,13 +37,13 @@ class MarketService(
     ): Either<OrderFailure, OrderFilled> {
         return orderProposal
             .flatMap { marketOrderProposal ->
-                val positionPair: Pair<Long?, Long> = marketDao.fillOrder(order, marketOrderProposal)
-                if (positionPair.first != null) {
+                val filledOrderRecord = marketDao.fillOrder(order, marketOrderProposal)
+                if (filledOrderRecord != null) {
                     return@flatMap Either.Right(
                         OrderFilled(
                             order.ticker,
-                            positionPair.first!!,
-                            positionPair.second,
+                            filledOrderRecord.positionId,
+                            filledOrderRecord.filledTick,
                             order.tradeType,
                             order.orderType,
                             order.size,
@@ -127,14 +127,15 @@ class MarketService(
 
     // Assumes already within transaction semaphore, probably terrible idea
     private fun createRestingLimitOrder(order: LimitOrderRequest): OrderResult<OrderAcknowledged> {
-        val orderPair: Pair<Long?, Long> = marketDao.createLimitPendingOrder(order)
+        val orderRecord = marketDao.createLimitPendingOrder(order)
+        //LimitPendingOrderRecord
 
-        return if (orderPair.first != null) {
+        return if (orderRecord != null) {
             Either.Right(
                 OrderAcknowledged(
                     order.ticker,
-                    orderPair.first!!,
-                    orderPair.second,
+                    orderRecord.orderId,
+                    orderRecord.receivedTick,
                     order.tradeType,
                     order.orderType,
                     order.size,
@@ -237,10 +238,10 @@ class MarketService(
                 )
             }
 
-            val pair = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
+            val deleteRecord = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
 
             return when {
-                pair.first > 0 -> Either.Right(AllOrderCancelResponse(order.ticker, pair.second, pair.first))
+                deleteRecord.orderCount > 0 -> Either.Right(AllOrderCancelResponse(order.ticker, deleteRecord.cancelledTick, deleteRecord.orderCount))
                 else -> Either.Left(Pair(AllOrderCancelFailureCode.INSUFFICIENT_SHARES, "No unfilled orders to cancel"))
             }
 
@@ -249,15 +250,19 @@ class MarketService(
         }
     }
 
+    fun getQuote(ticker: Ticker): Quote? {
+        return marketDao.getQuote(ticker)
+    }
+
     private fun <T: OrderRequest> validateOrder(order: T): Either<OrderFailure, Pair<T, Int>> = either {
-        val tickerPair = marketDao.getTicker(order.ticker)
-        ensure(tickerPair != null) {
+        val tickerRecord = marketDao.getTicker(order.ticker)
+        ensure(tickerRecord != null) {
             Pair(
                 OrderFailureCode.UNKNOWN_TICKER,
                 "Ticker symbol '${order.ticker}' not found"
             )
         }
-        ensure(tickerPair.second != 0) {
+        ensure(tickerRecord.open) {
             Pair(
                 OrderFailureCode.MARKET_CLOSED,
                 "Ticker symbol '${order.ticker}' not open for transactions"

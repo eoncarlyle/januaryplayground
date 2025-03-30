@@ -1,5 +1,6 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.Javalin
 import io.javalin.http.Context
@@ -8,9 +9,7 @@ import io.javalin.http.util.NaiveRateLimit
 import io.javalin.websocket.WsContext
 import org.slf4j.LoggerFactory
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 
 
 fun main(args: Array<String>) {
@@ -34,6 +33,8 @@ class App(db: DatabaseHelper, secure: Boolean) {
     private val wsUserMap: WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>()
     private val logger by lazy { LoggerFactory.getLogger(App::class.java) }
     private val transactionSemaphore: Semaphore = Semaphore(1);
+    private val quoteQueue = LinkedBlockingQueue<Quote>()
+    private val objectMapper = ObjectMapper()
 
     private val javalinApp = Javalin.create({ config ->
         config.bundledPlugins.enableCors { cors ->
@@ -91,28 +92,40 @@ class App(db: DatabaseHelper, secure: Boolean) {
         //TODO: Use reader/writer pattern, specific to ticker?
 
         this.javalinApp.post("/orders/market") { ctx ->
-            marketService.marketOrderRequest(ctx.bodyAsClass<MarketOrderRequest>())
+            val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
+            val initialQuote = marketService.getQuote(orderRequest.ticker)
+            marketService.marketOrderRequest(orderRequest)
                 .onRight { response ->
                     ctx.status(201)
                     ctx.json(response)
+                    quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
                 }
                 .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
         }
 
         this.javalinApp.post("/orders/limit") { ctx ->
-            marketService.limitOrderRequest(ctx.bodyAsClass<LimitOrderRequest>())
+            val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
+            val initialQuote = marketService.getQuote(orderRequest.ticker)
+            marketService.limitOrderRequest(orderRequest)
                 .onRight { response ->
                     ctx.status(201)
                     ctx.json(response)
+                    when (response) {
+                        is OrderPartiallyFilled -> quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
+                        is OrderFilled -> quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
+                    }
                 }
                 .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
         }
 
         this.javalinApp.post("/orders/cancel_all") { ctx ->
-            marketService.allOrderCancel(ctx.bodyAsClass<AllOrderCancelRequest>())
+            val orderRequest = ctx.bodyAsClass<AllOrderCancelRequest>()
+            val initialQuote = marketService.getQuote(orderRequest.ticker)
+            marketService.allOrderCancel(orderRequest)
                 .onRight { response ->
                     ctx.status(201)
                     ctx.json(response)
+                    quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
                 }
                 .onLeft { cancelFailure ->
                     ctx.json(mapOf("message" to cancelFailure.second))
@@ -128,8 +141,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
             ws.onMessage { ctx ->
                 try {
-                    val message = ctx.messageAsClass<WebSocketMessage>()
-                    when (message) {
+                    when (val message = ctx.messageAsClass<WebSocketMessage>()) {
                         is IncomingSocketLifecycleMessage -> authService.handleWsLifecycleMessage(ctx, message)
                     }
                 } catch (e: Exception) {
@@ -151,6 +163,21 @@ class App(db: DatabaseHelper, secure: Boolean) {
         startServerEventSimulation()
     }
 
+    private fun <T> quoteQueueProducer(request: T, initialQuote: Quote?, finalQuote: Quote?) {
+        if (initialQuote != null && finalQuote != null) {
+            if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
+                quoteQueue.put(finalQuote)
+            }
+        } else {
+            val serialisedRequest = objectMapper.writeValueAsString(request)
+            if (initialQuote == null) {
+                logger.warn("Failure to receive initial quote for $serialisedRequest")
+            }
+            if (finalQuote == null) {
+                logger.warn("Failure to receive initial quote for $serialisedRequest")
+            }
+        }
+    }
 
     private fun startServerEventSimulation() {
         Thread {
@@ -164,7 +191,20 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     session.send(serverUpdate)
                 }
             }
+        }.start()
+    }
+
+    private fun orderQuoteConsumer() {
+        Thread {
+            while (true) {
+                val quote = quoteQueue.take()
+                val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
+                //logger.info("Sending event to {} websockets", aliveSockets.size)
+                aliveSockets.forEach { session ->
+                    //logger.info("Sending message to {}", session.toString())
+                    session.send(quote)
+                }
+            }
         }
-            .start()
     }
 }

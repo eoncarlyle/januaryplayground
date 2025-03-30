@@ -21,21 +21,22 @@ class MarketDao(
     fun getUserLongPositions(userEmail: String, ticker: Ticker): ArrayList<Int> {
         val positions = ArrayList<Int>()
         db.query { conn ->
-            conn.prepareStatement("select size from position_records where user = ? and ticker = ? and position_type = ?").use { stmt ->
-                stmt.setString(1, userEmail)
-                stmt.setString(2, ticker)
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.executeQuery().use { rs -> while (rs.next()) positions.add(rs.getInt("size")) }
-            }
+            conn.prepareStatement("select size from position_records where user = ? and ticker = ? and position_type = ?")
+                .use { stmt ->
+                    stmt.setString(1, userEmail)
+                    stmt.setString(2, ticker)
+                    stmt.setInt(3, PositionType.LONG.ordinal)
+                    stmt.executeQuery().use { rs -> while (rs.next()) positions.add(rs.getInt("size")) }
+                }
         }
         return positions
     }
 
-    fun getTicker(ticker: Ticker): Pair<String, Int>? {
+    fun getTicker(ticker: Ticker): TickerRecord? {
         return db.query { conn ->
             conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->
                 stmt.setString(1, ticker)
-                stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getInt(2)) else null }
+                stmt.executeQuery().use { rs -> if (rs.next()) TickerRecord(rs.getString(1), rs.getInt(2)) else null }
             }
         }
     }
@@ -48,6 +49,31 @@ class MarketDao(
                     stmt.setString(2, email)
                     stmt.executeQuery().use { rs -> rs.next() }
                 }
+        }
+    }
+
+    fun getQuote(ticker: Ticker): Quote? {
+        return db.query { conn ->
+            conn.prepareStatement(
+                """
+            select 
+                (select max(price) from order_records 
+                 where ticker = ? and trade_type = 0 and filled_tick = -1) as bid,
+                (select min(price) from order_records 
+                 where ticker = ? and trade_type = 1 and filled_tick = -1) as ask
+            """
+            ).use { stmt ->
+                stmt.setString(1, ticker)
+                stmt.setString(2, ticker)
+                stmt.executeQuery().use { rs ->
+                    if (rs.next()) {
+                        val bid = rs.getInt(1)
+                        val ask = rs.getInt(2)
+                        if (rs.wasNull() || ask == 0 && rs.wasNull()) null
+                        else Quote(ticker, bid, ask)
+                    } else null
+                }
+            }
         }
     }
 
@@ -89,15 +115,14 @@ class MarketDao(
     fun fillOrder(
         order: Order,
         marketOrderProposal: ArrayList<OrderBookEntry>
-    ): Pair<Long?, Long> {
-        var positionId: Long? = null
+    ): FilledOrderRecord? {
         val filledTick: Long = System.currentTimeMillis()
         val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
         val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
         // From perspective of the counterparties:
         // this is the direction that the counterparty balances will go
 
-        db.query { conn ->
+        val positionId = db.query { conn ->
             val completeOrderIds = completeOrders.map { it.id }
             val orderIdSqlList = completeOrderIds.joinToString(prefix = "(", postfix = ")") { "?" }
             val completeOrderUpdate = "update order_records set filled_tick = ? where id in $orderIdSqlList"
@@ -105,7 +130,7 @@ class MarketDao(
             // Addressing complete orders
             conn.prepareStatement(completeOrderUpdate).use { stmt ->
                 stmt.setLong(1, filledTick)
-                completeOrderIds.forEachIndexed {index, completeOrderId ->
+                completeOrderIds.forEachIndexed { index, completeOrderId ->
                     stmt.setInt(index + 2, completeOrderId)
                 }
                 stmt.executeUpdate()
@@ -144,7 +169,7 @@ class MarketDao(
             // SQLite docs:
             // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
             //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
-            positionId = conn.prepareStatement(
+            return@query conn.prepareStatement(
                 "insert into position_records (user, ticker, position_type, size) values (?, ?, ?, ? )",
                 Statement.RETURN_GENERATED_KEYS
             ).use { stmt ->
@@ -158,15 +183,16 @@ class MarketDao(
                 if (rs.next()) rs.getLong(1) else -1
             }
         }
-        return Pair(positionId, filledTick)
+        return if (positionId != -1L) FilledOrderRecord(positionId, filledTick) else null
     }
 
-    fun createLimitPendingOrder(order: LimitOrderRequest): Pair<Long?, Long> {
+    fun createLimitPendingOrder(order: LimitOrderRequest): LimitPendingOrderRecord? {
         var orderId: Long? = null
         val receivedTick: Long = System.currentTimeMillis()
 
-        db.query { conn ->
-            orderId = conn.prepareStatement("""insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
+        orderId = db.query { conn ->
+            conn.prepareStatement(
+                """insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
                 values (?, ?, ?, ?, ?, ?, ?, ?) 
             """
             ).use { stmt ->
@@ -180,22 +206,22 @@ class MarketDao(
                 stmt.setLong(8, receivedTick)
 
                 val rs = stmt.generatedKeys
-                if (rs.next()) rs.getLong(1) else -1
+                return@query if (rs.next()) rs.getLong(1) else -1
             }
         }
-        return Pair(orderId, receivedTick)
+        return if (orderId != -1L) LimitPendingOrderRecord(orderId, receivedTick) else null
     }
 
-    fun deleteAllUserLongPositions(userEmail: String, ticker: Ticker): Pair<Int, Long> {
-        var orderCount = 0
-        db.query { conn ->
-            orderCount = conn.prepareStatement("delete from order_records where user = ? and ticker = ? and filled_tick = -1")
-                .use { stmt ->
-                    stmt.setString(1, userEmail)
-                    stmt.setString(2, ticker)
-                    stmt.executeUpdate()
-                }
+    fun deleteAllUserLongPositions(userEmail: String, ticker: Ticker): DeleteAllPositionsRecord {
+        val cancelledTick: Long = System.currentTimeMillis()
+        val orderCount = db.query { conn ->
+                conn.prepareStatement("delete from order_records where user = ? and ticker = ? and filled_tick = -1")
+                    .use { stmt ->
+                        stmt.setString(1, userEmail)
+                        stmt.setString(2, ticker)
+                        stmt.executeUpdate()
+                    }
         }
-        return Pair(orderCount, System.currentTimeMillis())
+        return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
 }
