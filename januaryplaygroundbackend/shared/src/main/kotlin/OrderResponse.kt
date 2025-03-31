@@ -1,10 +1,13 @@
 package com.iainschmitt.januaryplaygroundbackend.shared
 
 import arrow.core.Either
+import java.util.concurrent.Semaphore
 
 typealias OrderFailure = Pair<OrderFailureCode, String>
+typealias SemaphoreResult<T> = Either<T, Semaphore>
 typealias OrderResult<T> = Either<OrderFailure, T>
 typealias OrderCancelResult<L, R> = Either<Pair<L, String>, R>
+
 interface OrderCancel {
     val orderId: Int
     val email: String

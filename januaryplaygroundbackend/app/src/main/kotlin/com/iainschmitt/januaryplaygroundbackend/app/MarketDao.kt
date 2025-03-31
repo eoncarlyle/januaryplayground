@@ -41,6 +41,20 @@ class MarketDao(
         }
     }
 
+    fun getAllTickers(): List<TickerRecord> {
+        return db.query { conn ->
+            val tickers = mutableListOf<TickerRecord>()
+            conn.prepareStatement("select symbol, open from ticker").use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        tickers.add(TickerRecord(rs.getString("symbol"), rs.getInt("open")))
+                    }
+                }
+            }
+            tickers
+        }
+    }
+
     fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean {
         return db.query { conn ->
             conn.prepareStatement("select id from order_records where id = ? and user = ? and filled_tick = -1")

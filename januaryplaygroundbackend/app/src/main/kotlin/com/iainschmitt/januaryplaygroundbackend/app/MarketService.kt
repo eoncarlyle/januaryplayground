@@ -13,21 +13,29 @@ class MarketService(
     private val secure: Boolean,
     private val wsUserMap: WsUserMap,
     private val logger: Logger,
-    private val transactionSemaphore: Semaphore
 ) {
 
     private val marketDao = MarketDao(db)
-    fun marketOrderRequest(order: MarketOrderRequest): OrderResult<MarketOrderResponse> {
-        transactionSemaphore.acquire()
-        try {
-            return validateOrder(order).map { (validOrder, userBalance) ->
-                val userLongPositions = marketDao.getUserLongPositions(validOrder.email, validOrder.ticker).sum()
-                val marketOrderProposal =
-                    getMarketOrderProposal(validOrder, userBalance, userLongPositions, getSortedMatchingOrderBook(validOrder))
-                return fillOrder(validOrder, marketOrderProposal)
+    private val onNoSemaphoreOrder = Pair(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition")
+    private val onNoSemaphoreAllOrderCancel = Pair(AllOrderCancelFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition")
+    fun marketOrderRequest(order: MarketOrderRequest, semaphore: Semaphore?): OrderResult<MarketOrderResponse> {
+        return getTransactionSemaphore(semaphore, onNoSemaphoreOrder).map { transactionSemaphore ->
+            transactionSemaphore.acquire()
+            try {
+                return validateOrder(order).map { (validOrder, userBalance) ->
+                    val userLongPositions = marketDao.getUserLongPositions(validOrder.email, validOrder.ticker).sum()
+                    val marketOrderProposal =
+                        getMarketOrderProposal(
+                            validOrder,
+                            userBalance,
+                            userLongPositions,
+                            getSortedMatchingOrderBook(validOrder)
+                        )
+                    return fillOrder(validOrder, marketOrderProposal)
+                }
+            } finally {
+                transactionSemaphore.release()
             }
-        } finally {
-            transactionSemaphore.release()
         }
     }
 
@@ -57,30 +65,32 @@ class MarketService(
             }
     }
 
-    fun limitOrderRequest(order: LimitOrderRequest): OrderResult<LimitOrderResponse> {
-        transactionSemaphore.acquire()
-        try {
-            return validateOrder(order).map { (validOrder, userBalance) ->
-                val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
-                val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
-                    if (validOrder.isBuy()) price < validOrder.price else price > validOrder.price
-                } as SortedOrderBook
+    fun limitOrderRequest(order: LimitOrderRequest, semaphore: Semaphore?): OrderResult<LimitOrderResponse> {
+        return getTransactionSemaphore(semaphore, onNoSemaphoreOrder).map { transactionSemaphore ->
+            transactionSemaphore.acquire()
+            try {
+                return validateOrder(order).map { (validOrder, userBalance) ->
+                    val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
+                    val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
+                        if (validOrder.isBuy()) price < validOrder.price else price > validOrder.price
+                    } as SortedOrderBook
 
-                val crossingOrderTotal = getPositionCount(crossingOrders)
+                    val crossingOrderTotal = getPositionCount(crossingOrders)
 
-                return when {
-                    crossingOrderTotal > validOrder.size -> immediatelyFilledLimitOrder(
-                        validOrder,
-                        crossingOrders,
-                        userBalance
-                    )
+                    return when {
+                        crossingOrderTotal > validOrder.size -> immediatelyFilledLimitOrder(
+                            validOrder,
+                            crossingOrders,
+                            userBalance
+                        )
 
-                    crossingOrderTotal > 0 -> partiallyFilledLimitOrder(validOrder, crossingOrders, userBalance)
-                    else -> createRestingLimitOrder(validOrder)
+                        crossingOrderTotal > 0 -> partiallyFilledLimitOrder(validOrder, crossingOrders, userBalance)
+                        else -> createRestingLimitOrder(validOrder)
+                    }
                 }
+            } finally {
+                transactionSemaphore.release()
             }
-        } finally {
-            transactionSemaphore.release()
         }
     }
 
@@ -226,27 +236,44 @@ class MarketService(
     }
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
-    fun allOrderCancel(order: AllOrderCancelRequest): OrderCancelResult<AllOrderCancelFailureCode, AllOrderCancelResponse> {
-        transactionSemaphore.acquire()
-        try {
-            if (marketDao.getTicker(order.ticker) == null) {
-                return Either.Left(
-                    Pair(
-                        AllOrderCancelFailureCode.UNKNOWN_TICKER,
-                        "Ticker symbol '${order.ticker}' not found"
+    fun allOrderCancel(
+        order: AllOrderCancelRequest,
+        semaphore: Semaphore?
+    ): OrderCancelResult<AllOrderCancelFailureCode, AllOrderCancelResponse> {
+        return getTransactionSemaphore(semaphore, onNoSemaphoreAllOrderCancel).map { transactionSemaphore ->
+            transactionSemaphore.acquire()
+            try {
+                if (marketDao.getTicker(order.ticker) == null) {
+                    return Either.Left(
+                        Pair(
+                            AllOrderCancelFailureCode.UNKNOWN_TICKER,
+                            "Ticker symbol '${order.ticker}' not found"
+                        )
                     )
-                )
+                }
+
+                val deleteRecord = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
+
+                return when {
+                    deleteRecord.orderCount > 0 -> Either.Right(
+                        AllOrderCancelResponse(
+                            order.ticker,
+                            deleteRecord.cancelledTick,
+                            deleteRecord.orderCount
+                        )
+                    )
+
+                    else -> Either.Left(
+                        Pair(
+                            AllOrderCancelFailureCode.INSUFFICIENT_SHARES,
+                            "No unfilled orders to cancel"
+                        )
+                    )
+                }
+
+            } finally {
+                transactionSemaphore.release()
             }
-
-            val deleteRecord = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
-
-            return when {
-                deleteRecord.orderCount > 0 -> Either.Right(AllOrderCancelResponse(order.ticker, deleteRecord.cancelledTick, deleteRecord.orderCount))
-                else -> Either.Left(Pair(AllOrderCancelFailureCode.INSUFFICIENT_SHARES, "No unfilled orders to cancel"))
-            }
-
-        } finally {
-            transactionSemaphore.release()
         }
     }
 
@@ -254,7 +281,13 @@ class MarketService(
         return marketDao.getQuote(ticker)
     }
 
-    private fun <T: OrderRequest> validateOrder(order: T): Either<OrderFailure, Pair<T, Int>> = either {
+    private fun <T> getTransactionSemaphore(semaphore: Semaphore?, onNoSemaphore: T): SemaphoreResult<T> {
+        return if (semaphore != null) {
+            Either.Right(semaphore)
+        } else Either.Left(onNoSemaphore)
+    }
+
+    private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
         val tickerRecord = marketDao.getTicker(order.ticker)
         ensure(tickerRecord != null) {
             Pair(
@@ -270,7 +303,7 @@ class MarketService(
         }
         val userBalance = marketDao.getUserBalance(order.email)
         ensure(userBalance != null) { Pair(OrderFailureCode.UNKNOWN_USER, "Unknown user attempting to transact") }
-        Pair(order, userBalance)
+        ValidOrderRecord(order, userBalance)
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {
