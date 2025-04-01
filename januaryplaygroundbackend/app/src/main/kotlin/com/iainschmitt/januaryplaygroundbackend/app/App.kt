@@ -1,6 +1,5 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
-import arrow.core.Either
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.Javalin
@@ -90,6 +89,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
             val initialQuote = marketService.getQuote(orderRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
+            // Use optionals to unnest
             if (semaphore != null) {
                 marketService.marketOrderRequest(orderRequest, semaphore)
                     .onRight { response ->
@@ -109,6 +109,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
             val initialQuote = marketService.getQuote(orderRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
+            // Use optionals to unnest
             if (semaphore != null) {
                 marketService.limitOrderRequest(orderRequest, semaphore)
                     .onRight { response ->
@@ -140,6 +141,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             val cancelRequest = ctx.bodyAsClass<AllOrderCancelRequest>()
             val initialQuote = marketService.getQuote(cancelRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(cancelRequest.ticker)
+            // Use optionals to unnest
             if (semaphore != null) {
                 marketService.allOrderCancel(cancelRequest, semaphore)
                     .onRight { response ->
@@ -221,12 +223,12 @@ class App(db: DatabaseHelper, secure: Boolean) {
         Thread {
             while (true) {
                 val quote = quoteQueue.take()
+                logger.info("Incoming ticker ${quote.ticker} quote for ${quote.bid}/${quote.ask}")
                 val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
-                //logger.info("Sending event to {} websockets", aliveSockets.size)
                 aliveSockets.forEach { session ->
-                    //logger.info("Sending message to {}", session.toString())
                     session.send(quote)
                 }
+                logger.info("Updated ${aliveSockets.size} clients over websockets about new bid");
             }
         }
     }
