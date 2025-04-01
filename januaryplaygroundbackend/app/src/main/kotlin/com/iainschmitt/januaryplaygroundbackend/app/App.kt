@@ -1,5 +1,6 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
+import arrow.core.Either
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.Javalin
@@ -88,46 +89,75 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
             val initialQuote = marketService.getQuote(orderRequest.ticker)
-            marketService.marketOrderRequest(orderRequest, transactionSemaphores.getSemaphore(orderRequest.ticker))
-                .onRight { response ->
-                    ctx.status(201)
-                    ctx.json(response)
-                    quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
-                }
-                .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+            val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
+            if (semaphore != null) {
+                marketService.marketOrderRequest(orderRequest, semaphore)
+                    .onRight { response ->
+                        ctx.status(201)
+                        ctx.json(response)
+                        quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
+                    }
+                    .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+            } else {
+                val orderFailure =
+                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during order semaphore acquisition")
+                orderFailureHandler(ctx, orderFailure)
+            }
         }
 
         this.javalinApp.post("/orders/limit") { ctx ->
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
             val initialQuote = marketService.getQuote(orderRequest.ticker)
-            marketService.limitOrderRequest(orderRequest, transactionSemaphores.getSemaphore(orderRequest.ticker))
-                .onRight { response ->
-                    ctx.status(201)
-                    ctx.json(response)
-                    when (response) {
-                        is OrderPartiallyFilled -> quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
-                        is OrderFilled -> quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
+            val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
+            if (semaphore != null) {
+                marketService.limitOrderRequest(orderRequest, semaphore)
+                    .onRight { response ->
+                        ctx.status(201)
+                        ctx.json(response)
+                        when (response) {
+                            is OrderPartiallyFilled -> quoteQueueProducer(
+                                orderRequest,
+                                initialQuote,
+                                marketService.getQuote(orderRequest.ticker)
+                            )
+
+                            is OrderFilled -> quoteQueueProducer(
+                                orderRequest,
+                                initialQuote,
+                                marketService.getQuote(orderRequest.ticker)
+                            )
+                        }
                     }
-                }
-                .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+                    .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+            } else {
+                val orderFailure =
+                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during order semaphore acquisition")
+                orderFailureHandler(ctx, orderFailure)
+            }
         }
 
         this.javalinApp.post("/orders/cancel_all") { ctx ->
             val cancelRequest = ctx.bodyAsClass<AllOrderCancelRequest>()
             val initialQuote = marketService.getQuote(cancelRequest.ticker)
-            marketService.allOrderCancel(cancelRequest, transactionSemaphores.getSemaphore(cancelRequest.ticker))
-                .onRight { response ->
-                    ctx.status(201)
-                    ctx.json(response)
-                    quoteQueueProducer(cancelRequest, initialQuote, marketService.getQuote(cancelRequest.ticker))
-                }
-                .onLeft { cancelFailure ->
-                    ctx.json(mapOf("message" to cancelFailure.second))
-                    when (cancelFailure.first) {
-                        AllOrderCancelFailureCode.UNKNOWN_TICKER -> ctx.status(404)
-                        else -> ctx.status(400)
+            val semaphore = transactionSemaphores.getSemaphore(cancelRequest.ticker)
+            if (semaphore != null) {
+                marketService.allOrderCancel(cancelRequest, semaphore)
+                    .onRight { response ->
+                        ctx.status(201)
+                        ctx.json(response)
+                        quoteQueueProducer(cancelRequest, initialQuote, marketService.getQuote(cancelRequest.ticker))
                     }
-                }
+                    .onLeft { cancelFailure ->
+                        ctx.json(mapOf("message" to cancelFailure.second))
+                        when (cancelFailure.first) {
+                            AllOrderCancelFailureCode.UNKNOWN_TICKER -> ctx.status(404)
+                            else -> ctx.status(400)
+                        }
+                    }
+            } else {
+                ctx.json(mapOf("message" to "Unknown ticker ${cancelRequest.ticker}"))
+                ctx.status(404)
+            }
         }
 
         // Note about market orders: they need to be ordered by received time in order to be treated correctly

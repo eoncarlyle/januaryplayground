@@ -16,26 +16,25 @@ class MarketService(
 ) {
 
     private val marketDao = MarketDao(db)
-    fun marketOrderRequest(order: MarketOrderRequest, semaphore: Semaphore?): OrderResult<MarketOrderResponse> {
-        return getOrderSemaphore(semaphore).map { transactionSemaphore ->
-            transactionSemaphore.acquire()
-            try {
-                return validateOrder(order).map { (validOrder, userBalance) ->
-                    val userLongPositions = marketDao.getUserLongPositions(validOrder.email, validOrder.ticker).sum()
-                    val marketOrderProposal =
-                        getMarketOrderProposal(
-                            validOrder,
-                            userBalance,
-                            userLongPositions,
-                            getSortedMatchingOrderBook(validOrder)
-                        )
-                    return fillOrder(validOrder, marketOrderProposal)
-                }
-            } finally {
-                transactionSemaphore.release()
+    fun marketOrderRequest(order: MarketOrderRequest, semaphore: Semaphore): OrderResult<MarketOrderResponse> {
+        semaphore.acquire()
+        try {
+            return validateOrder(order).map { (validOrder, userBalance) ->
+                val userLongPositions = marketDao.getUserLongPositions(validOrder.email, validOrder.ticker).sum()
+                val marketOrderProposal =
+                    getMarketOrderProposal(
+                        validOrder,
+                        userBalance,
+                        userLongPositions,
+                        getSortedMatchingOrderBook(validOrder)
+                    )
+                return fillOrder(validOrder, marketOrderProposal)
             }
+        } finally {
+            semaphore.release()
         }
     }
+
 
     private fun fillOrder(
         order: Order,
@@ -63,32 +62,30 @@ class MarketService(
             }
     }
 
-    fun limitOrderRequest(order: LimitOrderRequest, semaphore: Semaphore?): OrderResult<LimitOrderResponse> {
-        return getOrderSemaphore(semaphore).map { transactionSemaphore ->
-            transactionSemaphore.acquire()
-            try {
-                return validateOrder(order).map { (validOrder, userBalance) ->
-                    val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
-                    val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
-                        if (validOrder.isBuy()) price < validOrder.price else price > validOrder.price
-                    } as SortedOrderBook
+    fun limitOrderRequest(order: LimitOrderRequest, semaphore: Semaphore): OrderResult<LimitOrderResponse> {
+        semaphore.acquire()
+        try {
+            return validateOrder(order).map { (validOrder, userBalance) ->
+                val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
+                val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
+                    if (validOrder.isBuy()) price < validOrder.price else price > validOrder.price
+                } as SortedOrderBook
 
-                    val crossingOrderTotal = getPositionCount(crossingOrders)
+                val crossingOrderTotal = getPositionCount(crossingOrders)
 
-                    return when {
-                        crossingOrderTotal > validOrder.size -> immediatelyFilledLimitOrder(
-                            validOrder,
-                            crossingOrders,
-                            userBalance
-                        )
+                return when {
+                    crossingOrderTotal > validOrder.size -> immediatelyFilledLimitOrder(
+                        validOrder,
+                        crossingOrders,
+                        userBalance
+                    )
 
-                        crossingOrderTotal > 0 -> partiallyFilledLimitOrder(validOrder, crossingOrders, userBalance)
-                        else -> createRestingLimitOrder(validOrder)
-                    }
+                    crossingOrderTotal > 0 -> partiallyFilledLimitOrder(validOrder, crossingOrders, userBalance)
+                    else -> createRestingLimitOrder(validOrder)
                 }
-            } finally {
-                transactionSemaphore.release()
             }
+        } finally {
+            semaphore.release()
         }
     }
 
@@ -236,61 +233,45 @@ class MarketService(
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun allOrderCancel(
         order: AllOrderCancelRequest,
-        semaphore: Semaphore?
+        semaphore: Semaphore
     ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> {
-        return getCancellationSemaphore(semaphore).map { transactionSemaphore ->
-            transactionSemaphore.acquire()
-            try {
-                if (marketDao.getTicker(order.ticker) == null) {
-                    return Either.Left(
-                        Pair(
-                            AllOrderCancelFailureCode.UNKNOWN_TICKER,
-                            "Ticker symbol '${order.ticker}' not found"
-                        )
+        semaphore.acquire()
+        try {
+            if (marketDao.getTicker(order.ticker) == null) {
+                return Either.Left(
+                    Pair(
+                        AllOrderCancelFailureCode.UNKNOWN_TICKER,
+                        "Ticker symbol '${order.ticker}' not found"
                     )
-                }
-
-                val deleteRecord = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
-
-                return when {
-                    deleteRecord.orderCount > 0 -> Either.Right(
-                        AllOrderCancelResponse(
-                            order.ticker,
-                            deleteRecord.cancelledTick,
-                            deleteRecord.orderCount
-                        )
-                    )
-
-                    else -> Either.Left(
-                        Pair(
-                            AllOrderCancelFailureCode.INSUFFICIENT_SHARES,
-                            "No unfilled orders to cancel"
-                        )
-                    )
-                }
-
-            } finally {
-                transactionSemaphore.release()
+                )
             }
+
+            val deleteRecord = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
+
+            return when {
+                deleteRecord.orderCount > 0 -> Either.Right(
+                    AllOrderCancelResponse(
+                        order.ticker,
+                        deleteRecord.cancelledTick,
+                        deleteRecord.orderCount
+                    )
+                )
+
+                else -> Either.Left(
+                    AllOrderCancelFailure(
+                        AllOrderCancelFailureCode.INSUFFICIENT_SHARES,
+                        "No unfilled orders to cancel"
+                    )
+                )
+            }
+
+        } finally {
+            semaphore.release()
         }
     }
 
     fun getQuote(ticker: Ticker): Quote? {
         return marketDao.getQuote(ticker)
-    }
-
-
-
-    private fun getOrderSemaphore(semaphore: Semaphore?): SemaphoreResult<OrderFailure> {
-        return if (semaphore != null) {
-            Either.Right(semaphore)
-        } else Either.Left(Pair(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition"))
-    }
-
-    private fun getCancellationSemaphore(semaphore: Semaphore?): SemaphoreResult<AllOrderCancelFailure> {
-        return if (semaphore != null) {
-            Either.Right(semaphore)
-        } else Either.Left(Pair(AllOrderCancelFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition"))
     }
 
     private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
