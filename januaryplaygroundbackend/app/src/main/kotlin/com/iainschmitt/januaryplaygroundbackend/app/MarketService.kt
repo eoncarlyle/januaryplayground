@@ -16,10 +16,8 @@ class MarketService(
 ) {
 
     private val marketDao = MarketDao(db)
-    private val onNoSemaphoreOrder = Pair(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition")
-    private val onNoSemaphoreAllOrderCancel = Pair(AllOrderCancelFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition")
     fun marketOrderRequest(order: MarketOrderRequest, semaphore: Semaphore?): OrderResult<MarketOrderResponse> {
-        return getTransactionSemaphore(semaphore, onNoSemaphoreOrder).map { transactionSemaphore ->
+        return getOrderSemaphore(semaphore).map { transactionSemaphore ->
             transactionSemaphore.acquire()
             try {
                 return validateOrder(order).map { (validOrder, userBalance) ->
@@ -66,7 +64,7 @@ class MarketService(
     }
 
     fun limitOrderRequest(order: LimitOrderRequest, semaphore: Semaphore?): OrderResult<LimitOrderResponse> {
-        return getTransactionSemaphore(semaphore, onNoSemaphoreOrder).map { transactionSemaphore ->
+        return getOrderSemaphore(semaphore).map { transactionSemaphore ->
             transactionSemaphore.acquire()
             try {
                 return validateOrder(order).map { (validOrder, userBalance) ->
@@ -239,8 +237,8 @@ class MarketService(
     fun allOrderCancel(
         order: AllOrderCancelRequest,
         semaphore: Semaphore?
-    ): OrderCancelResult<AllOrderCancelFailureCode, AllOrderCancelResponse> {
-        return getTransactionSemaphore(semaphore, onNoSemaphoreAllOrderCancel).map { transactionSemaphore ->
+    ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> {
+        return getCancellationSemaphore(semaphore).map { transactionSemaphore ->
             transactionSemaphore.acquire()
             try {
                 if (marketDao.getTicker(order.ticker) == null) {
@@ -281,10 +279,18 @@ class MarketService(
         return marketDao.getQuote(ticker)
     }
 
-    private fun <T> getTransactionSemaphore(semaphore: Semaphore?, onNoSemaphore: T): SemaphoreResult<T> {
+
+
+    private fun getOrderSemaphore(semaphore: Semaphore?): SemaphoreResult<OrderFailure> {
         return if (semaphore != null) {
             Either.Right(semaphore)
-        } else Either.Left(onNoSemaphore)
+        } else Either.Left(Pair(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition"))
+    }
+
+    private fun getCancellationSemaphore(semaphore: Semaphore?): SemaphoreResult<AllOrderCancelFailure> {
+        return if (semaphore != null) {
+            Either.Right(semaphore)
+        } else Either.Left(Pair(AllOrderCancelFailureCode.UNKNOWN_TICKER, "Unknown ticker during semaphore acquisition"))
     }
 
     private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
