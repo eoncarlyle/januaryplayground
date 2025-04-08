@@ -84,6 +84,18 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 ctx.status(403)
             }
         }
+        this.javalinApp.post("/orders/positions/") { ctx ->
+            val ticker = ctx.pathParam("ticker")
+            val dto = ctx.bodyAsClass<PostGetPositionsDto>();
+            val semaphore = transactionSemaphores.getSemaphore(ticker)
+            if (semaphore != null) {
+                ctx.status(200)
+                ctx.json(marketService.getLongPositions(dto.email, dto.ticker))
+            } else {
+                ctx.status(404)
+                ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
+            }
+        }
 
         this.javalinApp.post("/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
@@ -100,7 +112,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
             } else {
                 val orderFailure =
-                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during order semaphore acquisition")
+                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker '${orderRequest.ticker}' during order semaphore acquisition")
                 orderFailureHandler(ctx, orderFailure)
             }
         }

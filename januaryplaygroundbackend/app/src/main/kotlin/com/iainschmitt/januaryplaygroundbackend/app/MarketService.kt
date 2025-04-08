@@ -274,6 +274,10 @@ class MarketService(
         return marketDao.getQuote(ticker)
     }
 
+    fun getLongPositions(user: String, ticker: Ticker): List<PositionRecord> {
+        return marketDao.getLongPositions(user, ticker)
+    }
+
     private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
         val tickerRecord = marketDao.getTicker(order.ticker)
         ensure(tickerRecord != null) {

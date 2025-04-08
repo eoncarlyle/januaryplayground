@@ -91,3 +91,14 @@ interface Order {
     val size: Int;
     val email: String;
 }
+
+data class PostGetPositionsDto (
+    val email: String,
+    val ticker: Ticker
+)
+
+data class PositionRecord(
+    val id: Int,
+    val ticker: Ticker,
+    val size: Int,
+)

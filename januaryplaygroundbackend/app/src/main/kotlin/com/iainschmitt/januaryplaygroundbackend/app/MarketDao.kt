@@ -212,15 +212,44 @@ class MarketDao(
         return if (orderId != -1L) LimitPendingOrderRecord(orderId, receivedTick) else null
     }
 
+    fun getLongPositions(userEmail: String, ticker: Ticker): List<PositionRecord> {
+        return db.query { conn ->
+            conn.prepareStatement(
+                """
+            SELECT id, size
+            FROM position_records
+            WHERE user = ? AND ticker = ? AND position_type = 0
+            """
+            ).use { stmt ->
+                stmt.setString(1, userEmail)
+                stmt.setString(2, ticker)
+
+                val rs = stmt.executeQuery()
+                val positions = mutableListOf<PositionRecord>()
+
+                while (rs.next()) {
+                    positions.add(
+                        PositionRecord(
+                            id = rs.getInt("id"),
+                            ticker = rs.getString("ticker"),
+                            size = rs.getInt("size"),
+                        )
+                    )
+                }
+                positions
+            }
+        }
+    }
+
     fun deleteAllUserLongPositions(userEmail: String, ticker: Ticker): DeleteAllPositionsRecord {
         val cancelledTick: Long = System.currentTimeMillis()
         val orderCount = db.query { conn ->
-                conn.prepareStatement("delete from order_records where user = ? and ticker = ? and filled_tick = -1")
-                    .use { stmt ->
-                        stmt.setString(1, userEmail)
-                        stmt.setString(2, ticker)
-                        stmt.executeUpdate()
-                    }
+            conn.prepareStatement("delete from order_records where user = ? and ticker = ? and filled_tick = -1")
+                .use { stmt ->
+                    stmt.setString(1, userEmail)
+                    stmt.setString(2, ticker)
+                    stmt.executeUpdate()
+                }
         }
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
