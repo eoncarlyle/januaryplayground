@@ -165,6 +165,24 @@ private fun startServerEventSimulation() {
   - Once something is a pending order, is is committed: credits comitted to a limit order are tied up in a limit order until the order is filled or cancelled
   - This isn't the most realistic treatment, but it simplifies some things for me for now
 
+### Implementing Kotlin Clients
+Not using suspend in the server only made sense because I was using Javalin - I am sure there is some equivalent out there, but I wanted to get up and running and it didn't seem like that much of an impediment. As of now, there will only be two kinds of clients: market makers and noise traders (not that it has a large bearing on the general structure of how clients work).
+
+On client startup both HTTP and websocket auth need to take place. When websocket events are sent then things will have to be actioned on immediately, but there are also heartbeat style and other timed tasks to work with. It looks like the way forward is several coroutines started with the `lauch` keyword: one responds to websockets, one does 'heartbeat' tasks, and one carries out long-running tasks for things like re-authenticating: credentials. Before moving forward on this it probably makes sense to do some actual reading on how coroutines in Kotlin work -
+
+Test market maker credentials
+- email: `testmm@iainschmitt.com`
+- password: `myTestMmPassword`
+
+When doing temporary session auth with an exired token, the WebSocket closing throws an exception in the backend that should be handled differently
+
+```
+[JettyServerThreadPool-51] WARN org.eclipse.jetty.websocket.core.internal.WebSocketCoreSession - Invalid outgoing frame: CLOSE@16421837[len=0,fin=true,rsv=000,m=null]:{0401=UNKNOWN,invalid token}
+org.eclipse.jetty.websocket.core.exception.ProtocolException: Frame has non-transmittable status code
+	at io.javalin.websocket.WsContext.closeSession(WsContext.kt:150)
+	at com.iainschmitt.januaryplaygroundbackend.app.AuthService.handleWsLifecycleMessage(AuthService.kt:163)
+```
+
 ## Previous Topic Notes
 
 ### WebSocket Authentication Detail

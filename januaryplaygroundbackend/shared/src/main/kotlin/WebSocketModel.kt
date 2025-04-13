@@ -1,13 +1,14 @@
-package com.iainschmitt.januaryplaygroundbackend.app
+package com.iainschmitt.januaryplaygroundbackend.shared
 
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.websocket.WsContext
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.serialization.Serializable
 
+@Serializable
 class CredentialsDto(val email: String, val password: String)
 
 enum class WebSocketResponseStatus(val code: Int) {

@@ -1,6 +1,7 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
 import com.fasterxml.uuid.Generators
+import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.*
 import io.javalin.websocket.WsConnectContext
 import io.javalin.websocket.WsContext
@@ -22,7 +23,7 @@ class AuthService(
     private val expireTime = "expireTime"
 
     fun signUp(ctx: Context) {
-        val dto = ctx.bodyAsClass(CredentialsDto::class.java)
+        val dto = ctx.bodyAsClass<CredentialsDto>();
         val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
         if (emailPresent(dto.email)) {
             // If the start of this lamda was `return lamda@`, then doing `return@lamda` below after
@@ -52,7 +53,7 @@ class AuthService(
     }
 
     fun logIn(ctx: Context) {
-        val dto = ctx.bodyAsClass(CredentialsDto::class.java)
+        val dto = ctx.bodyAsClass<CredentialsDto>()
         val passwordHash: String? =
             db.query { conn ->
                 conn.prepareStatement("select password_hash from user where email = ?").use { stmt
