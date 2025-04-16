@@ -3,6 +3,7 @@ package com.iainschmitt.januaryplaygroundbackend.shared
 import com.fasterxml.jackson.annotation.JsonAlias
 import java.math.BigDecimal
 
+class CredentialsDto(val email: String, val password: String)
 typealias Ticker = String
 
 
@@ -102,3 +103,4 @@ data class PositionRecord(
     val ticker: Ticker,
     val size: Int,
 )
+

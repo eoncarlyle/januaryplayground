@@ -6,10 +6,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 import io.javalin.websocket.WsContext
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.serialization.Serializable
-
-@Serializable
-class CredentialsDto(val email: String, val password: String)
 
 enum class WebSocketResponseStatus(val code: Int) {
     SUCCESS(200),
