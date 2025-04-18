@@ -18,10 +18,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consumeEach
 import org.slf4j.LoggerFactory
 
-class AuthClient(private val baseurl: String = "127.0.0.1") {
+class AuthClient(private val baseurl: String = "127.0.0.1", private val port: Int = 7070) {
     private val logger = LoggerFactory.getLogger(AuthClient::class.java)
-    private val httpBaseurl = "http://$baseurl:7070"
+    private val httpBaseurl = "http://$baseurl:$port"
     private val objectMapper = ObjectMapper()
+
     // Need to read this - likely forgetting something in the dual WS/HTTP setup
     // https://ktor.io/docs/client-websockets.html
     private val client = HttpClient(CIO) {
@@ -34,7 +35,10 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
 
     suspend fun signUp(email: String, password: String): Map<String, String> {
         logger.info("Signing up user: $email")
-        val response = client.post("$httpBaseurl/auth/signup") {
+        val response = client.post(httpBaseurl) {
+            url {
+                appendPathSegments("auth", "signup")
+            }
             contentType(ContentType.Application.Json)
             setBody(CredentialsDto(email, password))
         }
@@ -48,7 +52,10 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
 
     suspend fun login(email: String, password: String): Map<String, String> {
         logger.info("Logging in user: $email")
-        val response = client.post("$httpBaseurl/auth/login") {
+        val response = client.post(httpBaseurl) {
+            url {
+                appendPathSegments("auth", "login")
+            }
             contentType(ContentType.Application.Json)
             setBody(CredentialsDto(email, password))
         }
@@ -62,7 +69,11 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
 
     suspend fun evaluateAuth(): Map<String, Any> {
         logger.info("Evaluating authentication")
-        val response = client.get("$httpBaseurl/auth/evaluate")
+        val response = client.post(httpBaseurl) {
+            url {
+                appendPathSegments("auth", "evaluate")
+            }
+        }
 
         return if (response.status == HttpStatusCode.OK) {
             response.body()
@@ -73,7 +84,10 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
 
     suspend fun getTemporarySession(email: String): String {
         logger.info("Getting temporary session for: $email")
-        val response = client.post("$httpBaseurl/auth/sessions/temporary") {
+        val response = client.post(httpBaseurl) {
+            url {
+                appendPathSegments("auth", "sessions", "temporary")
+            }
             contentType(ContentType.Application.Json)
             setBody(mapOf("email" to email))
         }
@@ -88,8 +102,11 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
 
     suspend fun logout(): Boolean {
         logger.info("Logging out")
-        val response = client.post("$httpBaseurl/auth/logout")
-
+        val response = client.post(httpBaseurl) {
+            url {
+                appendPathSegments("auth", "logout")
+            }
+        }
         return response.status == HttpStatusCode.OK
     }
 
@@ -103,7 +120,7 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
         try {
             val token = getTemporarySession(email)
 
-            client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = 7070) {
+            client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = port) {
                 logger.info("WebSocket connection established")
                 onOpen()
 
@@ -123,6 +140,7 @@ class AuthClient(private val baseurl: String = "127.0.0.1") {
                                     logger.debug("Received WebSocket message: $text")
                                     onMessage(text)
                                 }
+
                                 else -> logger.debug("Received other frame type: $frame")
                             }
                         }
