@@ -23,8 +23,6 @@ class AuthClient(private val baseurl: String = "127.0.0.1", private val port: In
     private val httpBaseurl = "http://$baseurl:$port"
     private val objectMapper = ObjectMapper()
 
-    // Need to read this - likely forgetting something in the dual WS/HTTP setup
-    // https://ktor.io/docs/client-websockets.html
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             jackson()

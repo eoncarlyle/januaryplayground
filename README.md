@@ -174,14 +174,7 @@ Test market maker credentials
 - email: `testmm@iainschmitt.com`
 - password: `myTestMmPassword`
 
-When doing temporary session auth with an exired token, the WebSocket closing throws an exception in the backend that should be handled differently
-
-```
-[JettyServerThreadPool-51] WARN org.eclipse.jetty.websocket.core.internal.WebSocketCoreSession - Invalid outgoing frame: CLOSE@16421837[len=0,fin=true,rsv=000,m=null]:{0401=UNKNOWN,invalid token}
-org.eclipse.jetty.websocket.core.exception.ProtocolException: Frame has non-transmittable status code
-	at io.javalin.websocket.WsContext.closeSession(WsContext.kt:150)
-	at com.iainschmitt.januaryplaygroundbackend.app.AuthService.handleWsLifecycleMessage(AuthService.kt:163)
-```
+The auth client is ready to go, now similar work needs to be done for the market client.
 
 ## Previous Topic Notes
 
