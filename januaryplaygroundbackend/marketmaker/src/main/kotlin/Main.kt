@@ -10,23 +10,40 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.serialization.jackson.*
 
-val client = HttpClient(CIO) {
-    install(ContentNegotiation) {
-        jackson()
-    }
-}
-
-suspend fun login(): String {
-    val response = client.post("http://localhost:7070/auth/login") {
-        contentType(ContentType.Application.Json)
-        setBody(CredentialsDto("testmm@iainschmitt.com", "myTestMmPassword"))
-    }
-    return response.body<Map<String,String>>().toString()
-}
-
 fun main() = runBlocking {
-    val a = async {login()}
-    val b = a.await()
-    println(b)
-}
+    val authClient = AuthClient()
 
+    try {
+        // Login
+        val loginResponse = authClient.login("testmm@iainschmitt.com", "myTestMmPassword")
+        println("Login successful: $loginResponse")
+
+        // Check authentication
+        val authStatus = authClient.evaluateAuth()
+        println("Auth status: $authStatus")
+
+        // Example of WebSocket connection
+        val job = launch {
+            authClient.connectWebSocket(
+                email = "testmm@iainschmitt.com",
+                onOpen = { println("WebSocket connection opened") },
+                onMessage = { println("Received message: $it") },
+                onClose = { code, reason -> println("Connection closed: $code, $reason") }
+            )
+        }
+
+        // Let the WebSocket run for a bit
+        delay(10000)
+
+        // Cancel the WebSocket job
+        job.cancel()
+
+        // Logout
+        val logoutSuccess = authClient.logout()
+        println("Logout successful: $logoutSuccess")
+    } catch (e: Exception) {
+        println("Error: ${e.message}")
+    } finally {
+        authClient.close()
+    }
+}
