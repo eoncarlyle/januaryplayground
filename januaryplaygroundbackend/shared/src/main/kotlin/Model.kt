@@ -93,7 +93,7 @@ interface Order {
     val email: String;
 }
 
-data class PostGetPositionsDto (
+data class PostGetLongPositionsDto (
     val email: String,
     val ticker: Ticker
 )

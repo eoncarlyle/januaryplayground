@@ -174,7 +174,7 @@ Test market maker credentials
 - email: `testmm@iainschmitt.com`
 - password: `myTestMmPassword`
 
-The auth client is ready to go, now similar work needs to be done for the market client.
+`AuthClient.kt` re-written to `BackendClient.kt`.
 
 ## Previous Topic Notes
 

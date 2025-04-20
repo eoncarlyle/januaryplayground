@@ -86,7 +86,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         }
         this.javalinApp.post("/orders/positions/") { ctx ->
             val ticker = ctx.pathParam("ticker")
-            val dto = ctx.bodyAsClass<PostGetPositionsDto>();
+            val dto = ctx.bodyAsClass<PostGetLongPositionsDto>();
             val semaphore = transactionSemaphores.getSemaphore(ticker)
             if (semaphore != null) {
                 ctx.status(200)

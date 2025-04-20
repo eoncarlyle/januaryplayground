@@ -3,17 +3,18 @@ package com.iainschmitt.januaryplaygroundbackend.marketmaker
 import kotlinx.coroutines.*
 
 fun main() = runBlocking {
-    val authClient = AuthClient()
+    val backendClient = BackendClient()
 
     try {
-        val loginResponse = authClient.login("testmm@iainschmitt.com", "myTestMmPassword")
-        println("Login successful: $loginResponse")
+        val loginResponse = backendClient.login("testmm@iainschmitt.com", "myTestMmPassword")
+        // Don't transfer these over when using the client
+        //println("Login successful: $loginResponse")
 
-        val authStatus = authClient.evaluateAuth()
+        val authStatus = backendClient.evaluateAuth()
         println("Auth status: $authStatus")
 
         val job = launch {
-            authClient.connectWebSocket(
+            backendClient.connectWebSocket(
                 email = "testmm@iainschmitt.com",
                 onOpen = { println("WebSocket connection opened") },
                 onMessage = { println("Received message: $it") },
@@ -23,11 +24,11 @@ fun main() = runBlocking {
 
         delay(10000)
         job.cancel()
-        val logoutSuccess = authClient.logout()
+        val logoutSuccess = backendClient.logout()
         println("Logout successful: $logoutSuccess")
     } catch (e: Exception) {
         println("Error: ${e.message}")
     } finally {
-        authClient.close()
+        backendClient.close()
     }
 }

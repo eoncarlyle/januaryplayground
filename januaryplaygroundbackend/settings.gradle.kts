@@ -14,4 +14,4 @@ rootProject.name = "januaryplaygroundbackend"
 include("app")
 include("shared")
 include("exchange")
-include("marketmaker")
+include("client")
