@@ -90,7 +90,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
         return when (response.status) {
             HttpStatusCode.Created -> {
                 val responseBody: Map<String, String> = response.body()
-                // Use an option type once you have wifi back, there's gotta be some appropriate method for this
+                //TODO: Use an option type once you have wifi back, there's gotta be some appropriate method for this
                 if (responseBody["token"] != null) {
                     return Either.Right(responseBody["token"]!!)
                 } else {
@@ -122,7 +122,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
         }
 
         return when(response.status) {
-            //Need to deserialise this properly
+            //TODO: proper deserialisation
             HttpStatusCode.Created -> { val responseBody: List<PositionRecord> = response.body()  }
         }
     }
