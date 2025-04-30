@@ -38,11 +38,11 @@ enum class WebSocketLifecycleOperation {
         value = IncomingSocketLifecycleMessage::class,
         name = "incomingLifecycle"
     ),
-    JsonSubTypes.Type(value = MarketOrderRequest::class, name = "incomingOrder")
+    JsonSubTypes.Type(value = Quote::class, name = "outgoingQuote"),
+    JsonSubTypes.Type(value = ServerTime::class, name = "outgoingServerTime"),
 )
 interface WebSocketMessage {
     val type: String // Needed for deserialisation
-    val email: String?
 }
 
 interface OutgoingWebSocketMessage : WebSocketMessage {
@@ -51,14 +51,12 @@ interface OutgoingWebSocketMessage : WebSocketMessage {
 
 data class OutgoingError(
     override val webSocketResponseStatus: WebSocketResponseStatus,
-    override val email: String?,
     val errorDescription: String
 ) : OutgoingWebSocketMessage {
     override val type = "Error"
 }
 
 data class IncomingSocketLifecycleMessage(
-    override val email: String,
     val token: String,
     val operation: WebSocketLifecycleOperation
 ) : WebSocketMessage {
@@ -66,7 +64,6 @@ data class IncomingSocketLifecycleMessage(
 }
 
 data class OutgoingLifecycleMessage<T>(
-    override val email: String?,
     val operation: WebSocketLifecycleOperation,
     override val webSocketResponseStatus: WebSocketResponseStatus,
     val body: T,
@@ -76,7 +73,6 @@ data class OutgoingLifecycleMessage<T>(
 
 data class OutgoingMarketLifecycle(
     override val type: String = "incomingLifecycle",
-    override val email: String,
     val operation: WebSocketLifecycleOperation
 ) : WebSocketMessage
 
@@ -87,3 +83,9 @@ data class OutgoingOrderBook(
     override val ask: Map<BigDecimal, List<Order>>,
     override val publishedTick: Long
 ) : OrderBookRecord, WebSocketMessage
+
+data class ServerTime(
+    val time: Long
+): WebSocketMessage {
+    val type: String = "serverTime"
+}
