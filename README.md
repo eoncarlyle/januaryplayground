@@ -187,7 +187,7 @@ Test market maker credentials
 
 ### New authentication
 - Run top-level auth
-- Change the backend to include when the session will inspire
+- Change the backend to include when the session will expire
 - Save both in storage and in global state
 - Write async job that logs out when the tu
 - Write function that logs out (state and cookies) if 403s are hit

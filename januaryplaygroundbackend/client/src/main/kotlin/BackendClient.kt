@@ -15,7 +15,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consumeEach
 import org.slf4j.LoggerFactory
 import arrow.core.Either
+import arrow.core.Option
+import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import io.ktor.client.statement.*
 
 class BackendClient(private val baseurl: String = "127.0.0.1", private val port: Int = 7070) {
     private val logger = LoggerFactory.getLogger(BackendClient::class.java)
@@ -89,13 +92,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
 
         return when (response.status) {
             HttpStatusCode.Created -> {
-                val responseBody: Map<String, String> = response.body()
-                //TODO: Use an option type once you have wifi back, there's gotta be some appropriate method for this
-                if (responseBody["token"] != null) {
-                    return Either.Right(responseBody["token"]!!)
-                } else {
-                    return Either.Left("No token in response")
-                }
+                Option.fromNullable(response.body<Map<String, String>>()["token"]).toEither { "No token in response" }
             }
 
             else -> Either.Left(("Failed to get temporary session with status: ${response.status}"))
@@ -120,13 +117,19 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
             contentType(ContentType.Application.Json)
             setBody(mapOf("email" to email, "ticker" to ticker))
         }
-
-        return when(response.status) {
-            //TODO: proper deserialisation
-            HttpStatusCode.Created -> { val responseBody: List<PositionRecord> = response.body()  }
+        return when (response.status) {
+            HttpStatusCode.Created -> {
+                // Note: this is a very nice way to work with
+                Either.catch {
+                    objectMapper.readValue(
+                        response.bodyAsText(),
+                        object : TypeReference<List<PositionRecord>>() {}
+                    )
+                }.mapLeft { "Could not deserialise" }
+            }
+            else -> Either.Left("Bad")
         }
     }
-
 
     suspend fun connectWebSocket(
         email: String,
@@ -135,9 +138,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
         onClose: (Int, String?) -> Unit = { _, _ -> },
         onError: (Throwable) -> Unit = {}
     ) = coroutineScope {
-        val eToken = temporarySession(email)
-
-        eToken.onRight { token ->
+        temporarySession(email).onRight { token ->
             try {
                 client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = port) {
                     logger.info("WebSocket connection established")
