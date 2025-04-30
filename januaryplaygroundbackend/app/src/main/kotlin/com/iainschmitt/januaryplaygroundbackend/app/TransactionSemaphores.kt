@@ -1,6 +1,7 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
 import com.iainschmitt.januaryplaygroundbackend.shared.Ticker
+import com.iainschmitt.januaryplaygroundbackend.shared.TickerRecord
 import java.util.AbstractMap.SimpleEntry
 import java.util.concurrent.Semaphore
 

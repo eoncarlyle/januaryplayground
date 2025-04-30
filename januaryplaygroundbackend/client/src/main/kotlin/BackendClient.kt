@@ -121,12 +121,10 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
             HttpStatusCode.Created -> {
                 // Note: this is a very nice way to work with
                 Either.catch {
-                    objectMapper.readValue(
-                        response.bodyAsText(),
-                        object : TypeReference<List<PositionRecord>>() {}
-                    )
+                    objectMapper.readValue(response.bodyAsText(), object : TypeReference<List<PositionRecord>>() {})
                 }.mapLeft { "Could not deserialise" }
             }
+
             else -> Either.Left("Bad")
         }
     }
@@ -134,7 +132,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
     suspend fun connectWebSocket(
         email: String,
         onOpen: () -> Unit = {},
-        onMessage: (String) -> Unit = {},
+        onQuote: (Quote) -> Unit = {},
         onClose: (Int, String?) -> Unit = { _, _ -> },
         onError: (Throwable) -> Unit = {}
     ) = coroutineScope {
@@ -144,10 +142,8 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
                     logger.info("WebSocket connection established")
                     onOpen()
 
-                    val authMessage = IncomingSocketLifecycleMessage(
-                        email = email,
-                        token = token,
-                        operation = WebSocketLifecycleOperation.AUTHENTICATE
+                    val authMessage = ClientLifecycleMessage(
+                        email = email, token = token, operation = WebSocketLifecycleOperation.AUTHENTICATE
                     )
                     send(Frame.Text(objectMapper.writeValueAsString(authMessage)))
 
@@ -155,10 +151,26 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
                         try {
                             incoming.consumeEach { frame ->
                                 when (frame) {
+                                    //TODO: something similar to com/iainschmitt/januaryplaygroundbackend/app/App.kt:183
                                     is Frame.Text -> {
                                         val text = frame.readText()
                                         logger.debug("Received WebSocket message: $text")
-                                        onMessage(text)
+                                        Either.catch {
+                                            objectMapper.readValue(text, object : TypeReference<WebSocketMessage>() {})
+                                        }.mapLeft { "Could not deserialise" }.onRight { message ->
+                                                when (message) {
+                                                    is QuoteMessage -> onQuote(message.quote)
+                                                    is ServerTimeMessage -> logger.info(
+                                                        objectMapper.writeValueAsString(
+                                                            ServerTimeMessage(message.time)
+                                                        )
+                                                    )
+                                                    else -> {
+                                                        logger.warn("Client receieved something unexpected")
+                                                        logger.warn(objectMapper.writeValueAsString(message))
+                                                    }
+                                                }
+                                        }
                                     }
 
                                     else -> logger.debug("Received other frame type: {}", frame)

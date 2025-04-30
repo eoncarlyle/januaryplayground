@@ -1,5 +1,6 @@
 package com.iainschmitt.januaryplaygroundbackend.app
 
+import arrow.core.Either
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.Javalin
@@ -112,7 +113,10 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
             } else {
                 val orderFailure =
-                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker '${orderRequest.ticker}' during order semaphore acquisition")
+                    OrderFailure(
+                        OrderFailureCode.UNKNOWN_TICKER,
+                        "Unknown ticker '${orderRequest.ticker}' during order semaphore acquisition"
+                    )
                 orderFailureHandler(ctx, orderFailure)
             }
         }
@@ -177,15 +181,19 @@ class App(db: DatabaseHelper, secure: Boolean) {
         // Note about market orders: they need to be ordered by received time in order to be treated correctly
         this.javalinApp.ws("/ws") { ws ->
             ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
+            // The only expected inbound messages are for client authentication
             ws.onMessage { ctx ->
-                try {
-                    when (val message = ctx.messageAsClass<WebSocketMessage>()) {
-                        is IncomingSocketLifecycleMessage -> authService.handleWsLifecycleMessage(ctx, message)
+                Either.catch { ctx.messageAsClass<ClientLifecycleMessage>() }
+                    .onRight { clientLifecycleMessage ->
+                        authService.handleWsLifecycleMessage(
+                            ctx,
+                            clientLifecycleMessage
+                        )
                     }
-                } catch (e: Exception) {
-                    logger.error("Unable to serialise '{}'", ctx.message())
-                    ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, null, "Internal server error"))
-                }
+                    .onLeft {
+                        logger.error("Unable to serialise '{}'", ctx.message())
+                        ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, "Internal server error"))
+                    }
             }
             ws.onClose { ctx ->
                 logger.info("Closing WebSocket connection")
@@ -222,10 +230,9 @@ class App(db: DatabaseHelper, secure: Boolean) {
         Thread {
             while (true) {
                 Thread.sleep(5000) // Every 5 seconds
-                val serverUpdate = "Server time: ${System.currentTimeMillis()}"
                 val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
                 aliveSockets.forEach { session ->
-                    session.send(serverUpdate)
+                    session.send(objectMapper.writeValueAsString(ServerTimeMessage(System.currentTimeMillis())))
                 }
             }
         }.start()

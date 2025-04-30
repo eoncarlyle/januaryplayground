@@ -144,17 +144,17 @@ class AuthService(
         logger.info("Incoming connection")
         wsUserMap[ctx] = WsUserMapRecord(null, null, false)
         ctx.sendAsClass(
-            OutgoingLifecycleMessage(
-                null,
+            ServerLifecycleMessage(
                 WebSocketLifecycleOperation.AUTHENTICATE,
                 WebSocketResponseStatus.ACCEPTED,
+                null,
                 "Connection attempt acknowledged"
             )
         )
     }
 
 
-    fun handleWsLifecycleMessage(ctx: WsContext, message: IncomingSocketLifecycleMessage) {
+    fun handleWsLifecycleMessage(ctx: WsContext, message: ClientLifecycleMessage) {
         logger.info("Incoming auth request")
         val token = message.token
         val email = message.email
@@ -169,11 +169,11 @@ class AuthService(
             WebSocketLifecycleOperation.AUTHENTICATE -> {
                 wsUserMap[ctx] = WsUserMapRecord(token, email, true)
                 ctx.sendAsClass(
-                    OutgoingLifecycleMessage(
-                        email,
+                    ServerLifecycleMessage(
                         WebSocketLifecycleOperation.AUTHENTICATE,
                         WebSocketResponseStatus.SUCCESS,
-                        "Authentication success"
+                        email,
+                        "Authentication success",
                     )
                 )
                 //TODO handling error cases
@@ -190,10 +190,10 @@ class AuthService(
     fun handleWsClose(ctx: WsContext, email: String?) {
         wsUserMap.remove(ctx)
         ctx.sendAsClass(
-            OutgoingLifecycleMessage(
-                email,
+            ServerLifecycleMessage(
                 WebSocketLifecycleOperation.AUTHENTICATE,
                 WebSocketResponseStatus.SUCCESS,
+                email,
                 "Socket closed"
             )
         )

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import io.javalin.websocket.WsContext
-import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
 enum class WebSocketResponseStatus(val code: Int) {
@@ -35,57 +34,58 @@ enum class WebSocketLifecycleOperation {
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(
     JsonSubTypes.Type(
-        value = IncomingSocketLifecycleMessage::class,
-        name = "incomingLifecycle"
+        value = ClientLifecycleMessage::class,
+        name = "clientLifecycle"
     ),
+    JsonSubTypes.Type(value = ServerLifecycleMessage::class, name = "serverLifecycle"),
     JsonSubTypes.Type(value = Quote::class, name = "outgoingQuote"),
-    JsonSubTypes.Type(value = ServerTime::class, name = "outgoingServerTime"),
+    JsonSubTypes.Type(value = ServerTimeMessage::class, name = "outgoingServerTime"),
 )
 interface WebSocketMessage {
     val type: String // Needed for deserialisation
 }
 
-interface OutgoingWebSocketMessage : WebSocketMessage {
+interface ServerWebSocketMessage : WebSocketMessage {
     val webSocketResponseStatus: WebSocketResponseStatus
 }
 
 data class OutgoingError(
     override val webSocketResponseStatus: WebSocketResponseStatus,
     val errorDescription: String
-) : OutgoingWebSocketMessage {
+) : ServerWebSocketMessage {
     override val type = "Error"
 }
 
-data class IncomingSocketLifecycleMessage(
+data class ClientLifecycleMessage(
     val token: String,
-    val operation: WebSocketLifecycleOperation
+    val operation: WebSocketLifecycleOperation,
+    val email: String
 ) : WebSocketMessage {
-    override val type: String = "incomingLifecycle"
+    override val type: String = "clientLifecycle"
 }
 
-data class OutgoingLifecycleMessage<T>(
+data class ServerLifecycleMessage<T>(
     val operation: WebSocketLifecycleOperation,
     override val webSocketResponseStatus: WebSocketResponseStatus,
+    val email: String?,
     val body: T,
-) : OutgoingWebSocketMessage {
-    override val type: String = "outgoingLifecycle"
+) : ServerWebSocketMessage {
+    override val type: String = "serverLifecycle"
 }
 
-data class OutgoingMarketLifecycle(
-    override val type: String = "incomingLifecycle",
-    val operation: WebSocketLifecycleOperation
-) : WebSocketMessage
+//data class OutgoingMarketLifecycle(
+//    override val type: String = "incomingLifecycle",
+//    val operation: WebSocketLifecycleOperation
+//) : WebSocketMessage
 
-data class OutgoingOrderBook(
-    override val type: String = "outgoingOrderBook",
-    override val email: String,
-    override val bid: Map<BigDecimal, List<Order>>,
-    override val ask: Map<BigDecimal, List<Order>>,
-    override val publishedTick: Long
-) : OrderBookRecord, WebSocketMessage
-
-data class ServerTime(
+data class ServerTimeMessage(
     val time: Long
 ): WebSocketMessage {
-    val type: String = "serverTime"
+    override val type: String = "serverTime"
+}
+
+data class QuoteMessage(
+    val quote: Quote
+): WebSocketMessage {
+    override val type: String = "outgoingQuote"
 }

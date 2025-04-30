@@ -176,6 +176,13 @@ Test market maker credentials
 
 `AuthClient.kt` re-written to `BackendClient.kt`.
 
+Writing new websocket messages types has made me realise two things
+- The `type` field in any HTTP DTO isn't neccessary and should be removed
+- Any usage of 'incoming' and 'outgoing' generally don't make sense
+  - HTTP messages should be thought of in request/response
+  - WebSocket messages should be thought of in client/server
+- The only client messages sent to the websocket server is incoming auth, which simplifies some things
+
 ## Previous Topic Notes
 
 ### WebSocket Authentication Detail

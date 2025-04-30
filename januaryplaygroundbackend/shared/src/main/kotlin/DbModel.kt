@@ -1,7 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.app
-
-import com.iainschmitt.januaryplaygroundbackend.shared.OrderRequest
-import com.iainschmitt.januaryplaygroundbackend.shared.Ticker
+package com.iainschmitt.januaryplaygroundbackend.shared
 
 data class TickerRecord(
     val ticker: Ticker,
