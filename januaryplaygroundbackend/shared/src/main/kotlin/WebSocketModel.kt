@@ -31,7 +31,7 @@ enum class WebSocketLifecycleOperation {
 // actually need.
 // However, being able to log this out will almost certainly be helpful
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes(
     JsonSubTypes.Type(
         value = ClientLifecycleMessage::class,
@@ -64,11 +64,11 @@ data class ClientLifecycleMessage(
     override val type: String = "clientLifecycle"
 }
 
-data class ServerLifecycleMessage<T>(
+data class ServerLifecycleMessage(
     val operation: WebSocketLifecycleOperation,
     override val webSocketResponseStatus: WebSocketResponseStatus,
     val email: String?,
-    val body: T,
+    val body: String,
 ) : ServerWebSocketMessage {
     override val type: String = "serverLifecycle"
 }
@@ -81,7 +81,7 @@ data class ServerLifecycleMessage<T>(
 data class ServerTimeMessage(
     val time: Long
 ): WebSocketMessage {
-    override val type: String = "serverTime"
+    override val type: String = "outgoingServerTime"
 }
 
 data class QuoteMessage(

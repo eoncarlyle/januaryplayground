@@ -85,9 +85,24 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 ctx.status(403)
             }
         }
-        this.javalinApp.post("/orders/positions/") { ctx ->
-            val ticker = ctx.pathParam("ticker")
+
+        this.javalinApp.post("/orders/quote") { ctx ->
+            val dto = ctx.bodyAsClass<PostGetQuoteDto>();
+            val ticker = dto.ticker
+            val semaphore = transactionSemaphores.getSemaphore(ticker)
+            val quote =  marketService.getQuote(ticker)
+            if (semaphore != null && quote != null) {
+                ctx.status(200)
+                ctx.json(quote)
+            } else {
+                ctx.status(404)
+                ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
+            }
+        }
+
+        this.javalinApp.post("/orders/positions") { ctx ->
             val dto = ctx.bodyAsClass<PostGetLongPositionsDto>();
+            val ticker = dto.ticker
             val semaphore = transactionSemaphores.getSemaphore(ticker)
             if (semaphore != null) {
                 ctx.status(200)

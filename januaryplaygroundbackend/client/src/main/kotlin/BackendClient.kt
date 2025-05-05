@@ -1,6 +1,4 @@
-package com.iainschmitt.januaryplaygroundbackend.marketmaker
-
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -13,17 +11,16 @@ import io.ktor.serialization.jackson.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consumeEach
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 import arrow.core.Either
 import arrow.core.Option
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.ktor.client.statement.*
 
-class BackendClient(private val baseurl: String = "127.0.0.1", private val port: Int = 7070) {
-    private val logger = LoggerFactory.getLogger(BackendClient::class.java)
+class BackendClient(private val logger: Logger, private val baseurl: String = "127.0.0.1", private val port: Int = 7070) {
     private val httpBaseurl = "http://$baseurl:$port"
-    private val objectMapper = ObjectMapper()
+    private val objectMapper = jacksonObjectMapper()
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -66,7 +63,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
         }
     }
 
-    suspend fun evaluateAuth(): Map<String, Any> {
+    suspend fun evaluateAuth(): Either<Map<String, Any>, Map<String, Any>> {
         logger.info("Evaluating authentication")
         val response = client.post(httpBaseurl) {
             url {
@@ -75,8 +72,8 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
         }
 
         return when (response.status) {
-            HttpStatusCode.OK -> response.body()
-            else -> mapOf("authenticated" to false)
+            HttpStatusCode.OK -> Either.Right(response.body())
+            else -> Either.Left(mapOf("authenticated" to false))
         }
     }
 
@@ -112,7 +109,7 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
     suspend fun getLongPositions(email: String, ticker: Ticker): Either<String, List<PositionRecord>> {
         val response = client.post(httpBaseurl) {
             url {
-                appendPathSegments("orders")
+                appendPathSegments("orders", "positions")
             }
             contentType(ContentType.Application.Json)
             setBody(mapOf("email" to email, "ticker" to ticker))
@@ -122,6 +119,25 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
                 // Note: this is a very nice way to work with
                 Either.catch {
                     objectMapper.readValue(response.bodyAsText(), object : TypeReference<List<PositionRecord>>() {})
+                }.mapLeft { "Could not deserialise" }
+            }
+
+            else -> Either.Left("Bad")
+        }
+    }
+
+    suspend fun getQuote(email: String, ticker: Ticker): Either<String, Quote> {
+        val response = client.post(httpBaseurl) {
+            url {
+                appendPathSegments("orders", "quote")
+            }
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("email" to email, "ticker" to ticker))
+        }
+        return when (response.status) {
+            HttpStatusCode.Created -> {
+                Either.catch {
+                    objectMapper.readValue(response.bodyAsText(), object : TypeReference<Quote>() {})
                 }.mapLeft { "Could not deserialise" }
             }
 
@@ -151,28 +167,26 @@ class BackendClient(private val baseurl: String = "127.0.0.1", private val port:
                         try {
                             incoming.consumeEach { frame ->
                                 when (frame) {
-                                    //TODO: something similar to com/iainschmitt/januaryplaygroundbackend/app/App.kt:183
                                     is Frame.Text -> {
                                         val text = frame.readText()
                                         logger.debug("Received WebSocket message: $text")
                                         Either.catch {
                                             objectMapper.readValue(text, object : TypeReference<WebSocketMessage>() {})
-                                        }.mapLeft { "Could not deserialise" }.onRight { message ->
+                                        }.mapLeft { logger.warn("Could not deserialise $text") }.onRight { message ->
                                                 when (message) {
+                                                    is ServerLifecycleMessage -> logger.info(
+                                                        objectMapper.writeValueAsString(message)
+                                                    )
                                                     is QuoteMessage -> onQuote(message.quote)
                                                     is ServerTimeMessage -> logger.info(
-                                                        objectMapper.writeValueAsString(
-                                                            ServerTimeMessage(message.time)
-                                                        )
+                                                        objectMapper.writeValueAsString(message)
                                                     )
                                                     else -> {
-                                                        logger.warn("Client receieved something unexpected")
-                                                        logger.warn(objectMapper.writeValueAsString(message))
+                                                        logger.warn("Client received something unexpected ${objectMapper.writeValueAsString(message)}")
                                                     }
                                                 }
                                         }
                                     }
-
                                     else -> logger.debug("Received other frame type: {}", frame)
                                 }
                             }

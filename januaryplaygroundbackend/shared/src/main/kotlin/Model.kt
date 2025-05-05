@@ -98,6 +98,11 @@ data class PostGetLongPositionsDto (
     val ticker: Ticker
 )
 
+data class PostGetQuoteDto (
+    val email: String,
+    val ticker: Ticker
+)
+
 data class PositionRecord(
     val id: Int,
     val ticker: Ticker,
