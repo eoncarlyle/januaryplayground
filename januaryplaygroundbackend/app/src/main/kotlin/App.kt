@@ -1,5 +1,3 @@
-package com.iainschmitt.januaryplaygroundbackend.app
-
 import arrow.core.Either
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*

@@ -1,5 +1,3 @@
-package com.iainschmitt.januaryplaygroundbackend.app
-
 import arrow.core.*
 import arrow.core.raise.either
 import arrow.core.raise.ensure

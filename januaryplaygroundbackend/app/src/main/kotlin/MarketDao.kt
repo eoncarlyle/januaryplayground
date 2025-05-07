@@ -1,5 +1,3 @@
-package com.iainschmitt.januaryplaygroundbackend.app
-
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import java.sql.Statement
 

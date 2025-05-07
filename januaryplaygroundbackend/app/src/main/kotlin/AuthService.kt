@@ -1,5 +1,3 @@
-package com.iainschmitt.januaryplaygroundbackend.app
-
 import com.fasterxml.uuid.Generators
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.*

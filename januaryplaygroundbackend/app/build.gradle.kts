@@ -50,11 +50,6 @@ java {
     }
 }
 
-application {
-    // Define the main class for the application.
-    mainClass = "com.iainschmitt.januaryplaygroundbackend.App"
-}
-
 tasks.named<Test>("test") {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()

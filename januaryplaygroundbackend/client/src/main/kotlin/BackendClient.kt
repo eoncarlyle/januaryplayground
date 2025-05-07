@@ -37,7 +37,7 @@ class BackendClient(
         install(WebSockets)
     }
 
-    suspend fun login(email: String, password: String): Either<String, Map<String, String>> {
+    suspend fun login(email: String, password: String): Either<ClientFailure, Map<String, String>> {
         logger.info("Logging in user: $email")
         val response = client.post(httpBaseurl) {
             url {
@@ -49,11 +49,11 @@ class BackendClient(
 
         return when (response.status) {
             HttpStatusCode.OK -> Either.Right(response.body())
-            else -> Either.Left("Login failed with status: ${response.status}")
+            else -> Either.Left(ClientFailure(response.status.value, "Login failed"))
         }
     }
 
-    suspend fun evaluateAuth(): Either<Map<String, Any>, Map<String, Any>> {
+    suspend fun evaluateAuth(): Either<ClientFailure, Map<String, Any>> {
         logger.info("Evaluating authentication")
         val response = client.post(httpBaseurl) {
             url {
@@ -63,11 +63,11 @@ class BackendClient(
 
         return when (response.status) {
             HttpStatusCode.OK -> Either.Right(response.body())
-            else -> Either.Left(mapOf("authenticated" to false))
+            else -> Either.Left(ClientFailure(response.status.value, "Authentication failed"))
         }
     }
 
-    suspend fun temporarySession(email: String): Either<String, String> {
+    suspend fun temporarySession(email: String): Either<ClientFailure, String> {
         logger.info("Getting temporary session for: $email")
         val response = client.post(httpBaseurl) {
             url {
@@ -79,10 +79,11 @@ class BackendClient(
 
         return when (response.status) {
             HttpStatusCode.Created -> {
-                Option.fromNullable(response.body<Map<String, String>>()["token"]).toEither { "No token in response" }
+                Option.fromNullable(response.body<Map<String, String>>()["token"])
+                    .toEither { ClientFailure(response.status.value, "No token in response") }
             }
 
-            else -> Either.Left(("Failed to get temporary session with status: ${response.status}"))
+            else -> Either.Left(ClientFailure(response.status.value, "Temporary session authentication failed"))
         }
     }
 
@@ -96,7 +97,10 @@ class BackendClient(
         return response.status == HttpStatusCode.OK
     }
 
-    private suspend inline fun <reified T, R> genericPost(request: T, vararg components: String): Either<ClientFailure, R> {
+    private suspend inline fun <reified T, R> marketPost(
+        request: T,
+        vararg components: String
+    ): Either<ClientFailure, R> {
         val response = client.post(httpBaseurl) {
             url {
                 appendPathSegments(*components)
@@ -108,7 +112,7 @@ class BackendClient(
             HttpStatusCode.Created -> {
                 Either.catch {
                     objectMapper.readValue(response.bodyAsText(), object : TypeReference<R>() {})
-                }.mapLeft { ClientFailure(-1, "Could not deserialise")  }
+                }.mapLeft { ClientFailure(-1, "Could not deserialise") }
             }
 
             else -> Either.Left(ClientFailure(response.status.value, response.body()))
@@ -116,19 +120,23 @@ class BackendClient(
     }
 
     suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> {
-        return genericPost<CredentialsDto, Map<String, String>>(credentialsDto, "auth", "signup")
+        return marketPost<CredentialsDto, Map<String, String>>(credentialsDto, "auth", "signup")
     }
 
     suspend fun getLongPositions(email: String, ticker: Ticker): Either<ClientFailure, List<PositionRecord>> {
-        return genericPost<Map<String, String>, List<PositionRecord>>(mapOf("email" to email, "ticker" to ticker), "orders", "positions")
+        return marketPost<Map<String, String>, List<PositionRecord>>(
+            mapOf("email" to email, "ticker" to ticker),
+            "orders",
+            "positions"
+        )
     }
 
     suspend fun getQuote(email: String, ticker: Ticker): Either<ClientFailure, Quote> {
-        return genericPost<Map<String, String>, Quote>(mapOf("email" to email, "ticker" to ticker), "orders", "quote")
+        return marketPost<Map<String, String>, Quote>(mapOf("email" to email, "ticker" to ticker), "orders", "quote")
     }
 
     suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
-        return genericPost(limitOrderRequest, "orders", "limit")
+        return marketPost(limitOrderRequest, "orders", "limit")
     }
 
     suspend fun connectWebSocket(
