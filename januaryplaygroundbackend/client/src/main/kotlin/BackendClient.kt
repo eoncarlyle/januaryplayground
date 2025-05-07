@@ -18,7 +18,14 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.ktor.client.statement.*
 
-class BackendClient(private val logger: Logger, private val baseurl: String = "127.0.0.1", private val port: Int = 7070) {
+
+typealias ClientFailure = Pair<Int, String>
+
+class BackendClient(
+    private val logger: Logger,
+    private val baseurl: String = "127.0.0.1",
+    private val port: Int = 7070
+) {
     private val httpBaseurl = "http://$baseurl:$port"
     private val objectMapper = jacksonObjectMapper()
 
@@ -28,23 +35,6 @@ class BackendClient(private val logger: Logger, private val baseurl: String = "1
         }
         install(HttpCookies)
         install(WebSockets)
-    }
-
-    suspend fun signUp(email: String, password: String): Either<String, Map<String, String>> {
-        logger.info("Signing up user: $email")
-        val response = client.post(httpBaseurl) {
-            url {
-                appendPathSegments("auth", "signup")
-            }
-            contentType(ContentType.Application.Json)
-            setBody(CredentialsDto(email, password))
-        }
-
-        return if (response.status == HttpStatusCode.Created) {
-            Either.Right(response.body())
-        } else {
-            Either.Left("Sign up failed with status: ${response.status}")
-        }
     }
 
     suspend fun login(email: String, password: String): Either<String, Map<String, String>> {
@@ -106,43 +96,39 @@ class BackendClient(private val logger: Logger, private val baseurl: String = "1
         return response.status == HttpStatusCode.OK
     }
 
-    suspend fun getLongPositions(email: String, ticker: Ticker): Either<String, List<PositionRecord>> {
+    private suspend inline fun <reified T, R> genericPost(request: T, vararg components: String): Either<ClientFailure, R> {
         val response = client.post(httpBaseurl) {
             url {
-                appendPathSegments("orders", "positions")
+                appendPathSegments(*components)
             }
             contentType(ContentType.Application.Json)
-            setBody(mapOf("email" to email, "ticker" to ticker))
+            setBody(request)
         }
         return when (response.status) {
             HttpStatusCode.Created -> {
-                // Note: this is a very nice way to work with
                 Either.catch {
-                    objectMapper.readValue(response.bodyAsText(), object : TypeReference<List<PositionRecord>>() {})
-                }.mapLeft { "Could not deserialise" }
+                    objectMapper.readValue(response.bodyAsText(), object : TypeReference<R>() {})
+                }.mapLeft { ClientFailure(-1, "Could not deserialise")  }
             }
 
-            else -> Either.Left("Bad")
+            else -> Either.Left(ClientFailure(response.status.value, response.body()))
         }
     }
 
-    suspend fun getQuote(email: String, ticker: Ticker): Either<String, Quote> {
-        val response = client.post(httpBaseurl) {
-            url {
-                appendPathSegments("orders", "quote")
-            }
-            contentType(ContentType.Application.Json)
-            setBody(mapOf("email" to email, "ticker" to ticker))
-        }
-        return when (response.status) {
-            HttpStatusCode.Created -> {
-                Either.catch {
-                    objectMapper.readValue(response.bodyAsText(), object : TypeReference<Quote>() {})
-                }.mapLeft { "Could not deserialise" }
-            }
+    suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> {
+        return genericPost<CredentialsDto, Map<String, String>>(credentialsDto, "auth", "signup")
+    }
 
-            else -> Either.Left("Bad")
-        }
+    suspend fun getLongPositions(email: String, ticker: Ticker): Either<ClientFailure, List<PositionRecord>> {
+        return genericPost<Map<String, String>, List<PositionRecord>>(mapOf("email" to email, "ticker" to ticker), "orders", "positions")
+    }
+
+    suspend fun getQuote(email: String, ticker: Ticker): Either<ClientFailure, Quote> {
+        return genericPost<Map<String, String>, Quote>(mapOf("email" to email, "ticker" to ticker), "orders", "quote")
+    }
+
+    suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
+        return genericPost(limitOrderRequest, "orders", "limit")
     }
 
     suspend fun connectWebSocket(
@@ -173,20 +159,29 @@ class BackendClient(private val logger: Logger, private val baseurl: String = "1
                                         Either.catch {
                                             objectMapper.readValue(text, object : TypeReference<WebSocketMessage>() {})
                                         }.mapLeft { logger.warn("Could not deserialise $text") }.onRight { message ->
-                                                when (message) {
-                                                    is ServerLifecycleMessage -> logger.info(
-                                                        objectMapper.writeValueAsString(message)
+                                            when (message) {
+                                                is ServerLifecycleMessage -> logger.info(
+                                                    objectMapper.writeValueAsString(message)
+                                                )
+
+                                                is QuoteMessage -> onQuote(message.quote)
+                                                is ServerTimeMessage -> logger.info(
+                                                    objectMapper.writeValueAsString(message)
+                                                )
+
+                                                else -> {
+                                                    logger.warn(
+                                                        "Client received something unexpected ${
+                                                            objectMapper.writeValueAsString(
+                                                                message
+                                                            )
+                                                        }"
                                                     )
-                                                    is QuoteMessage -> onQuote(message.quote)
-                                                    is ServerTimeMessage -> logger.info(
-                                                        objectMapper.writeValueAsString(message)
-                                                    )
-                                                    else -> {
-                                                        logger.warn("Client received something unexpected ${objectMapper.writeValueAsString(message)}")
-                                                    }
                                                 }
+                                            }
                                         }
                                     }
+
                                     else -> logger.debug("Received other frame type: {}", frame)
                                 }
                             }

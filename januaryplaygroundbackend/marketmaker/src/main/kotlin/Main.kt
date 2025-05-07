@@ -1,24 +1,17 @@
 import arrow.core.Either
+import arrow.core.flatMap
 import ch.qos.logback.classic.LoggerContext
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import org.slf4j.event.Level
 
-suspend fun onStartup(backendClient: BackendClient, email: String, password: String, ticker: Ticker) {
-
-    val quote =  backendClient.getQuote(email, password)
-    val positions = backendClient.getLongPositions(email, ticker)
-
-    when (quote to positions) -> {
-        Either.Right to Either.Right -> {
-
-        } else -> logg
-
-    }
+suspend fun onStartup(backendClient: BackendClient, email: String, password: String, ticker: Ticker): Either<ClientFailure, Pair<Quote, List<PositionRecord>>> {
+    val maybeQuote = backendClient.getQuote(email, password)
+    val maybePositions = backendClient.getLongPositions(email, ticker)
+    return maybeQuote.flatMap { quote -> maybePositions.map { position -> Pair(quote, position) } }
 }
 
-fun main() = runBlocking {
+fun main(): Unit = runBlocking {
     val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
     val logger = loggerContext.getLogger("MainKt")
     logger.level = ch.qos.logback.classic.Level.INFO
@@ -29,10 +22,20 @@ fun main() = runBlocking {
 
     try {
         backendClient.login(email, password)
-            .map { backendClient.evaluateAuth() }
-            .map { backendClient.getQuote(email, password) }
-            .map { backendClient }
-            .map {
+            .flatMap { _ -> onStartup(backendClient, email, password, ticker = "testTicker") }
+            .map { pair ->
+                var currentQuote = pair.first
+                val positions = pair.second
+                logger.info("Initial quote: ${currentQuote.ticker}/${currentQuote.bid}/${currentQuote.ask}")
+                logger.info("Initial position count: ${positions.count()}")
+
+                if (positions.count() > 0) {
+                    //If positions out-of-quote, cancel all orders and resubmit limit orders in line
+                    //Otherwise do nothing
+                } else {
+                    //Create the positions, need to be creative with initalisation
+                }
+
                 launch {
                     backendClient.connectWebSocket(
                         email = email,
@@ -49,7 +52,7 @@ fun main() = runBlocking {
             }
 
     } catch (e: Exception) {
-        println("Error: ${e.message}")
+        logger.error("Error: ${e.message}")
     } finally {
         backendClient.close()
     }

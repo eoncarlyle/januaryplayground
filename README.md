@@ -182,6 +182,7 @@ Writing new websocket messages types has made me realise two things
   - HTTP messages should be thought of in request/response
   - WebSocket messages should be thought of in client/server
 - The only client messages sent to the websocket server is incoming auth, which simplifies some things
+- Right now the client return calls are a little all over the place - a `Pair<Int, String>` makes a lot of sense, but not everything else does
 
 ## Previous Topic Notes
 
