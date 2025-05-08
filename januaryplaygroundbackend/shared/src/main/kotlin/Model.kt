@@ -47,6 +47,14 @@ fun getPositionType(ordinal: Int): PositionType {
     }
 }
 
+fun getTradeType(ordinal: Int): TradeType {
+    return when (ordinal) {
+        0 -> TradeType.BUY
+        1 -> TradeType.SELL
+        else -> throw IllegalArgumentException("Illegal OrderType ordinal $ordinal")
+    }
+}
+
 typealias SortedOrderBook = MutableMap<Int, ArrayList<OrderBookEntry>>
 
 interface OrderBook {
@@ -68,8 +76,9 @@ data class OrderBookEntry(
     val id: Int,
     val user: String,
     val ticker: Ticker,
-    val price: Int,
+    val tradeType: TradeType,
     val size: Int,
+    val price: Int,
     val orderType: OrderType,
     val receivedTick: Long,
     var finalSize: Int = 0,
@@ -93,14 +102,9 @@ interface Order {
     val email: String;
 }
 
-data class PostGetLongPositionsDto (
+data class ExchangeRequestDto(
     val email: String,
-    val ticker: Ticker
-)
-
-data class PostGetQuoteDto (
-    val email: String,
-    val ticker: Ticker
+    val ticker: Ticker,
 )
 
 data class PositionRecord(

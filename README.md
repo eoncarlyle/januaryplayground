@@ -162,7 +162,7 @@ private fun startServerEventSimulation() {
   - However: only _sell_ orders in `pending_orders` are part of the portfolio
 - All orders will need to have time recorded in order to respect FIFO ordering
 - Something that dramatically simplifies the market design is by treating cash in the exact same way as shares for limit orders
-  - Once something is a pending order, is is committed: credits comitted to a limit order are tied up in a limit order until the order is filled or cancelled
+  - Once something is a pending order, is committed: credits comitted to a limit order are tied up in a limit order until the order is filled or cancelled
   - This isn't the most realistic treatment, but it simplifies some things for me for now
 
 ### Implementing Kotlin Clients

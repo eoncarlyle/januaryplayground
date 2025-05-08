@@ -123,20 +123,32 @@ class BackendClient(
         return marketPost<CredentialsDto, Map<String, String>>(credentialsDto, "auth", "signup")
     }
 
-    suspend fun getLongPositions(email: String, ticker: Ticker): Either<ClientFailure, List<PositionRecord>> {
-        return marketPost<Map<String, String>, List<PositionRecord>>(
-            mapOf("email" to email, "ticker" to ticker),
-            "orders",
+    suspend fun getUserLongPositions(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<PositionRecord>> {
+        return marketPost<ExchangeRequestDto, List<PositionRecord>>(
+            exchangeRequestDto,
+            "exchange",
             "positions"
         )
     }
 
-    suspend fun getQuote(email: String, ticker: Ticker): Either<ClientFailure, Quote> {
-        return marketPost<Map<String, String>, Quote>(mapOf("email" to email, "ticker" to ticker), "orders", "quote")
+    suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookRecord>> {
+        return marketPost<ExchangeRequestDto, List<OrderBookRecord>>(
+            exchangeRequestDto,
+            "exchange",
+            "orders"
+        )
+    }
+
+    suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> {
+        return marketPost<ExchangeRequestDto, Quote>(exchangeRequestDto, "exchange", "quote")
+    }
+
+    suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderResponse): Either<ClientFailure, MarketOrderResponse> {
+        return marketPost(marketOrderResponse, "exchange", "orders", "market")
     }
 
     suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
-        return marketPost(limitOrderRequest, "orders", "limit")
+        return marketPost(limitOrderRequest, "exchange", "orders", "limit")
     }
 
     suspend fun connectWebSocket(

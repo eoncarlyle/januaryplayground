@@ -18,12 +18,12 @@ class MarketService(
         semaphore.acquire()
         try {
             return validateOrder(order).map { (validOrder, userBalance) ->
-                val userLongPositions = marketDao.getUserLongPositions(validOrder.email, validOrder.ticker).sum()
+                val userLongPositionCount = marketDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
                 val marketOrderProposal =
                     getMarketOrderProposal(
                         validOrder,
                         userBalance,
-                        userLongPositions,
+                        userLongPositionCount,
                         getSortedMatchingOrderBook(validOrder)
                     )
                 return fillOrder(validOrder, marketOrderProposal)
@@ -32,7 +32,6 @@ class MarketService(
             semaphore.release()
         }
     }
-
 
     private fun fillOrder(
         order: Order,
@@ -93,8 +92,8 @@ class MarketService(
         crossingOrders: SortedOrderBook,
         userBalance: Int
     ): OrderResult<LimitOrderResponse> {
-        val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
-        val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositions, crossingOrders)
+        val userLongPositionCount = marketDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
+        val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositionCount, crossingOrders)
         return fillOrder(order, immediateOrderProposal)
     }
 
@@ -104,9 +103,8 @@ class MarketService(
         crossingOrders: SortedOrderBook,
         userBalance: Int
     ): OrderResult<OrderPartiallyFilled> {
-
-        val userLongPositions = marketDao.getUserLongPositions(order.email, order.ticker).sum()
-        val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositions, crossingOrders)
+        val userLongPositionCount = marketDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
+        val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositionCount, crossingOrders)
 
         return fillOrder(order, immediateOrderProposal)
             .flatMap { filledOrder ->
@@ -153,7 +151,7 @@ class MarketService(
     private fun getMarketOrderProposal(
         order: OrderRequest,
         userBalance: Int,
-        userLongPositions: Int,
+        userLongPositionCount: Int,
         sortedOrderBook: SortedOrderBook
     ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
         val proposedOrders = ArrayList<OrderBookEntry>()
@@ -173,7 +171,7 @@ class MarketService(
                             order,
                             proposedOrders,
                             userBalance,
-                            userLongPositions
+                            userLongPositionCount
                         )
                     } else if (subsequentSize > order.size) {
                         // If condition not met, have to split
@@ -187,7 +185,7 @@ class MarketService(
                                 order,
                                 proposedOrders,
                                 userBalance,
-                                userLongPositions
+                                userLongPositionCount
                             )
                         }
                     } else {
@@ -244,7 +242,7 @@ class MarketService(
                 )
             }
 
-            val deleteRecord = marketDao.deleteAllUserLongPositions(order.email, order.ticker);
+            val deleteRecord = marketDao.deleteAllUserOrders(order.email, order.ticker);
 
             return when {
                 deleteRecord.orderCount > 0 -> Either.Right(
@@ -272,8 +270,12 @@ class MarketService(
         return marketDao.getQuote(ticker)
     }
 
-    fun getLongPositions(user: String, ticker: Ticker): List<PositionRecord> {
-        return marketDao.getLongPositions(user, ticker)
+    fun getUserLongPositions(user: String, ticker: Ticker): List<PositionRecord> {
+        return marketDao.getUserLongPositions(user, ticker)
+    }
+
+    fun getUserOrders(user: String, ticker: Ticker): List<OrderBookEntry> {
+        return marketDao.getUserOrders(user, ticker)
     }
 
     private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {

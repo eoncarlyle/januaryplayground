@@ -84,8 +84,8 @@ class App(db: DatabaseHelper, secure: Boolean) {
             }
         }
 
-        this.javalinApp.post("/orders/quote") { ctx ->
-            val dto = ctx.bodyAsClass<PostGetQuoteDto>();
+        this.javalinApp.post("/exchange/quote") { ctx ->
+            val dto = ctx.bodyAsClass<ExchangeRequestDto>();
             val ticker = dto.ticker
             val semaphore = transactionSemaphores.getSemaphore(ticker)
             val quote =  marketService.getQuote(ticker)
@@ -98,20 +98,33 @@ class App(db: DatabaseHelper, secure: Boolean) {
             }
         }
 
-        this.javalinApp.post("/orders/positions") { ctx ->
-            val dto = ctx.bodyAsClass<PostGetLongPositionsDto>();
+        this.javalinApp.post("/exchange/positions") { ctx ->
+            val dto = ctx.bodyAsClass<ExchangeRequestDto>();
             val ticker = dto.ticker
             val semaphore = transactionSemaphores.getSemaphore(ticker)
             if (semaphore != null) {
                 ctx.status(200)
-                ctx.json(marketService.getLongPositions(dto.email, dto.ticker))
+                ctx.json(marketService.getUserLongPositions(dto.email, dto.ticker))
             } else {
                 ctx.status(404)
                 ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
             }
         }
 
-        this.javalinApp.post("/orders/market") { ctx ->
+        this.javalinApp.post("/exchange/orders") { ctx ->
+            val dto = ctx.bodyAsClass<ExchangeRequestDto>();
+            val ticker = dto.ticker
+            val semaphore = transactionSemaphores.getSemaphore(ticker)
+            if (semaphore != null) {
+                ctx.status(200)
+                ctx.json(marketService.getUserOrders(dto.email, dto.ticker))
+            } else {
+                ctx.status(404)
+                ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
+            }
+        }
+
+        this.javalinApp.post("/exchange/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
             val initialQuote = marketService.getQuote(orderRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
@@ -134,7 +147,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             }
         }
 
-        this.javalinApp.post("/orders/limit") { ctx ->
+        this.javalinApp.post("/exchange/orders/limit") { ctx ->
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
             val initialQuote = marketService.getQuote(orderRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
@@ -166,7 +179,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             }
         }
 
-        this.javalinApp.post("/orders/cancel_all") { ctx ->
+        this.javalinApp.post("/exchange/orders/cancel_all") { ctx ->
             val cancelRequest = ctx.bodyAsClass<AllOrderCancelRequest>()
             val initialQuote = marketService.getQuote(cancelRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(cancelRequest.ticker)

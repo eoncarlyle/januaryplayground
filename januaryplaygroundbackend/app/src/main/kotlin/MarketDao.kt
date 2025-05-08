@@ -16,20 +16,6 @@ class MarketDao(
         }
     }
 
-    fun getUserLongPositions(userEmail: String, ticker: Ticker): ArrayList<Int> {
-        val positions = ArrayList<Int>()
-        db.query { conn ->
-            conn.prepareStatement("select size from position_records where user = ? and ticker = ? and position_type = ?")
-                .use { stmt ->
-                    stmt.setString(1, userEmail)
-                    stmt.setString(2, ticker)
-                    stmt.setInt(3, PositionType.LONG.ordinal)
-                    stmt.executeQuery().use { rs -> while (rs.next()) positions.add(rs.getInt("size")) }
-                }
-        }
-        return positions
-    }
-
     fun getTicker(ticker: Ticker): TickerRecord? {
         return db.query { conn ->
             conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->
@@ -81,7 +67,7 @@ class MarketDao(
     ): ArrayList<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, price, size, order_type, received_tick from order_records where ticker = ? and trade_type = ? and filled_tick = -1")
+            conn.prepareStatement("select id, user, ticker, trade_type, size, price, order_type, received_tick from order_records where ticker = ? and trade_type = ? and filled_tick = -1")
                 .use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(
@@ -95,8 +81,9 @@ class MarketDao(
                                     rs.getInt("id"),
                                     rs.getString("user"),
                                     rs.getString("ticker"),
-                                    rs.getInt("price"),
+                                    getTradeType(rs.getInt("trade_type")),
                                     rs.getInt("size"),
+                                    rs.getInt("price"),
                                     getOrderType(rs.getInt("order_type")),
                                     rs.getLong("received_tick")
                                 )
@@ -109,7 +96,6 @@ class MarketDao(
     }
 
     //TODO: I need to re-read this to better understand if there are any issues with limit order usages
-    //TODO: Some async method for notifying limit orders
     fun fillOrder(
         order: Order,
         marketOrderProposal: ArrayList<OrderBookEntry>
@@ -210,17 +196,18 @@ class MarketDao(
         return if (orderId != -1L) LimitPendingOrderRecord(orderId, receivedTick) else null
     }
 
-    fun getLongPositions(userEmail: String, ticker: Ticker): List<PositionRecord> {
+    fun getUserLongPositions(userEmail: String, ticker: Ticker): List<PositionRecord> {
         return db.query { conn ->
             conn.prepareStatement(
                 """
             SELECT id, size
             FROM position_records
-            WHERE user = ? AND ticker = ? AND position_type = 0
+            WHERE user = ? AND ticker = ? AND position_type = ?
             """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setString(2, ticker)
+                stmt.setInt(3, PositionType.LONG.ordinal)
 
                 val rs = stmt.executeQuery()
                 val positions = mutableListOf<PositionRecord>()
@@ -239,7 +226,35 @@ class MarketDao(
         }
     }
 
-    fun deleteAllUserLongPositions(userEmail: String, ticker: Ticker): DeleteAllPositionsRecord {
+    fun getUserOrders(userEmail: String, ticker: Ticker): List<OrderBookEntry> {
+        val matchingPendingOrders = ArrayList<OrderBookEntry>()
+        db.query { conn ->
+            conn.prepareStatement("select id, user, ticker, trade_type, size, price, order_type, received_tick from order_records where user = ? and ticker = ? and filled_tick = -1")
+                .use { stmt ->
+                    stmt.setString(1, userEmail)
+                    stmt.setString(2, ticker)
+                    stmt.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            matchingPendingOrders.add(
+                                OrderBookEntry(
+                                    rs.getInt("id"),
+                                    rs.getString("user"),
+                                    rs.getString("ticker"),
+                                    getTradeType(rs.getInt("trade_type")),
+                                    rs.getInt("size"),
+                                    rs.getInt("price"),
+                                    getOrderType(rs.getInt("order_type")),
+                                    rs.getLong("received_tick")
+                                )
+                            )
+                        }
+                    }
+                }
+        }
+        return matchingPendingOrders
+    }
+
+    fun deleteAllUserOrders(userEmail: String, ticker: Ticker): DeleteAllPositionsRecord {
         val cancelledTick: Long = System.currentTimeMillis()
         val orderCount = db.query { conn ->
             conn.prepareStatement("delete from order_records where user = ? and ticker = ? and filled_tick = -1")
@@ -251,4 +266,6 @@ class MarketDao(
         }
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
+
+    fun getUserOrderBook(userEmail: String, ticker: Ticker): List<OrderBook> {}
 }
