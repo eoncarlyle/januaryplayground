@@ -183,6 +183,13 @@ Writing new websocket messages types has made me realise two things
   - WebSocket messages should be thought of in client/server
 - The only client messages sent to the websocket server is incoming auth, which simplifies some things
 - Right now the client return calls are a little all over the place - a `Pair<Int, String>` makes a lot of sense, but not everything else does
+- Market maker concerns
+  - If no positions, can't be a market maker (can't sell what you don't have),
+  - This can be manual for now, but later on there should be some endpoint that initialises market makers by ticker
+  - This should probably be different than initialisation, as the operation to initialise is by ticker
+
+If the orders are in line with the quote, then don't do anything. Otherwise
+must destroy all and orders and re-submit
 
 ## Previous Topic Notes
 

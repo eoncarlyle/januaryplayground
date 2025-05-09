@@ -16,6 +16,10 @@ enum class TradeType {
     fun isBuy(): Boolean {
         return this == BUY
     }
+
+    fun isSell(): Boolean {
+        return this == SELL
+    }
 }
 
 enum class OrderType {
@@ -56,20 +60,6 @@ fun getTradeType(ordinal: Int): TradeType {
 }
 
 typealias SortedOrderBook = MutableMap<Int, ArrayList<OrderBookEntry>>
-
-interface OrderBook {
-    val bid: Map<BigDecimal, List<Order>>
-    val ask: Map<BigDecimal, List<Order>>
-}
-
-interface OrderBookRecord : OrderBook {
-    val publishedTick: Long
-}
-
-data class ConcreteOrderBook(
-    override val bid: Map<BigDecimal, List<Order>>,
-    override val ask: Map<BigDecimal, List<Order>>
-) : OrderBook
 
 // Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems
 data class OrderBookEntry(

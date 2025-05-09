@@ -180,7 +180,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         }
 
         this.javalinApp.post("/exchange/orders/cancel_all") { ctx ->
-            val cancelRequest = ctx.bodyAsClass<AllOrderCancelRequest>()
+            val cancelRequest = ctx.bodyAsClass<ExchangeRequestDto>()
             val initialQuote = marketService.getQuote(cancelRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(cancelRequest.ticker)
             // Use optionals to unnest

@@ -131,8 +131,8 @@ class BackendClient(
         )
     }
 
-    suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookRecord>> {
-        return marketPost<ExchangeRequestDto, List<OrderBookRecord>>(
+    suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookEntry>> {
+        return marketPost<ExchangeRequestDto, List<OrderBookEntry>>(
             exchangeRequestDto,
             "exchange",
             "orders"
@@ -143,12 +143,16 @@ class BackendClient(
         return marketPost<ExchangeRequestDto, Quote>(exchangeRequestDto, "exchange", "quote")
     }
 
-    suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderResponse): Either<ClientFailure, MarketOrderResponse> {
+    suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderRequest): Either<ClientFailure, MarketOrderResponse> {
         return marketPost(marketOrderResponse, "exchange", "orders", "market")
     }
 
     suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
         return marketPost(limitOrderRequest, "exchange", "orders", "limit")
+    }
+
+    suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
+        return marketPost(exchangeRequestDto, "exchange", "orders", "cancel_all")
     }
 
     suspend fun connectWebSocket(

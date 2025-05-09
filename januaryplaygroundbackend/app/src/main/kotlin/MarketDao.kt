@@ -267,5 +267,4 @@ class MarketDao(
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
 
-    fun getUserOrderBook(userEmail: String, ticker: Ticker): List<OrderBook> {}
 }

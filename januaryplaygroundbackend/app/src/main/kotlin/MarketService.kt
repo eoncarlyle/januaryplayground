@@ -228,7 +228,7 @@ class MarketService(
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun allOrderCancel(
-        order: AllOrderCancelRequest,
+        order: ExchangeRequestDto,
         semaphore: Semaphore
     ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> {
         semaphore.acquire()
