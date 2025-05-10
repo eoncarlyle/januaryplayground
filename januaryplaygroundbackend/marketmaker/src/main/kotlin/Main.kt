@@ -33,6 +33,7 @@ private suspend fun onStartup(
     }
 }
 
+// TODO: place the state in a class
 fun main(): Unit = runBlocking {
     val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
     val logger = loggerContext.getLogger("MainKt")
@@ -83,7 +84,7 @@ fun main(): Unit = runBlocking {
                     logger.warn("No positions, market maker cannot proceed")
                     Either.Left(ClientFailure(-1, "No positions, market maker cannot proceed"))
                 }
-            }.mapLeft { error ->
+            }.onLeft { error ->
                 logger.error("Error: $error")
                 val logoutSuccess = backendClient.logout()
                 logger.info("Logout successful: $logoutSuccess")
