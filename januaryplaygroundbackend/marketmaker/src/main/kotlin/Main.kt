@@ -5,17 +5,17 @@ import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 
-private data class StartingState(
+private data class __StartingState(
     val quote: Quote,
     val positions: List<PositionRecord>,
     val orders: List<OrderBookEntry>
 )
 
 
-private suspend fun onStartup(
+private suspend fun getStartingState(
     backendClient: BackendClient,
     exchangeRequestDto: ExchangeRequestDto
-): Either<ClientFailure, StartingState> {
+): Either<ClientFailure, __StartingState> {
     val maybeQuote = backendClient.getQuote(exchangeRequestDto)
     val maybePositions = backendClient.getUserLongPositions(exchangeRequestDto)
     val maybeOrders = backendClient.getUserOrders(exchangeRequestDto)
@@ -23,7 +23,7 @@ private suspend fun onStartup(
     return maybeQuote.flatMap { quote ->
         maybePositions.flatMap { position ->
             maybeOrders.map { orders ->
-                StartingState(
+                __StartingState(
                     quote,
                     position,
                     orders
@@ -50,7 +50,7 @@ fun main(): Unit = runBlocking {
 
     try {
         backendClient.login(email, password)
-            .flatMap { _ -> onStartup(backendClient, exchangeRequestDto) }
+            .flatMap { _ -> getStartingState(backendClient, exchangeRequestDto) }
             .flatMap { pair ->
                 var currentQuote = pair.quote
                 val positions = pair.positions
@@ -60,7 +60,7 @@ fun main(): Unit = runBlocking {
 
                 if (positions.isNotEmpty()) {
                     if (orders.isNotEmpty()) {
-                        val impliedQuote = getImpliedQuote(ticker, orders)
+                        val impliedQuote = getMarketMakerImpliedQuote(ticker, orders)
                         if (impliedQuote == null || impliedQuote != currentQuote) {
                             backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
                                 logger.error("Client failure: ${failure.first}/${failure.second}")
@@ -107,7 +107,7 @@ fun main(): Unit = runBlocking {
 }
 
 //TODO move this to backend at some point, this is terribly unoptimised for what we're trying to do
-private fun getImpliedQuote(ticker: Ticker, orders: List<OrderBookEntry>): Quote? {
+private fun getMarketMakerImpliedQuote(ticker: Ticker, orders: List<OrderBookEntry>): Quote? {
     // Multiple orders could exist at same price point
     val bidPrice = orders.filter { order -> order.tradeType.isBuy() }.minOfOrNull { order -> order.price }
     val askPrice = orders.filter { order -> order.tradeType.isSell() }.maxOfOrNull { order -> order.price }
@@ -126,7 +126,7 @@ private fun getImpliedQuote(ticker: Ticker, orders: List<OrderBookEntry>): Quote
     }
 }
 
-private suspend fun simpleLimitOrderSubmission(
+private suspend fun _simpleLimitOrderSubmission(
     backendClient: BackendClient,
     email: String,
     ticker: String,
