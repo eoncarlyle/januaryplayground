@@ -17,6 +17,7 @@ import arrow.core.Option
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.ktor.client.statement.*
+import kotlin.reflect.KSuspendFunction1
 
 
 typealias ClientFailure = Pair<Int, String>
@@ -118,6 +119,28 @@ class BackendClient(
             else -> Either.Left(ClientFailure(response.status.value, response.body()))
         }
     }
+
+    public suspend fun <T, R> retry(
+        argument: T,
+        request: suspend (T) -> Either<ClientFailure, R>,
+        maxAttempts: Int,
+    ): Either<ClientFailure, R> {
+        var currentAttempts = 0
+        while (currentAttempts < maxAttempts) {
+            currentAttempts += 1
+            val result = request.invoke(argument)
+            result.onLeft { error -> logger.error(error.second) }
+            return when {
+                result is Either.Right || currentAttempts == maxAttempts -> result
+                else -> {
+                    continue
+                }
+            }
+        }
+        // Not actually reachable
+        return Either.Left(ClientFailure(-1, "Exhausted allowed retries"))
+    }
+
 
     suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> {
         return marketPost<CredentialsDto, Map<String, String>>(credentialsDto, "auth", "signup")

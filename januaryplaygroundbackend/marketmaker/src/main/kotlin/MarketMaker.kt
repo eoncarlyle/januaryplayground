@@ -2,11 +2,9 @@ import arrow.core.Either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.LoggerFactory
 import arrow.core.flatMap
-import arrow.core.nel
 import ch.qos.logback.classic.LoggerContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlin.math.log
 import kotlin.system.exitProcess
 
 
@@ -52,42 +50,36 @@ class MarketMaker(
                     }
                 }
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
-        .onLeft { error ->
-            logger.error("Error: $error")
-            val logoutSuccess = backendClient.logout()
-            logger.info("Logout successful: $logoutSuccess")
-            backendClient.close()
-        }
+            .onLeft { error ->
+                logger.error("Error: $error")
+                val logoutSuccess = backendClient.logout()
+                logger.info("Logout successful: $logoutSuccess")
+                backendClient.close()
+            }
     }
 
     private suspend fun onQuote(incomingQuote: Quote) {
         if (trackingQuote != null) {
-
-            // TODO: need better failure management on this branch
             if (trackingQuote != incomingQuote) {
-                backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
-                    logger.error("Client failure: ${failure.first}/${failure.second}")
-                    failure
-                }.map {
-                    simpleLimitOrderSubmission(incomingQuote)
-                }
-            } else {
-                logger.warn("Illegal market maker state: no tracking quote")
-                for (i in 0..4) {
-                    if (i == 4) {
+                backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
+                    .onLeft {
                         logger.error("Market maker could not exit positions on null tracking quote, exiting")
                         exitProcess(1)
-                    } else {
-                        backendClient.postAllOrderCancel(exchangeRequestDto).onLeft { failure ->
-                            logger.error("Client failure: ${failure.first}/${failure.second}")
-                        }.onRight {
-                            this.trackingQuote = incomingQuote
-                            simpleLimitOrderSubmission(incomingQuote).onLeft { logger.warn("Market maker could not submit quote after null") }
-                        }
+                    }.onRight {
+                        this.trackingQuote = incomingQuote
+                        simpleLimitOrderSubmission(incomingQuote).onLeft { logger.warn("Market maker could not submit limit orders after quote reset") }
                     }
-                }
-
             }
+        } else {
+            logger.warn("Illegal market maker state: no tracking quote")
+            backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
+                .onLeft {
+                    logger.error("Market maker could not exit positions on null tracking quote, exiting")
+                    exitProcess(1)
+                }.onRight {
+                    this.trackingQuote = incomingQuote
+                    simpleLimitOrderSubmission(incomingQuote).onLeft { logger.warn("Market maker could not submit limit orders after null tracking quote") }
+                }
         }
     }
 
