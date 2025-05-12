@@ -27,24 +27,18 @@ class MarketMaker(
     private val backendClient = BackendClient(logger)
     //TODO: market initialisaiton needs to be tied to this
 
-
     fun main(): Unit = runBlocking {
-        val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
-        val logger = loggerContext.getLogger("MainKt")
-        logger.level = ch.qos.logback.classic.Level.INFO
-        val backendClient = BackendClient(logger)
-
         Either.catch {
             backendClient.login(email, password)
-                .flatMap { _ -> getStartingState(backendClient) }
+                .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
                 .flatMap { state -> handleStartingState(state) }
-                .onRight { quote: Quote ->
+                .onRight { quote ->
                     trackingQuote = quote
                     launch {
                         backendClient.connectWebSocket(
                             email = email,
                             onOpen = { logger.info("WebSocket connection opened") },
-                            onQuote = { println("Received message: $it") },
+                            onQuote = { quote -> onQuote(quote) },
                             onClose = { code, reason -> logger.error("Connection closed: $code, $reason") }
                         )
                     }
@@ -104,26 +98,6 @@ class MarketMaker(
                     price = currentQuote.bid
                 )
             )
-        }
-    }
-
-    private suspend fun getStartingState(
-        backendClient: BackendClient,
-    ): Either<ClientFailure, StartingState> {
-        val maybeQuote = backendClient.getQuote(exchangeRequestDto)
-        val maybePositions = backendClient.getUserLongPositions(exchangeRequestDto)
-        val maybeOrders = backendClient.getUserOrders(exchangeRequestDto)
-
-        return maybeQuote.flatMap { quote ->
-            maybePositions.flatMap { position ->
-                maybeOrders.map { orders ->
-                    StartingState(
-                        quote,
-                        position,
-                        orders
-                    )
-                }
-            }
         }
     }
 

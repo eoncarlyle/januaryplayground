@@ -18,11 +18,13 @@ fun Order.sign(): Int {
 }
 
 data class MarketOrderRequest(
+    // This is no longer neccesary, I think
     override val type: String = "incomingOrder",
     override val email: String,
     override val ticker: Ticker,
     override val size: Int,
     override val tradeType: TradeType,
+    // This should not be configurable
     override val orderType: OrderType = OrderType.Market
 ) : OrderRequest
 

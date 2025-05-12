@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.consumeEach
 import org.slf4j.Logger
 import arrow.core.Either
 import arrow.core.Option
+import arrow.core.flatMap
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.ktor.client.statement.*
@@ -21,6 +22,12 @@ import kotlin.reflect.KSuspendFunction1
 
 
 typealias ClientFailure = Pair<Int, String>
+
+data class StartingState(
+    val quote: Quote,
+    val positions: List<PositionRecord>,
+    val orders: List<OrderBookEntry>
+)
 
 class BackendClient(
     private val logger: Logger,
@@ -178,10 +185,30 @@ class BackendClient(
         return marketPost(exchangeRequestDto, "exchange", "orders", "cancel_all")
     }
 
+    suspend fun getStartingState(
+        exchangeRequestDto: ExchangeRequestDto
+    ): Either<ClientFailure, StartingState> {
+        val maybeQuote = getQuote(exchangeRequestDto)
+        val maybePositions = getUserLongPositions(exchangeRequestDto)
+        val maybeOrders = getUserOrders(exchangeRequestDto)
+
+        return maybeQuote.flatMap { quote ->
+            maybePositions.flatMap { position ->
+                maybeOrders.map { orders ->
+                    StartingState(
+                        quote,
+                        position,
+                        orders
+                    )
+                }
+            }
+        }
+    }
+
     suspend fun connectWebSocket(
         email: String,
         onOpen: () -> Unit = {},
-        onQuote: (Quote) -> Unit = {},
+        onQuote: suspend (Quote) -> Unit = {},
         onClose: (Int, String?) -> Unit = { _, _ -> },
         onError: (Throwable) -> Unit = {}
     ) = coroutineScope {
