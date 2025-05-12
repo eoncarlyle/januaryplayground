@@ -187,6 +187,7 @@ Writing new websocket messages types has made me realise two things
   - If no positions, can't be a market maker (can't sell what you don't have),
   - This can be manual for now, but later on there should be some endpoint that initialises market makers by ticker
   - This should probably be different than initialisation, as the operation to initialise is by ticker
+- Test commit
 
 If the orders are in line with the quote, then don't do anything. Otherwise
 must destroy all and orders and re-submit
