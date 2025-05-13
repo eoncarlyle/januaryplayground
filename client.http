@@ -16,3 +16,13 @@ Content-Type: application/json
 {
   "email": "user2@mail.com"
 }
+
+###
+POST http://localhost:7070/auth/signup
+Content-Type: application/json
+
+{
+  "email": "noise0@iainschmitt.com",
+  "password": "noisePassword"
+}
+

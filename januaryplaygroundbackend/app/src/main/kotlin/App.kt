@@ -76,7 +76,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
 
-        this.javalinApp.beforeMatched("/orders") { ctx ->
+        this.javalinApp.beforeMatched("/exchange") { ctx ->
             val email = ctx.bodyAsClass<Map<String, Any>>()["email"] ?: ""
             if (authService.evaluateUserAuth(ctx, email.toString()) == null) {
                 ctx.json(mapOf("message" to "Auth for user $email is invalid"))

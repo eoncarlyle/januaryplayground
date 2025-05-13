@@ -216,7 +216,7 @@ class MarketDao(
                     positions.add(
                         PositionRecord(
                             id = rs.getInt("id"),
-                            ticker = rs.getString("ticker"),
+                            ticker = ticker,
                             size = rs.getInt("size"),
                         )
                     )
