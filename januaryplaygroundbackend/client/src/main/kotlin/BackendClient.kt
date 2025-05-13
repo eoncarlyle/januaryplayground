@@ -18,7 +18,6 @@ import arrow.core.flatMap
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.ktor.client.statement.*
-import kotlin.reflect.KSuspendFunction1
 
 
 typealias ClientFailure = Pair<Int, String>
@@ -105,8 +104,9 @@ class BackendClient(
         return response.status == HttpStatusCode.OK
     }
 
-    private suspend inline fun <reified T, R> marketPost(
+    private suspend inline fun <reified T, reified R> post(
         request: T,
+        expectedCode: HttpStatusCode,
         vararg components: String
     ): Either<ClientFailure, R> {
         val response = client.post(httpBaseurl) {
@@ -117,12 +117,11 @@ class BackendClient(
             setBody(request)
         }
         return when (response.status) {
-            HttpStatusCode.Created -> {
+            expectedCode  -> {
                 Either.catch {
-                    objectMapper.readValue(response.bodyAsText(), object : TypeReference<R>() {})
+                    response.body<R>()
                 }.mapLeft { ClientFailure(-1, "Could not deserialise") }
             }
-
             else -> Either.Left(ClientFailure(response.status.value, response.body()))
         }
     }
@@ -150,39 +149,41 @@ class BackendClient(
 
 
     suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> {
-        return marketPost<CredentialsDto, Map<String, String>>(credentialsDto, "auth", "signup")
+        return post<CredentialsDto, Map<String, String>>(credentialsDto, HttpStatusCode.OK, "auth", "signup")
     }
 
     suspend fun getUserLongPositions(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<PositionRecord>> {
-        return marketPost<ExchangeRequestDto, List<PositionRecord>>(
+        return post<ExchangeRequestDto, List<PositionRecord>>(
             exchangeRequestDto,
+            HttpStatusCode.OK,
             "exchange",
             "positions"
         )
     }
 
     suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookEntry>> {
-        return marketPost<ExchangeRequestDto, List<OrderBookEntry>>(
+        return post<ExchangeRequestDto, List<OrderBookEntry>>(
             exchangeRequestDto,
+            HttpStatusCode.OK,
             "exchange",
             "orders"
         )
     }
 
     suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> {
-        return marketPost<ExchangeRequestDto, Quote>(exchangeRequestDto, "exchange", "quote")
+        return post<ExchangeRequestDto, Quote>(exchangeRequestDto, HttpStatusCode.OK, "exchange", "quote")
     }
 
     suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderRequest): Either<ClientFailure, MarketOrderResponse> {
-        return marketPost(marketOrderResponse, "exchange", "orders", "market")
+        return post(marketOrderResponse, HttpStatusCode.Created, "exchange", "orders", "market")
     }
 
     suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
-        return marketPost(limitOrderRequest, "exchange", "orders", "limit")
+        return post(limitOrderRequest, HttpStatusCode.Created, "exchange", "orders", "limit")
     }
 
     suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
-        return marketPost(exchangeRequestDto, "exchange", "orders", "cancel_all")
+        return post(exchangeRequestDto, HttpStatusCode.Created,"exchange", "orders", "cancel_all")
     }
 
     suspend fun getStartingState(
@@ -239,7 +240,7 @@ class BackendClient(
                                                 )
 
                                                 is QuoteMessage -> onQuote(message.quote)
-                                                is ServerTimeMessage -> logger.info(
+                                                is ServerTimeMessage -> logger.debug(
                                                     objectMapper.writeValueAsString(message)
                                                 )
 

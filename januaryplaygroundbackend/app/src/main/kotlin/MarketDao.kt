@@ -188,6 +188,7 @@ class MarketDao(
                 stmt.setInt(6, order.orderType.ordinal)
                 stmt.setLong(7, -1L)
                 stmt.setLong(8, receivedTick)
+                stmt.executeUpdate()
 
                 val rs = stmt.generatedKeys
                 return@query if (rs.next()) rs.getLong(1) else -1

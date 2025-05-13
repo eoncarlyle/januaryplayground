@@ -5,6 +5,7 @@ import arrow.core.flatMap
 import ch.qos.logback.classic.LoggerContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.slf4j.Logger
 import kotlin.system.exitProcess
 
 
@@ -18,10 +19,10 @@ class MarketMaker(
     private val email: String,
     private val password: String,
     private val ticker: Ticker,
-    private var trackingQuote: Quote? = null
+    private val logger: Logger,
+    private var trackingQuote: Quote? = null,
 ) {
     private val marketSize = 3
-    private val logger by lazy { LoggerFactory.getLogger(MarketMaker::class.java) }
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
 
     private val backendClient = BackendClient(logger)

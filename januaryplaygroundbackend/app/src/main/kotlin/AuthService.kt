@@ -44,7 +44,7 @@ class AuthService(
             val session = createSession(dto.email)
             ctx.cookie(session.first)
             ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
-            ctx.status(201)
+            ctx.status(200)
         } catch (e: Exception) {
             throw InternalError(exceptionMessage("`signUpHandler` error", e))
         }
