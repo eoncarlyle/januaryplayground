@@ -179,6 +179,9 @@ Test noise trader credentials
 - password: `noisePassword`
 
 `AuthClient.kt` re-written to `BackendClient.kt`.
+- If the market maker consistently beats the noise traders could hit endpoint to spawn new noise trader
+- A noise trader spawn task could be listening to launch new noise traders in new coroutines
+- Kafka is sinply a much better way to handle quotes than websockets
 
 Writing new websocket messages types has made me realise two things
 - The `type` field in any HTTP DTO isn't neccessary and should be removed
