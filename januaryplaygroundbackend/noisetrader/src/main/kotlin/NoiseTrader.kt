@@ -6,6 +6,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import kotlin.math.E
 import kotlin.random.Random
 import kotlin.random.nextInt
 
@@ -41,8 +42,8 @@ class NoiseTrader(
                                     )
                                 ).onRight {
                                     tradeTypeState = if (tradeTypeState.isBuy()) TradeType.SELL else TradeType.BUY
-                                }.onLeft {
-                                    logger.warn("Noise trader order failed")
+                                }.onLeft { failure ->
+                                    logger.warn("Noise trader order failed: $failure")
                                 }
                             }
                         }
@@ -65,14 +66,22 @@ class NoiseTrader(
         logger.info("Initial quote: ${startingQuote.ticker}/${startingQuote.bid}/${startingQuote.ask}")
         logger.info("Initial position count: ${positions.count()}")
 
-        // TODO: set the initial trade state based off of existing positions
-        //if (positions.isNotEmpty()) {
-            return if (orders.isNotEmpty()) {
-                backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
-                    logger.error("Client failure: ${failure.first}/${failure.second}")
-                    failure
-                }.map { startingQuote } } else Either.Right(startingQuote)
-                // TODO: Add an endpoint to close out all long positions, allowing a fresh start for the endpoint
+        if (positions.any { it.positionType != PositionType.LONG }) {
+            return Either.Left(ClientFailure(-1, "Unimplemented short positions found"))
+        } else {
+            tradeTypeState = if (positions.any { it.positionType == PositionType.LONG }) {
+                TradeType.SELL
+            } else {
+                TradeType.BUY
+            }
+        }
+
+        return when (orders.size) {
+            0 -> Either.Right(startingQuote)
+            else -> backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
+                logger.error("Client failure: ${failure.first}/${failure.second}")
+                failure
+            }.map { startingQuote }
         }
     }
 }

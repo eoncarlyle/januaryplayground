@@ -198,6 +198,14 @@ class MarketDao(
     }
 
     fun getUserLongPositions(userEmail: String, ticker: Ticker): List<PositionRecord> {
+        return getUserPositions(userEmail, ticker, PositionType.LONG)
+    }
+
+    fun getUserShortPositions(userEmail: String, ticker: Ticker): List<PositionRecord> {
+        return getUserPositions(userEmail, ticker, PositionType.SHORT)
+    }
+
+    fun getUserPositions(userEmail: String, ticker: Ticker, positionType: PositionType): List<PositionRecord> {
         return db.query { conn ->
             conn.prepareStatement(
                 """
@@ -208,7 +216,7 @@ class MarketDao(
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setString(2, ticker)
-                stmt.setInt(3, PositionType.LONG.ordinal)
+                stmt.setInt(3, positionType.ordinal)
 
                 val rs = stmt.executeQuery()
                 val positions = mutableListOf<PositionRecord>()
@@ -218,7 +226,8 @@ class MarketDao(
                         PositionRecord(
                             id = rs.getInt("id"),
                             ticker = ticker,
-                            size = rs.getInt("size"),
+                            positionType = positionType,
+                            size = rs.getInt("size")
                         )
                     )
                 }
@@ -226,6 +235,7 @@ class MarketDao(
             }
         }
     }
+
 
     fun getUserOrders(userEmail: String, ticker: Ticker): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()

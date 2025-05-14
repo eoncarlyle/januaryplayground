@@ -1,5 +1,12 @@
-package com.iainschmitt.januaryplaygroundbackend
+import ch.qos.logback.classic.LoggerContext
+import org.slf4j.LoggerFactory
 
 fun main() {
-    println("Hello World!")
+    val email = "noise0@iainschmitt.com"
+    val password = "noisePassword"
+    val ticker = "testTicker"
+    val logger = (LoggerFactory.getILoggerFactory() as LoggerContext).getLogger("MainKt")
+    logger.level = ch.qos.logback.classic.Level.INFO
+
+    NoiseTrader(email, password, ticker).main()
 }

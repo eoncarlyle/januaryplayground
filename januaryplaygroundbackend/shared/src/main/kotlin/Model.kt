@@ -100,6 +100,7 @@ data class ExchangeRequestDto(
 data class PositionRecord(
     val id: Int,
     val ticker: Ticker,
-    val size: Int,
+    val positionType: PositionType,
+    val size: Int
 )
 

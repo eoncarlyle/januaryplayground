@@ -129,6 +129,9 @@ class MarketMaker(
         logger.info("Initial position count: ${positions.count()}")
 
         if (positions.isNotEmpty()) {
+            if (positions.any { it.positionType != PositionType.LONG }) {
+                return Either.Left(ClientFailure(-1, "Unimplemented short positions found"))
+            }
             if (orders.isNotEmpty()) {
                 val orderImpliedQuote = getMarketMakerImpliedQuote(ticker, orders)
                 return if (orderImpliedQuote == null || orderImpliedQuote != startingQuote) {
