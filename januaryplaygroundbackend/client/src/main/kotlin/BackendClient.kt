@@ -117,11 +117,15 @@ class BackendClient(
             setBody(request)
         }
         return when (response.status) {
-            expectedCode  -> {
+            expectedCode -> {
                 Either.catch {
                     response.body<R>()
-                }.mapLeft { ClientFailure(-1, "Could not deserialise") }
+                }.mapLeft { error ->
+                    logger.error(error.message)
+                    return@mapLeft ClientFailure(-1, "Could not deserialise")
+                }
             }
+
             else -> Either.Left(ClientFailure(response.status.value, response.body()))
         }
     }
@@ -183,7 +187,7 @@ class BackendClient(
     }
 
     suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
-        return post(exchangeRequestDto, HttpStatusCode.Created,"exchange", "orders", "cancel_all")
+        return post(exchangeRequestDto, HttpStatusCode.Created, "exchange", "orders", "cancel_all")
     }
 
     suspend fun getStartingState(

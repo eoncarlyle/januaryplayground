@@ -1,6 +1,8 @@
 package com.iainschmitt.januaryplaygroundbackend.shared
 
 import arrow.core.Either
+import com.fasterxml.jackson.annotation.JsonSubTypes
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import java.util.concurrent.Semaphore
 
 typealias OrderFailure = Pair<OrderFailureCode, String>
@@ -28,8 +30,10 @@ data class OrderAcknowledged(
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
-    override val email: String
-) : IOrderAcknowledged, LimitOrderResponse
+    override val email: String,
+) : IOrderAcknowledged, LimitOrderResponse {
+    override val subtype: String = "orderAcknowledged"
+}
 
 // Can have multiple with a singe
 interface IOrderFilled : Order {
@@ -41,8 +45,20 @@ interface MarketOrderResponse {
 
 }
 
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "subtype", include = JsonTypeInfo.As.EXISTING_PROPERTY)
+@JsonSubTypes(
+    JsonSubTypes.Type(
+        value = OrderAcknowledged::class, name="orderAcknowledged"
+    ),
+    JsonSubTypes.Type(
+        value = OrderFilled::class, name="orderFilled"
+    ),
+    JsonSubTypes.Type(
+        value = OrderPartiallyFilled::class, name="orderPartiallyFilled"
+    )
+)
 interface LimitOrderResponse {
-
+    val subtype: String
 }
 
 data class OrderFilled(
@@ -52,8 +68,10 @@ data class OrderFilled(
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
-    override val email: String
-) : IOrderFilled, MarketOrderResponse, LimitOrderResponse
+    override val email: String,
+) : IOrderFilled, MarketOrderResponse, LimitOrderResponse {
+    override val subtype: String = "orderFilled"
+}
 
 data class OrderPartiallyFilled(
     override val ticker: Ticker,
@@ -63,8 +81,10 @@ data class OrderPartiallyFilled(
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
-    override val email: String
-): IOrderFilled, LimitOrderResponse
+    override val email: String,
+): IOrderFilled, LimitOrderResponse {
+    override val subtype: String = "orderPartiallyFilled"
+}
 
 enum class OrderFailureCode {
     MARKET_CLOSED,

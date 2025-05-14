@@ -86,17 +86,17 @@ class MarketMaker(
                 email = email,
                 ticker = ticker,
                 size = marketSize,
-                tradeType = TradeType.SELL,
-                price = currentQuote.ask
+                tradeType = TradeType.BUY,
+                price = currentQuote.bid
             )
-        ).flatMap {
+        ).flatMap { _ ->
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
                     email = email,
                     ticker = ticker,
                     size = marketSize,
-                    tradeType = TradeType.BUY,
-                    price = currentQuote.bid
+                    tradeType = TradeType.SELL,
+                    price = currentQuote.ask
                 )
             )
         }
