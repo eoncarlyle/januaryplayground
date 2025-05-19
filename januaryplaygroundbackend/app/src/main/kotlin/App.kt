@@ -237,6 +237,9 @@ class App(db: DatabaseHelper, secure: Boolean) {
     }
 
     private fun <T> quoteQueueProducer(request: T, initialQuote: Quote?, finalQuote: Quote?) {
+        logger.info(request.toString())
+        logger.info(initialQuote.toString())
+        logger.info(finalQuote.toString())
         if (initialQuote != null && finalQuote != null) {
             if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
                 quoteQueue.put(finalQuote)
@@ -275,6 +278,6 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 }
                 logger.info("Updated ${aliveSockets.size} clients over websockets about new bid");
             }
-        }
+        }.start()
     }
 }

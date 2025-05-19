@@ -26,3 +26,24 @@ Content-Type: application/json
   "password": "noisePassword"
 }
 
+###
+POST http://localhost:7070/auth/login
+Content-Type: application/json
+
+{
+  "email": "noise0@iainschmitt.com",
+  "password": "noisePassword"
+}
+
+###
+POST http://localhost:7070/exchange/orders/market
+Content-Type: application/json
+
+{
+  "type": "incomingOrder",
+  "email": "noise0@iainschmitt.com",
+  "ticker": "testTicker",
+  "size": 4,
+  "tradeType": "BUY",
+  "orderType": "Market"
+}

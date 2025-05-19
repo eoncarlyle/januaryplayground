@@ -236,7 +236,6 @@ class MarketDao(
         }
     }
 
-
     fun getUserOrders(userEmail: String, ticker: Ticker): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->

@@ -54,6 +54,7 @@ class MarketMaker(
     }
 
     private suspend fun onQuote(incomingQuote: Quote) {
+        logger.info(incomingQuote.toString())
         if (trackingQuote != null) {
             if (trackingQuote != incomingQuote) {
                 backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)

@@ -195,8 +195,19 @@ Writing new websocket messages types has made me realise two things
   - If no positions, can't be a market maker (can't sell what you don't have),
   - This can be manual for now, but later on there should be some endpoint that initialises market makers by ticker
   - This should probably be different than initialisation, as the operation to initialise is by ticker
-- We both have a problem with market order response deserialisation, and more importantly we had consistency problems
-  - Before fixing deserialisation, figure out why the consistency issues are happening (may need to set some client)
+
+## Putting the pieces together
+
+- Market order responses are not deserialised
+- Partial fills do not update orders
+  - A long sell market order should be tied to a position in order to update on partial orders
+  - It also isn't clear to me that 
+- A 'null' result on `(select max(price) from order_records where ticker = 'testTicker' and trade_type = 0 and filled_tick = -1) as bid` is interpreted as zero, must change quote
+  - A `-1` price should reflect no bids or asks, should default to shifting the market upwards
+  - If both bids, asks exhausted then widen the market
+  - If only one of bid or ask has been exhausted and the market has widened, then the market can be narrowed
+- Incoming quotes over websockets can't be deserialised
+
 
 ## Previous Topic Notes
 
