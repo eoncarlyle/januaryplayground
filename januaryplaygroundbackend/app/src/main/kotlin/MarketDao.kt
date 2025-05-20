@@ -39,13 +39,13 @@ class MarketDao(
     fun getQuote(ticker: Ticker): Quote? {
         return db.query { conn ->
             conn.prepareStatement(
-                """
-            select 
-                (select max(price) from order_records 
-                 where ticker = ? and trade_type = 0 and filled_tick = -1) as bid,
-                (select min(price) from order_records 
-                 where ticker = ? and trade_type = 1 and filled_tick = -1) as ask
             """
+             select
+                coalesce((select max(price) from order_records
+                where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
+                coalesce((select min(price) from order_records
+                where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
+             """
             ).use { stmt ->
                 stmt.setString(1, ticker)
                 stmt.setString(2, ticker)
@@ -61,23 +61,77 @@ class MarketDao(
         }
     }
 
-    fun getMatchingOrderBook(
-        ticker: Ticker,
-        pendingOrderTradeType: TradeType
-    ): ArrayList<OrderBookEntry> {
-        val matchingPendingOrders = ArrayList<OrderBookEntry>()
+    fun buyMatchingOrderBook(
+        ticker: Ticker
+    ): List<BuyOrderBookEntry> {
+        val matchingPendingOrders = ArrayList<BuyOrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, trade_type, size, price, order_type, received_tick from order_records where ticker = ? and trade_type = ? and filled_tick = -1")
-                .use { stmt ->
+            conn.prepareStatement(
+                """
+                select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, coalesce(position_count, 0) as seller_position_count
+                    from order_records o
+                             left join (
+                                    select user, sum(size) as position_count
+                                    from position_records
+                                    where position_type = 0
+                                    group by user
+                             ) p on p.user = o.user
+                    where o.ticker = ?
+                      and o.trade_type = ?
+                      and o.filled_tick = -1;
+                """
+            )
+        }.use { stmt ->
+            stmt.setString(1, ticker)
+            stmt.setInt(
+                2, TradeType.SELL.ordinal
+            )
+
+            stmt.executeQuery().use { rs ->
+                while (rs.next()) {
+                    matchingPendingOrders.add(
+                        BuyOrderBookEntry(
+                            rs.getInt("id"),
+                            rs.getString("user"),
+                            rs.getString("ticker"),
+                            getTradeType(rs.getInt("trade_type")),
+                            rs.getInt("size"),
+                            rs.getInt("price"),
+                            getOrderType(rs.getInt("order_type")),
+                            rs.getLong("received_tick"),
+                            rs.getInt("seller_position_count")
+                        )
+                    )
+                }
+            }
+        }
+        return matchingPendingOrders
+    }
+
+    fun sellMatchingOrderBook(
+        ticker: Ticker,
+    ): List<SellOrderBookEntry> {
+        val matchingPendingOrders = ArrayList<SellOrderBookEntry>()
+        db.query { conn ->
+            conn.prepareStatement(
+            """
+                select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, u.balance AS buyer_balance
+                    from order_records o join user u
+                        on u.email = o.user
+                    where o.ticker = ?
+                        and o.trade_type = ?
+                        and o.filled_tick = -1;
+                """
+                ).use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(
-                        2, pendingOrderTradeType.ordinal
+                        2, TradeType.BUY.ordinal
                     )
 
                     stmt.executeQuery().use { rs ->
                         while (rs.next()) {
                             matchingPendingOrders.add(
-                                OrderBookEntry(
+                                SellOrderBookEntry(
                                     rs.getInt("id"),
                                     rs.getString("user"),
                                     rs.getString("ticker"),
@@ -85,7 +139,8 @@ class MarketDao(
                                     rs.getInt("size"),
                                     rs.getInt("price"),
                                     getOrderType(rs.getInt("order_type")),
-                                    rs.getLong("received_tick")
+                                    rs.getLong("received_tick"),
+                                    rs.getInt("buyer_balance")
                                 )
                             )
                         }
@@ -93,6 +148,17 @@ class MarketDao(
                 }
         }
         return matchingPendingOrders
+    }
+
+    fun getMatchingOrderBook(
+        ticker: Ticker,
+        pendingOrderTradeType: TradeType
+    ): List<IOrderBookEntry> {
+        return if (pendingOrderTradeType.isBuy()) {
+            buyMatchingOrderBook(ticker)
+        } else {
+            sellMatchingOrderBook(ticker)
+        }
     }
 
     //TODO: I need to re-read this to better understand if there are any issues with limit order usages

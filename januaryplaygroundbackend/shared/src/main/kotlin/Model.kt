@@ -61,18 +61,56 @@ fun getTradeType(ordinal: Int): TradeType {
 
 typealias SortedOrderBook = MutableMap<Int, ArrayList<OrderBookEntry>>
 
+interface IOrderBookEntry {
+    val id: Int
+    val user: String
+    val ticker: Ticker
+    val tradeType: TradeType
+    val size: Int
+    val price: Int
+    val orderType: OrderType
+    val receivedTick: Long
+    val finalSize: Int
+}
+
 // Ticker, price, size: eventualy should move this to a dedicated class, this is asking for problems
 data class OrderBookEntry(
-    val id: Int,
-    val user: String,
-    val ticker: Ticker,
-    val tradeType: TradeType,
-    val size: Int,
-    val price: Int,
-    val orderType: OrderType,
-    val receivedTick: Long,
-    var finalSize: Int = 0,
-)
+    override val id: Int,
+    override val user: String,
+    override val ticker: Ticker,
+    override val tradeType: TradeType,
+    override val size: Int,
+    override val price: Int,
+    override val orderType: OrderType,
+    override val receivedTick: Long,
+    override var finalSize: Int = 0,
+): IOrderBookEntry
+
+data class BuyOrderBookEntry(
+    override val id: Int,
+    override val user: String,
+    override val ticker: Ticker,
+    override val tradeType: TradeType,
+    override val size: Int,
+    override val price: Int,
+    override val orderType: OrderType,
+    override val receivedTick: Long,
+    val sellerPositionCount: Int,
+    override val finalSize: Int = 0,
+) : IOrderBookEntry
+
+data class SellOrderBookEntry(
+    override val id: Int,
+    override val user: String,
+    override val ticker: Ticker,
+    override val tradeType: TradeType,
+    override val size: Int,
+    override val price: Int,
+    override val orderType: OrderType,
+    override val receivedTick: Long,
+    val buyerBalance: Int,
+    override val finalSize: Int = 0,
+) : IOrderBookEntry
 
 fun getOrderType(ordinal: Int): OrderType {
     return when (ordinal) {
@@ -83,6 +121,8 @@ fun getOrderType(ordinal: Int): OrderType {
         else -> throw IllegalArgumentException("Illegal OrderType ordinal $ordinal")
     }
 }
+
+data class A(val id: Int);
 
 interface Order {
     val ticker: Ticker;

@@ -201,9 +201,11 @@ Writing new websocket messages types has made me realise two things
 - Market order responses are not deserialised
 - Partial fills do not update orders
   - A long sell market order should be tied to a position in order to update on partial orders
-  - It also isn't clear to me that 
+  - It also isn't clear to me that balances can't be negative for users who don't have the credits to buy or positions to sell
+    - This is obviously fixable by a join and I don't know why I didn't think of this first
 - A 'null' result on `(select max(price) from order_records where ticker = 'testTicker' and trade_type = 0 and filled_tick = -1) as bid` is interpreted as zero, must change quote
   - A `-1` price should reflect no bids or asks, should default to shifting the market upwards
+    - This can be trivially accomplisehd with coalesce
   - If both bids, asks exhausted then widen the market
   - If only one of bid or ask has been exhausted and the market has widened, then the market can be narrowed
 - Incoming quotes over websockets can't be deserialised
