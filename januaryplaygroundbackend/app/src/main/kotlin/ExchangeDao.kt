@@ -3,7 +3,7 @@ import java.sql.Statement
 
 // This isn't really a true DAO because that implies more of a 1-to-1 relationship with tables, but
 // this really needed to be somewhere other than `MarketService`
-class MarketDao(
+class ExchangeDao(
     private val db: DatabaseHelper
 ) {
 
@@ -61,54 +61,55 @@ class MarketDao(
         }
     }
 
-    fun buyMatchingOrderBook(
+    private fun buyMatchingOrderBook(
         ticker: Ticker
     ): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
             conn.prepareStatement(
                 """
-                select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, coalesce(position_count, 0) as seller_position_count
+                select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, seller_position_count
                     from order_records o
                              left join (
-                                    select user, sum(size) as position_count
+                                    select user, coalesce(sum(size), 0) as seller_position_count
                                     from position_records
-                                    where position_type = 0
+                                    where position_type = ?
                                     group by user
                              ) p on p.user = o.user
                     where o.ticker = ?
                       and o.trade_type = ?
                       and o.filled_tick = -1
-                      and coalesce(position_count, 0) >= o.size;
+                      and p.seller_position_count >= o.size;
                 """
-            )
-        }.use { stmt ->
-            stmt.setString(1, ticker)
-            stmt.setInt(
-                2, TradeType.SELL.ordinal
-            )
+            ).use { stmt ->
+                stmt.setInt(1, PositionType.LONG.ordinal)
+                stmt.setString(2, ticker)
+                stmt.setInt(
+                    3, TradeType.SELL.ordinal
+                )
 
-            stmt.executeQuery().use { rs ->
-                while (rs.next()) {
-                    matchingPendingOrders.add(
-                        OrderBookEntry(
-                            rs.getInt("id"),
-                            rs.getString("user"),
-                            rs.getString("ticker"),
-                            getTradeType(rs.getInt("trade_type")),
-                            rs.getInt("size"),
-                            rs.getInt("price"),
-                            getOrderType(rs.getInt("order_type")),
-                            rs.getLong("received_tick"),
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        matchingPendingOrders.add(
+                            OrderBookEntry(
+                                rs.getInt("id"),
+                                rs.getString("user"),
+                                rs.getString("ticker"),
+                                getTradeType(rs.getInt("trade_type")),
+                                rs.getInt("size"),
+                                rs.getInt("price"),
+                                getOrderType(rs.getInt("order_type")),
+                                rs.getLong("received_tick"),
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
         return matchingPendingOrders
     }
 
-    fun sellMatchingOrderBook(
+    private fun sellMatchingOrderBook(
         ticker: Ticker,
     ): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
@@ -207,6 +208,26 @@ class MarketDao(
                     stmt.setInt(1, partialOrder.size * partialOrder.price * order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.executeUpdate()
+                }
+
+                conn.prepareStatement("""
+                    update position_records set size = ?
+                        where user = ?
+                            and ticker = ?
+                            and position_type = ?
+                            and size = ?
+                            and id in (
+                                select id from position_records
+                                    order by id limit 1
+                            )
+                    """).use { stmt ->
+                        stmt.setInt(1, partialOrder.finalSize)
+                        stmt.setString(2, partialOrder.user)
+                        stmt.setString(3, order.ticker)
+                        stmt.setInt(4, PositionType.LONG.ordinal)
+                        stmt.setInt(5, partialOrder.size + partialOrder.finalSize)
+
+                        stmt.executeUpdate()
                 }
             }
             // Addressing orderer

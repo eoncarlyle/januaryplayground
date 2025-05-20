@@ -274,7 +274,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                 logger.info("Incoming ticker ${quote.ticker} quote for ${quote.bid}/${quote.ask}")
                 val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
                 aliveSockets.forEach { session ->
-                    session.send(quote)
+                    session.send(QuoteMessage(quote))
                 }
                 logger.info("Updated ${aliveSockets.size} clients over websockets about new bid");
             }

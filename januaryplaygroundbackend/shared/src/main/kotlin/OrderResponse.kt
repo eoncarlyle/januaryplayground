@@ -35,15 +35,18 @@ data class OrderAcknowledged(
     override val subtype: String = "orderAcknowledged"
 }
 
-// Can have multiple with a singe
 interface IOrderFilled : Order {
     val positionId: Long
     val filledTick: Long
 }
 
-interface MarketOrderResponse {
-
-}
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "subtype", include = JsonTypeInfo.As.PROPERTY)
+@JsonSubTypes(
+    JsonSubTypes.Type(
+        value = OrderFilled::class, name="orderFilled"
+    ),
+)
+interface MarketOrderResponse
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "subtype", include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes(
