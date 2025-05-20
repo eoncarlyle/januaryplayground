@@ -63,8 +63,8 @@ class MarketDao(
 
     fun buyMatchingOrderBook(
         ticker: Ticker
-    ): List<BuyOrderBookEntry> {
-        val matchingPendingOrders = ArrayList<BuyOrderBookEntry>()
+    ): List<OrderBookEntry> {
+        val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
             conn.prepareStatement(
                 """
@@ -78,7 +78,8 @@ class MarketDao(
                              ) p on p.user = o.user
                     where o.ticker = ?
                       and o.trade_type = ?
-                      and o.filled_tick = -1;
+                      and o.filled_tick = -1
+                      and coalesce(position_count, 0) >= o.size;
                 """
             )
         }.use { stmt ->
@@ -90,7 +91,7 @@ class MarketDao(
             stmt.executeQuery().use { rs ->
                 while (rs.next()) {
                     matchingPendingOrders.add(
-                        BuyOrderBookEntry(
+                        OrderBookEntry(
                             rs.getInt("id"),
                             rs.getString("user"),
                             rs.getString("ticker"),
@@ -99,7 +100,6 @@ class MarketDao(
                             rs.getInt("price"),
                             getOrderType(rs.getInt("order_type")),
                             rs.getLong("received_tick"),
-                            rs.getInt("seller_position_count")
                         )
                     )
                 }
@@ -110,8 +110,8 @@ class MarketDao(
 
     fun sellMatchingOrderBook(
         ticker: Ticker,
-    ): List<SellOrderBookEntry> {
-        val matchingPendingOrders = ArrayList<SellOrderBookEntry>()
+    ): List<OrderBookEntry> {
+        val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
             conn.prepareStatement(
             """
@@ -120,7 +120,8 @@ class MarketDao(
                         on u.email = o.user
                     where o.ticker = ?
                         and o.trade_type = ?
-                        and o.filled_tick = -1;
+                        and o.filled_tick = -1
+                        and u.balance >= o.price * o.size;
                 """
                 ).use { stmt ->
                     stmt.setString(1, ticker)
@@ -131,7 +132,7 @@ class MarketDao(
                     stmt.executeQuery().use { rs ->
                         while (rs.next()) {
                             matchingPendingOrders.add(
-                                SellOrderBookEntry(
+                                OrderBookEntry(
                                     rs.getInt("id"),
                                     rs.getString("user"),
                                     rs.getString("ticker"),
@@ -140,7 +141,6 @@ class MarketDao(
                                     rs.getInt("price"),
                                     getOrderType(rs.getInt("order_type")),
                                     rs.getLong("received_tick"),
-                                    rs.getInt("buyer_balance")
                                 )
                             )
                         }
@@ -153,7 +153,7 @@ class MarketDao(
     fun getMatchingOrderBook(
         ticker: Ticker,
         pendingOrderTradeType: TradeType
-    ): List<IOrderBookEntry> {
+    ): List<OrderBookEntry> {
         return if (pendingOrderTradeType.isBuy()) {
             buyMatchingOrderBook(ticker)
         } else {

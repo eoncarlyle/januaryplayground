@@ -308,37 +308,7 @@ class MarketService(
     private fun getSortedMatchingOrderBook(
         order: OrderRequest
     ): SortedOrderBook {
-
-        val matchingPendingOrders = if (order.isBuy()) {
-            marketDao.buyMatchingOrderBook(order.ticker)
-                .filter { entry -> entry.sellerPositionCount >= entry.size }
-                .map { entry -> OrderBookEntry(
-                    id = entry.id,
-                    user = entry.user,
-                    ticker = entry.ticker,
-                    tradeType = entry.tradeType,
-                    size = entry.size,
-                    price = entry.price,
-                    orderType = entry.orderType,
-                    receivedTick = entry.receivedTick,
-                    finalSize = entry.finalSize
-                ) }
-        } else {
-            marketDao.sellMatchingOrderBook(order.ticker)
-                .filter { entry -> entry.buyerBalance >= entry.price * entry.size }
-                .map { entry -> OrderBookEntry(
-                    id = entry.id,
-                    user = entry.user,
-                    ticker = entry.ticker,
-                    tradeType = entry.tradeType,
-                    size = entry.size,
-                    price = entry.price,
-                    orderType = entry.orderType,
-                    receivedTick = entry.receivedTick,
-                    finalSize = entry.finalSize
-                ) }
-        }
-
+        val matchingPendingOrders = marketDao.getMatchingOrderBook(order.ticker, order.tradeType)
         val book: SortedOrderBook = HashMap()
         // Previous function was much clunkier
         matchingPendingOrders.forEach { entry ->
