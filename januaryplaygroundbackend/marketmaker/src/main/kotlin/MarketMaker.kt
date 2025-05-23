@@ -1,18 +1,21 @@
 import arrow.core.Either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import org.slf4j.LoggerFactory
 import arrow.core.flatMap
-import ch.qos.logback.classic.LoggerContext
+import arrow.core.left
+import arrow.core.right
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
 import kotlin.system.exitProcess
 
+private enum class SpreadStateChange {
+    INCREMENT, DECREMENT, STABLE
+}
 
-private data class StartingState(
-    val quote: Quote,
-    val positions: List<PositionRecord>,
-    val orders: List<OrderBookEntry>
+private data class InterQuoteChange(
+    val bid: Int,
+    val ask: Int,
+    val spreadStateChange: SpreadStateChange
 )
 
 class MarketMaker(
@@ -21,6 +24,7 @@ class MarketMaker(
     private val ticker: Ticker,
     private val logger: Logger,
     private var trackingQuote: Quote? = null,
+    private var spreadState: Int =  0
 ) {
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
@@ -34,7 +38,7 @@ class MarketMaker(
                 .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
                 .flatMap { state -> handleStartingState(state) }
                 .onRight { quote ->
-                    trackingQuote = quote
+                    trackingQuote = quote.getQuote()
                     launch {
                         backendClient.connectWebSocket(
                             email = email,
@@ -59,11 +63,14 @@ class MarketMaker(
             if (trackingQuote != incomingQuote) {
                 backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
                     .onLeft {
-                        logger.error("Market maker could not exit positions on null tracking quote, exiting")
+                        logger.error("Market maker could not exit positions after inconsistent quote, exiting")
                         exitProcess(1)
                     }.onRight {
+                        simpleLimitOrderSubmission(
+                            trackingQuote,
+                            incomingQuote
+                        ).onLeft { logger.warn("Market maker could not submit limit orders after quote reset") }
                         this.trackingQuote = incomingQuote
-                        simpleLimitOrderSubmission(incomingQuote).onLeft { logger.warn("Market maker could not submit limit orders after quote reset") }
                     }
             }
         } else {
@@ -73,22 +80,39 @@ class MarketMaker(
                     logger.error("Market maker could not exit positions on null tracking quote, exiting")
                     exitProcess(1)
                 }.onRight {
+                    simpleLimitOrderSubmission(
+                        trackingQuote,
+                        incomingQuote
+                    ).onLeft { logger.warn("Market maker could not submit limit orders after null tracking quote") }
                     this.trackingQuote = incomingQuote
-                    simpleLimitOrderSubmission(incomingQuote).onLeft { logger.warn("Market maker could not submit limit orders after null tracking quote") }
                 }
         }
     }
 
     private suspend fun simpleLimitOrderSubmission(
+        priorQuote: Quote?,
         currentQuote: Quote
     ): Either<ClientFailure, LimitOrderResponse> {
+
+        if (priorQuote == null && (currentQuote.bid == -1 || currentQuote.ask == -1)) {
+            return ClientFailure(-1, "Not enough tracking state calculate new quote, closing").left()
+        }
+
+        val interQuoteChange = getInterQuoteChange(priorQuote, currentQuote)
+
+        if (interQuoteChange.spreadStateChange == SpreadStateChange.INCREMENT) {
+            spreadState++
+        } else if (interQuoteChange.spreadStateChange == SpreadStateChange.DECREMENT) {
+            spreadState--
+        }
+
         return backendClient.postLimitOrderRequest(
             LimitOrderRequest(
                 email = email,
                 ticker = ticker,
                 size = marketSize,
                 tradeType = TradeType.BUY,
-                price = currentQuote.bid
+                price = interQuoteChange.bid
             )
         ).flatMap { _ ->
             backendClient.postLimitOrderRequest(
@@ -97,7 +121,54 @@ class MarketMaker(
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,
-                    price = currentQuote.ask
+                    price = interQuoteChange.ask
+                )
+            )
+        }
+    }
+
+    private fun getInterQuoteChange(
+        priorQuote: Quote?,
+        currentQuote: Quote
+    ): InterQuoteChange {
+        return if (priorQuote == null || (currentQuote.bid != -1 && currentQuote.ask != -1)) {
+            InterQuoteChange(currentQuote.bid, currentQuote.ask, SpreadStateChange.STABLE)
+        } else if (currentQuote.bid == -1 && currentQuote.ask != -1) {
+            if (spreadState >= 0) {
+                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.STABLE)
+            } else {
+                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask, SpreadStateChange.DECREMENT)
+            }
+        } else if (currentQuote.ask == -1 && currentQuote.bid != -1) {
+            if (spreadState >= 0) {
+                InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.DECREMENT)
+            } else {
+                InterQuoteChange(priorQuote.bid, priorQuote.ask - 1, SpreadStateChange.DECREMENT)
+            }
+        } else {
+            InterQuoteChange(priorQuote.bid - 1, priorQuote.ask + 1, SpreadStateChange.INCREMENT)
+        }
+    }
+
+    private suspend fun initialLimitOrderSubmission(
+        currentQuote: SafeQuote
+    ): Either<ClientFailure, LimitOrderResponse> {
+        return backendClient.postLimitOrderRequest(
+            LimitOrderRequest(
+                email = email,
+                ticker = ticker,
+                size = marketSize,
+                tradeType = TradeType.BUY,
+                price = currentQuote.bid.value
+            )
+        ).flatMap { _ ->
+            backendClient.postLimitOrderRequest(
+                LimitOrderRequest(
+                    email = email,
+                    ticker = ticker,
+                    size = marketSize,
+                    tradeType = TradeType.SELL,
+                    price = currentQuote.ask.value
                 )
             )
         }
@@ -121,7 +192,7 @@ class MarketMaker(
         }
     }
 
-    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, Quote> {
+    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, SafeQuote> {
         val startingQuote = state.quote
         val positions = state.positions
         val orders = state.orders
@@ -131,26 +202,30 @@ class MarketMaker(
 
         if (positions.isNotEmpty()) {
             if (positions.any { it.positionType != PositionType.LONG }) {
-                return Either.Left(ClientFailure(-1, "Unimplemented short positions found"))
+                return ClientFailure(-1, "Unimplemented short positions found").left()
             }
             if (orders.isNotEmpty()) {
                 val orderImpliedQuote = getMarketMakerImpliedQuote(ticker, orders)
-                return if (orderImpliedQuote == null || orderImpliedQuote != startingQuote) {
+                return if (orderImpliedQuote == null || !quotesEqual(orderImpliedQuote, startingQuote)) {
                     backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
                         logger.error("Client failure: ${failure.first}/${failure.second}")
                         failure
                     }.map {
-                        simpleLimitOrderSubmission(startingQuote)
+                        initialLimitOrderSubmission(startingQuote)
                     }.map { startingQuote }
                 } else {
-                    Either.Right(startingQuote)
+                    startingQuote.right()
                 }
             } else {
-                return simpleLimitOrderSubmission(startingQuote).map { startingQuote }
+                return initialLimitOrderSubmission(startingQuote).map { startingQuote }
             }
         } else {
             logger.warn("No positions, market maker cannot proceed")
             return Either.Left(ClientFailure(-1, "No positions, market maker cannot proceed"))
         }
+    }
+
+    private fun quotesEqual(quote: Quote, safeQuote: SafeQuote): Boolean {
+        return (quote.ask == safeQuote.ask.value) && (quote.ask == safeQuote.ask.value)
     }
 }

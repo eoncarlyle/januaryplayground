@@ -1,3 +1,4 @@
+import arrow.core.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -12,18 +13,45 @@ import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consumeEach
 import org.slf4j.Logger
-import arrow.core.Either
-import arrow.core.Option
-import arrow.core.flatMap
+import arrow.core.raise.either
+import arrow.core.raise.ensure
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import io.ktor.client.statement.*
-
 
 typealias ClientFailure = Pair<Int, String>
 
+@JvmInline
+value class PositivePrice private constructor(val value: Int) {
+    companion object {
+        fun create(value: Int): Either<ClientFailure, PositivePrice> =
+            if (value > 0) PositivePrice(value).right()
+            else ClientFailure(-1, "Price must be positive: $value").left()
+    }
+}
+
+class SafeQuote private constructor(
+    val ticker: Ticker,
+    val bid: PositivePrice,
+    val ask: PositivePrice
+) {
+    companion object {
+        fun create(quote: Quote): Either<ClientFailure, SafeQuote> =
+            either {
+                val bidPrice = PositivePrice.create(quote.bid).bind()
+                val askPrice = PositivePrice.create(quote.ask).bind()
+                ensure(bidPrice.value < askPrice.value) {
+                    ClientFailure(-1, "Bid must be less than ask")
+                }
+                SafeQuote(quote.ticker, bidPrice, askPrice)
+            }
+    }
+    fun getQuote(): Quote {
+        return Quote(ticker, bid.value, ask.value)
+    }
+}
+
 data class StartingState(
-    val quote: Quote,
+    val quote: SafeQuote,
     val positions: List<PositionRecord>,
     val orders: List<OrderBookEntry>
 )
@@ -193,20 +221,12 @@ class BackendClient(
     suspend fun getStartingState(
         exchangeRequestDto: ExchangeRequestDto
     ): Either<ClientFailure, StartingState> {
-        val maybeQuote = getQuote(exchangeRequestDto)
-        val maybePositions = getUserLongPositions(exchangeRequestDto)
-        val maybeOrders = getUserOrders(exchangeRequestDto)
-
-        return maybeQuote.flatMap { quote ->
-            maybePositions.flatMap { position ->
-                maybeOrders.map { orders ->
-                    StartingState(
-                        quote,
-                        position,
-                        orders
-                    )
-                }
-            }
+        return either {
+            val quote = getQuote(exchangeRequestDto).bind()
+            val safeQuote = SafeQuote.create(quote).bind()
+            val positions = getUserLongPositions(exchangeRequestDto).bind()
+            val orders = getUserOrders(exchangeRequestDto).bind()
+            StartingState(safeQuote, positions, orders)
         }
     }
 
