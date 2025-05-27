@@ -207,10 +207,16 @@ Writing new websocket messages types has made me realise two things
   - ~~A `-1` price should reflect no bids or asks, should default to shifting the market upwards~~
   - If both bids, asks exhausted then widen the market
   - If only one of bid or ask has been exhausted and the market has widened, then the market can be narrowed
+
 TODO
-  - Restrict quote to actionable actors
-  - Add another actionable sell limit order to test partial order filling in app.sqlite/backup-app.sqlite (good to test actionable orders though)
+  ~~- Restrict quote to actionable actors~~
+  ~~- Add another actionable sell limit order to test partial order filling in app.sqlite/backup-app.sqlite (good to test actionable orders though)~~
   - Market gapping logic as described above
+  - Link positions to market orders: selecting a single position during deletes/updates is not working correctly
+    - While what is needed is a reference _to_ positions _from_ orders, because a single order could be backed by more than one position, a new table will be required to proivde this information
+    - Only one position can ever be a partial, so a single backing position will be updated and the rest will be deleted
+    - Very important to remove the order-position records for filled orders
+    - This association is to delete positions and update partial positions, so the sum of the positions tied to a given order must be equal to or greater than the order size
 
 
 ## Previous Topic Notes

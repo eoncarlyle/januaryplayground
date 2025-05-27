@@ -71,7 +71,7 @@ class MarketService(
                 val crossingOrderTotal = getPositionCount(crossingOrders)
 
                 return when {
-                    crossingOrderTotal > validOrder.size -> immediatelyFilledLimitOrder(
+                    crossingOrderTotal >= validOrder.size -> immediatelyFilledLimitOrder(
                         validOrder,
                         crossingOrders,
                         userBalance

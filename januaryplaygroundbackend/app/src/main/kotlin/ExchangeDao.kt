@@ -79,7 +79,8 @@ class ExchangeDao(
                     where o.ticker = ?
                       and o.trade_type = ?
                       and o.filled_tick = -1
-                      and p.seller_position_count >= o.size;
+                      and p.seller_position_count >= o.size
+                    order by o.received_tick;
                 """
             ).use { stmt ->
                 stmt.setInt(1, PositionType.LONG.ordinal)
@@ -123,6 +124,7 @@ class ExchangeDao(
                         and o.trade_type = ?
                         and o.filled_tick = -1
                         and u.balance >= o.price * o.size;
+                    order by o.received_tick;
                 """
                 ).use { stmt ->
                     stmt.setString(1, ticker)
@@ -193,6 +195,25 @@ class ExchangeDao(
                     stmt.setString(2, completeOrder.user)
                     stmt.executeUpdate()
                 }
+
+                conn.prepareStatement("""
+                    delete from position_records
+                        where user = ?
+                            and ticker = ?
+                            and position_type = ?
+                            and size = ?
+                            and id in (
+                                select id from position_records
+                            )
+                        order by id limit 1
+                    """).use { stmt ->
+                    stmt.setString(1, completeOrder.user)
+                    stmt.setString(2, order.ticker)
+                    stmt.setInt(3, PositionType.LONG.ordinal)
+                    stmt.setInt(4, completeOrder.size)
+
+                    stmt.executeUpdate()
+                }
             }
 
             // Addressing partial orders
@@ -218,14 +239,14 @@ class ExchangeDao(
                             and size = ?
                             and id in (
                                 select id from position_records
-                                    order by id limit 1
                             )
+                            order by id limit 1
                     """).use { stmt ->
-                        stmt.setInt(1, partialOrder.finalSize)
+                        stmt.setInt(1, partialOrder.size - partialOrder.finalSize)
                         stmt.setString(2, partialOrder.user)
                         stmt.setString(3, order.ticker)
                         stmt.setInt(4, PositionType.LONG.ordinal)
-                        stmt.setInt(5, partialOrder.size + partialOrder.finalSize)
+                        stmt.setInt(5, partialOrder.size)
 
                         stmt.executeUpdate()
                 }

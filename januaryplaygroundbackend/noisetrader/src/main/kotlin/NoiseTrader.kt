@@ -6,7 +6,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import kotlin.math.E
 import kotlin.random.Random
 import kotlin.random.nextInt
 
@@ -58,7 +57,7 @@ class NoiseTrader(
             }
     }
 
-    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, Quote> {
+    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, SafeQuote> {
         val startingQuote = state.quote
         val positions = state.positions
         val orders = state.orders

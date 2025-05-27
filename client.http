@@ -43,7 +43,7 @@ Content-Type: application/json
   "type": "incomingOrder",
   "email": "noise0@iainschmitt.com",
   "ticker": "testTicker",
-  "size": 1,
+  "size": 3,
   "tradeType": "BUY",
   "orderType": "Market"
 }
