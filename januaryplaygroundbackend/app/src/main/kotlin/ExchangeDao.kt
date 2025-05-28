@@ -39,7 +39,7 @@ class ExchangeDao(
     fun getQuote(ticker: Ticker): Quote? {
         return db.query { conn ->
             conn.prepareStatement(
-            """
+                """
              select
                 coalesce((select max(price) from order_records
                 where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
@@ -116,39 +116,39 @@ class ExchangeDao(
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
             conn.prepareStatement(
-            """
+                """
                 select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, u.balance AS buyer_balance
                     from order_records o join user u
                         on u.email = o.user
                     where o.ticker = ?
                         and o.trade_type = ?
                         and o.filled_tick = -1
-                        and u.balance >= o.price * o.size;
+                        and u.balance >= o.price * o.size
                     order by o.received_tick;
                 """
-                ).use { stmt ->
-                    stmt.setString(1, ticker)
-                    stmt.setInt(
-                        2, TradeType.BUY.ordinal
-                    )
+            ).use { stmt ->
+                stmt.setString(1, ticker)
+                stmt.setInt(
+                    2, TradeType.BUY.ordinal
+                )
 
-                    stmt.executeQuery().use { rs ->
-                        while (rs.next()) {
-                            matchingPendingOrders.add(
-                                OrderBookEntry(
-                                    rs.getInt("id"),
-                                    rs.getString("user"),
-                                    rs.getString("ticker"),
-                                    getTradeType(rs.getInt("trade_type")),
-                                    rs.getInt("size"),
-                                    rs.getInt("price"),
-                                    getOrderType(rs.getInt("order_type")),
-                                    rs.getLong("received_tick"),
-                                )
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        matchingPendingOrders.add(
+                            OrderBookEntry(
+                                rs.getInt("id"),
+                                rs.getString("user"),
+                                rs.getString("ticker"),
+                                getTradeType(rs.getInt("trade_type")),
+                                rs.getInt("size"),
+                                rs.getInt("price"),
+                                getOrderType(rs.getInt("order_type")),
+                                rs.getLong("received_tick"),
                             )
-                        }
+                        )
                     }
                 }
+            }
         }
         return matchingPendingOrders
     }
@@ -169,7 +169,7 @@ class ExchangeDao(
         order: Order,
         marketOrderProposal: ArrayList<OrderBookEntry>
     ): FilledOrderRecord? {
-        val filledTick: Long = System.currentTimeMillis()
+        val orderFilledTick: Long = System.currentTimeMillis()
         val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
         val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
         // From perspective of the counterparties:
@@ -182,7 +182,7 @@ class ExchangeDao(
 
             // Addressing complete orders
             conn.prepareStatement(completeOrderUpdate).use { stmt ->
-                stmt.setLong(1, filledTick)
+                stmt.setLong(1, orderFilledTick)
                 completeOrderIds.forEachIndexed { index, completeOrderId ->
                     stmt.setInt(index + 2, completeOrderId)
                 }
@@ -196,22 +196,35 @@ class ExchangeDao(
                     stmt.executeUpdate()
                 }
 
-                conn.prepareStatement("""
-                    delete from position_records
-                        where user = ?
-                            and ticker = ?
-                            and position_type = ?
-                            and size = ?
-                            and id in (
-                                select id from position_records
-                            )
-                        order by id limit 1
-                    """).use { stmt ->
+                conn.prepareStatement(
+                """
+                    update position_records set size = size - ?
+                        where id = (
+                            select id from position_records
+                                where user = ?
+                                and ticker = ?
+                                and position_type = ?
+                            order by received_tick limit 1
+                        );
+                    """
+                ).use { stmt ->
+                    stmt.setInt(1, completeOrder.size)
+                    stmt.setString(2, completeOrder.user)
+                    stmt.setString(3, order.ticker)
+                    stmt.setInt(4, PositionType.LONG.ordinal)
+
+                    stmt.executeUpdate()
+                }
+
+                conn.prepareStatement(
+                """
+                    delete from position_records 
+                        where user = ? and ticker = ? and position_type = ? and size = 0;
+                    """
+                ).use { stmt ->
                     stmt.setString(1, completeOrder.user)
                     stmt.setString(2, order.ticker)
                     stmt.setInt(3, PositionType.LONG.ordinal)
-                    stmt.setInt(4, completeOrder.size)
-
                     stmt.executeUpdate()
                 }
             }
@@ -231,24 +244,23 @@ class ExchangeDao(
                     stmt.executeUpdate()
                 }
 
-                conn.prepareStatement("""
-                    update position_records set size = ?
-                        where user = ?
-                            and ticker = ?
-                            and position_type = ?
-                            and size = ?
-                            and id in (
-                                select id from position_records
-                            )
-                            order by id limit 1
-                    """).use { stmt ->
-                        stmt.setInt(1, partialOrder.size - partialOrder.finalSize)
-                        stmt.setString(2, partialOrder.user)
-                        stmt.setString(3, order.ticker)
-                        stmt.setInt(4, PositionType.LONG.ordinal)
-                        stmt.setInt(5, partialOrder.size)
+                conn.prepareStatement(
+                    """
+                    update position_records set size = size - ?
+                        where id = (
+                            select id from position_records
+                                where user = ? -- Note the unique contraint
+                                and ticker = ?
+                                and position_type = ?
+                        );
+                    """
+                ).use { stmt ->
+                    stmt.setInt(1, partialOrder.size - partialOrder.finalSize)
+                    stmt.setString(2, partialOrder.user)
+                    stmt.setString(3, order.ticker)
+                    stmt.setInt(4, PositionType.LONG.ordinal)
 
-                        stmt.executeUpdate()
+                    stmt.executeUpdate()
                 }
             }
             // Addressing orderer
@@ -262,20 +274,25 @@ class ExchangeDao(
             // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
             //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
             return@query conn.prepareStatement(
-                "insert into position_records (user, ticker, position_type, size) values (?, ?, ?, ? )",
+                """
+                    insert into position_records (user, ticker, position_type, size, position_type) values (?, ?, ?, ?, ?)
+                        on conflict (user, ticker, position_type)
+                        do update set size = size + excluded.size, received_tick = excluded.received_tick
+                    """,
                 Statement.RETURN_GENERATED_KEYS
             ).use { stmt ->
                 stmt.setString(1, order.email)
                 stmt.setString(2, order.ticker)
                 stmt.setInt(3, PositionType.LONG.ordinal) //TODO: think about long/short orders
                 stmt.setInt(4, order.size)
+                stmt.setLong(5, orderFilledTick)
                 stmt.executeUpdate()
 
                 val rs = stmt.generatedKeys
                 if (rs.next()) rs.getLong(1) else -1
             }
         }
-        return if (positionId != -1L) FilledOrderRecord(positionId, filledTick) else null
+        return if (positionId != -1L) FilledOrderRecord(positionId, orderFilledTick) else null
     }
 
     fun createLimitPendingOrder(order: LimitOrderRequest): LimitPendingOrderRecord? {
@@ -284,9 +301,10 @@ class ExchangeDao(
 
         orderId = db.query { conn ->
             conn.prepareStatement(
-                """insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
-                values (?, ?, ?, ?, ?, ?, ?, ?) 
-            """
+                """
+                    insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
+                        values (?, ?, ?, ?, ?, ?, ?, ?) 
+                    """
             ).use { stmt ->
                 stmt.setString(1, order.email)
                 stmt.setString(2, order.ticker)
@@ -317,9 +335,8 @@ class ExchangeDao(
         return db.query { conn ->
             conn.prepareStatement(
                 """
-            SELECT id, size
-            FROM position_records
-            WHERE user = ? AND ticker = ? AND position_type = ?
+            select id, size from position_records
+                where user = ? AND ticker = ? AND position_type = ?
             """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
@@ -347,29 +364,56 @@ class ExchangeDao(
     fun getUserOrders(userEmail: String, ticker: Ticker): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement("select id, user, ticker, trade_type, size, price, order_type, received_tick from order_records where user = ? and ticker = ? and filled_tick = -1")
-                .use { stmt ->
-                    stmt.setString(1, userEmail)
-                    stmt.setString(2, ticker)
-                    stmt.executeQuery().use { rs ->
-                        while (rs.next()) {
-                            matchingPendingOrders.add(
-                                OrderBookEntry(
-                                    rs.getInt("id"),
-                                    rs.getString("user"),
-                                    rs.getString("ticker"),
-                                    getTradeType(rs.getInt("trade_type")),
-                                    rs.getInt("size"),
-                                    rs.getInt("price"),
-                                    getOrderType(rs.getInt("order_type")),
-                                    rs.getLong("received_tick")
-                                )
+            conn.prepareStatement(
+                """
+                select id, user, ticker, trade_type, size, price, order_type, received_tick from order_records
+                    where user = ? and ticker = ? and filled_tick = -1
+                """
+            ).use { stmt ->
+                stmt.setString(1, userEmail)
+                stmt.setString(2, ticker)
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        matchingPendingOrders.add(
+                            OrderBookEntry(
+                                rs.getInt("id"),
+                                rs.getString("user"),
+                                rs.getString("ticker"),
+                                getTradeType(rs.getInt("trade_type")),
+                                rs.getInt("size"),
+                                rs.getInt("price"),
+                                getOrderType(rs.getInt("order_type")),
+                                rs.getLong("received_tick")
                             )
-                        }
+                        )
                     }
                 }
+            }
         }
         return matchingPendingOrders
+    }
+
+    fun getState(): Pair<Int, Int> {
+        return db.query { conn ->
+            conn.prepareStatement(
+                """
+           select
+               (select sum(size) from position_records) as position_sum,
+               (select sum(balance) from user) as credit_sum
+           """
+            ).use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    if (rs.next()) {
+                        Pair(
+                            rs.getInt("position_sum"),
+                            rs.getInt("credit_sum")
+                        )
+                    } else {
+                        Pair(-1, -1)
+                    }
+                }
+            }
+        }
     }
 
     fun deleteAllUserOrders(userEmail: String, ticker: Ticker): DeleteAllPositionsRecord {

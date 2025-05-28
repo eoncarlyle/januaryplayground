@@ -6,6 +6,7 @@ import arrow.core.right
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
+import kotlin.math.min
 import kotlin.system.exitProcess
 
 private enum class SpreadStateChange {
@@ -24,7 +25,7 @@ class MarketMaker(
     private val ticker: Ticker,
     private val logger: Logger,
     private var trackingQuote: Quote? = null,
-    private var spreadState: Int =  0
+    private var spreadState: Int = 0
 ) {
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
@@ -58,7 +59,7 @@ class MarketMaker(
     }
 
     private suspend fun onQuote(incomingQuote: Quote) {
-        logger.info(incomingQuote.toString())
+        logger.info("Incoming quote: {}", {})
         if (trackingQuote != null) {
             if (trackingQuote != incomingQuote) {
                 backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
@@ -70,7 +71,7 @@ class MarketMaker(
                             trackingQuote,
                             incomingQuote
                         ).onLeft { logger.warn("Market maker could not submit limit orders after quote reset") }
-                        this.trackingQuote = incomingQuote
+                            .onRight { quote -> this.trackingQuote = quote; }
                     }
             }
         } else {
@@ -84,7 +85,7 @@ class MarketMaker(
                         trackingQuote,
                         incomingQuote
                     ).onLeft { logger.warn("Market maker could not submit limit orders after null tracking quote") }
-                    this.trackingQuote = incomingQuote
+                        .onRight { quote -> this.trackingQuote = quote; }
                 }
         }
     }
@@ -92,18 +93,16 @@ class MarketMaker(
     private suspend fun simpleLimitOrderSubmission(
         priorQuote: Quote?,
         currentQuote: Quote
-    ): Either<ClientFailure, LimitOrderResponse> {
-
+    ): Either<ClientFailure, Quote> {
         if (priorQuote == null && (currentQuote.bid == -1 || currentQuote.ask == -1)) {
             return ClientFailure(-1, "Not enough tracking state calculate new quote, closing").left()
         }
 
         val interQuoteChange = getInterQuoteChange(priorQuote, currentQuote)
-
         if (interQuoteChange.spreadStateChange == SpreadStateChange.INCREMENT) {
             spreadState++
         } else if (interQuoteChange.spreadStateChange == SpreadStateChange.DECREMENT) {
-            spreadState--
+            spreadState = min(spreadState--, 0)
         }
 
         return backendClient.postLimitOrderRequest(
@@ -124,7 +123,7 @@ class MarketMaker(
                     price = interQuoteChange.ask
                 )
             )
-        }
+        }.flatMap { _ -> Quote(ticker, interQuoteChange.bid, interQuoteChange.ask).right() }
     }
 
     private fun getInterQuoteChange(
@@ -134,16 +133,16 @@ class MarketMaker(
         return if (priorQuote == null || (currentQuote.bid != -1 && currentQuote.ask != -1)) {
             InterQuoteChange(currentQuote.bid, currentQuote.ask, SpreadStateChange.STABLE)
         } else if (currentQuote.bid == -1 && currentQuote.ask != -1) {
-            if (spreadState >= 0) {
-                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.STABLE)
+            if (spreadState <= 0) {
+                InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.STABLE)
             } else {
-                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask, SpreadStateChange.DECREMENT)
+                InterQuoteChange(priorQuote.bid - 1, priorQuote.ask, SpreadStateChange.DECREMENT)
             }
         } else if (currentQuote.ask == -1 && currentQuote.bid != -1) {
-            if (spreadState >= 0) {
-                InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.DECREMENT)
+            if (spreadState <= 0) {
+                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
             } else {
-                InterQuoteChange(priorQuote.bid, priorQuote.ask - 1, SpreadStateChange.DECREMENT)
+                InterQuoteChange(priorQuote.bid, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
             }
         } else {
             InterQuoteChange(priorQuote.bid - 1, priorQuote.ask + 1, SpreadStateChange.INCREMENT)

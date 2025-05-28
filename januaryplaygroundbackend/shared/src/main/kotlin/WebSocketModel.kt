@@ -38,7 +38,7 @@ enum class WebSocketLifecycleOperation {
         name = "clientLifecycle"
     ),
     JsonSubTypes.Type(value = ServerLifecycleMessage::class, name = "serverLifecycle"),
-    JsonSubTypes.Type(value = Quote::class, name = "outgoingQuote"),
+    JsonSubTypes.Type(value = QuoteMessage::class, name = "outgoingQuote"),
     JsonSubTypes.Type(value = ServerTimeMessage::class, name = "outgoingServerTime"),
 )
 interface WebSocketMessage {

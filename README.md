@@ -207,17 +207,44 @@ Writing new websocket messages types has made me realise two things
   - ~~A `-1` price should reflect no bids or asks, should default to shifting the market upwards~~
   - If both bids, asks exhausted then widen the market
   - If only one of bid or ask has been exhausted and the market has widened, then the market can be narrowed
+- New rule about the market: positions are coalesced, so if a trader has a two long positions on `myTestTicker` and they buy two more, the position will be updated rather than a new position logged
+  - This will require a unique `unique(user, ticker, position_type)` but this seems like a small price to pay
+  - The advantage to this is that only one row needs to be updated to keep positions updated
+  - Related 'There really only should be _one_ of these \[partial order\] ever run'
+    - This should be true but it doesn't imply that complete orders will zero out a position
+
+Positive feedback loop
+- Right now when the noise trader buys 4 positions and then three positions, the market maker wants to increment the quote to 31/36
+- The 'racheting' continues because the tracking quote is created by the market maker without feedback from the backend
+- The quote that should be sent out is not the quote that is being sent out
+  - To do: the debugger is getting unweildy, so it is time to prove that the sent objects are not the received objects with a timestamp
+  - 2025.05.27.log is rather strange
+```
+[JettyServerThreadPool-35] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-35] INFO App - Initial Quote: Quote(ticker=testTicker, bid=31, ask=-1)
+[JettyServerThreadPool-35] INFO App - Final Quote: Quote(ticker=testTicker, bid=31, ask=-1)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+[JettyServerThreadPool-35] INFO App - POST /exchange/orders/cancel_all 201 Created took 11.305208 ms
+[Thread-11] INFO App - (12, 1100)
+[Thread-11] INFO App - Updated 1 clients over websockets about new bid
+[JettyServerThreadPool-36] INFO App - POST /exchange/orders/limit 201 Created took 7.22825 ms
+[JettyServerThreadPool-48] INFO App - POST /exchange/orders/limit 201 Created took 9.6805 ms
+[JettyServerThreadPool-37] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-37] INFO App - Initial Quote: Quote(ticker=testTicker, bid=32, ask=37)
+[JettyServerThreadPool-37] INFO App - Final Quote: Quote(ticker=testTicker, bid=32, ask=37)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+```
 
 TODO
   ~~- Restrict quote to actionable actors~~
   ~~- Add another actionable sell limit order to test partial order filling in app.sqlite/backup-app.sqlite (good to test actionable orders though)~~
   - Market gapping logic as described above
-  - Link positions to market orders: selecting a single position during deletes/updates is not working correctly
-    - While what is needed is a reference _to_ positions _from_ orders, because a single order could be backed by more than one position, a new table will be required to proivde this information
-    - Only one position can ever be a partial, so a single backing position will be updated and the rest will be deleted
-    - Very important to remove the order-position records for filled orders
-    - This association is to delete positions and update partial positions, so the sum of the positions tied to a given order must be equal to or greater than the order size
-
+  ~~- Link positions to market orders: selecting a single position during deletes/updates is not working correctly~~
+    - Cannot guarantee position linking at order submission: this would mean that traders posting an order must have the goods at order time, but I want to support orderers only having the goods at clearance time
+  - Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good
+  - The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem
+    - They probably need endpoints to detect this maybe?
+  - Negative price on longs validation
 
 ## Previous Topic Notes
 

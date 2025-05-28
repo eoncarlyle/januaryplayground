@@ -55,7 +55,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
     })
 
     private val authService = AuthService(db, secure, wsUserMap, logger)
-    private val marketService = MarketService(db, secure, wsUserMap, logger)
+    private val marketService = ExchangeService(db, secure, wsUserMap, logger)
 
     private fun orderFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
@@ -237,9 +237,9 @@ class App(db: DatabaseHelper, secure: Boolean) {
     }
 
     private fun <T> quoteQueueProducer(request: T, initialQuote: Quote?, finalQuote: Quote?) {
-        logger.info(request.toString())
-        logger.info(initialQuote.toString())
-        logger.info(finalQuote.toString())
+        logger.info("Request: {}", request.toString())
+        logger.info("Initial Quote: {}", initialQuote.toString())
+        logger.info("Final Quote: {}", initialQuote.toString())
         if (initialQuote != null && finalQuote != null) {
             if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
                 quoteQueue.put(finalQuote)
@@ -272,6 +272,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             while (true) {
                 val quote = quoteQueue.take()
                 logger.info("Incoming ticker ${quote.ticker} quote for ${quote.bid}/${quote.ask}")
+                logger.info(marketService.getState().toString())
                 val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
                 aliveSockets.forEach { session ->
                     session.send(QuoteMessage(quote))

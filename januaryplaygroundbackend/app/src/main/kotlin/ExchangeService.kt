@@ -6,7 +6,7 @@ import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
 
-class MarketService(
+class ExchangeService(
     db: DatabaseHelper,
     private val secure: Boolean,
     private val wsUserMap: WsUserMap,
@@ -84,6 +84,10 @@ class MarketService(
         } finally {
             semaphore.release()
         }
+    }
+
+    fun getState(): Pair<Int, Int> {
+        return exchangeDao.getState();
     }
 
     // Assumes already within transaction semaphore, probably terrible idea

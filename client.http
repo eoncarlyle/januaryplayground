@@ -47,3 +47,16 @@ Content-Type: application/json
   "tradeType": "BUY",
   "orderType": "Market"
 }
+
+###
+POST http://localhost:7070/exchange/orders/market
+Content-Type: application/json
+
+{
+  "type": "incomingOrder",
+  "email": "noise0@iainschmitt.com",
+  "ticker": "testTicker",
+  "size": 1,
+  "tradeType": "BUY",
+  "orderType": "Market"
+}

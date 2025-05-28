@@ -1,0 +1,89 @@
+Connected to the target VM, address: '127.0.0.1:61128', transport: 'socket'
+[main] INFO io.javalin.Javalin - Starting Javalin ...
+[main] INFO org.eclipse.jetty.server.Server - jetty-11.0.21; built: 2024-05-14T03:19:28.958Z; git: 996cd61addad9cb033e0e3eba6fa3f0fa3dc270d; jvm 22.0.2+9
+[main] INFO org.eclipse.jetty.server.session.DefaultSessionIdManager - Session workerName=node0
+[main] INFO org.eclipse.jetty.server.handler.ContextHandler - Started o.e.j.s.ServletContextHandler@207b8649{/,null,AVAILABLE}
+[main] INFO org.eclipse.jetty.server.AbstractConnector - Started ServerConnector@691939c9{HTTP/1.1, (http/1.1)}{0.0.0.0:7070}
+[main] INFO org.eclipse.jetty.server.Server - Started Server@222eb8aa{STARTING}[11.0.21,sto=0] @2623ms
+[main] INFO io.javalin.Javalin -
+       __                  ___           _____
+      / /___ __   ______ _/ (_)___      / ___/
+ __  / / __ `/ | / / __ `/ / / __ \    / __ \
+/ /_/ / /_/ /| |/ / /_/ / / / / / /   / /_/ /
+\____/\__,_/ |___/\__,_/_/_/_/ /_/    \____/
+
+       https://javalin.io/documentation
+
+[main] INFO io.javalin.Javalin - Javalin started in 565ms \o/
+[main] INFO io.javalin.Javalin - Listening on http://localhost:7070/
+[main] INFO io.javalin.Javalin - You are running Javalin 6.2.0 (released July 21, 2024. Your Javalin version is 310 days old. Consider checking for a newer version.).
+[JettyServerThreadPool-35] INFO App - POST /auth/login 200 OK took 682.5137 ms
+[JettyServerThreadPool-41] INFO App - POST /exchange/quote 200 OK took 76.301506 ms
+[JettyServerThreadPool-35] INFO App - POST /exchange/positions 200 OK took 369.87067 ms
+[JettyServerThreadPool-38] INFO App - POST /exchange/orders 200 OK took 99.10308 ms
+[JettyServerThreadPool-37] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-37] INFO App - Initial Quote: Quote(ticker=testTicker, bid=30, ask=35)
+[JettyServerThreadPool-37] INFO App - Final Quote: Quote(ticker=testTicker, bid=30, ask=35)
+[JettyServerThreadPool-37] INFO App - POST /exchange/orders/cancel_all 201 Created took 51.098 ms
+[JettyServerThreadPool-48] INFO App - POST /exchange/orders/limit 201 Created took 162.45337 ms
+[JettyServerThreadPool-40] INFO App - POST /exchange/orders/limit 201 Created took 8.579 ms
+[JettyServerThreadPool-41] INFO App - POST /auth/sessions/temporary 201 Created took 26.737791 ms
+[JettyServerThreadPool-36] INFO App - Incoming connection
+[JettyServerThreadPool-34] INFO App - Incoming auth request
+[JettyServerThreadPool-37] INFO App - Request: MarketOrderRequest(type=incomingOrder, email=noise0@iainschmitt.com, ticker=testTicker, size=1, tradeType=BUY, orderType=Market)
+[JettyServerThreadPool-37] INFO App - Initial Quote: Quote(ticker=testTicker, bid=30, ask=35)
+[JettyServerThreadPool-37] INFO App - Final Quote: Quote(ticker=testTicker, bid=30, ask=35)
+[JettyServerThreadPool-37] INFO App - POST /exchange/orders/market 201 Created took 143.16795 ms
+[JettyServerThreadPool-48] INFO App - Request: MarketOrderRequest(type=incomingOrder, email=noise0@iainschmitt.com, ticker=testTicker, size=3, tradeType=BUY, orderType=Market)
+[JettyServerThreadPool-48] INFO App - Initial Quote: Quote(ticker=testTicker, bid=30, ask=35)
+[JettyServerThreadPool-48] INFO App - Final Quote: Quote(ticker=testTicker, bid=30, ask=35)
+[JettyServerThreadPool-48] INFO App - POST /exchange/orders/market 201 Created took 16.26075 ms
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+[Thread-11] INFO App - (12, 1100)
+[Thread-11] INFO App - Updated 1 clients over websockets about new bid
+[JettyServerThreadPool-48] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-48] INFO App - Initial Quote: Quote(ticker=testTicker, bid=30, ask=-1)
+[JettyServerThreadPool-48] INFO App - Final Quote: Quote(ticker=testTicker, bid=30, ask=-1)
+[JettyServerThreadPool-48] INFO App - POST /exchange/orders/cancel_all 201 Created took 7.720458 ms
+[JettyServerThreadPool-40] INFO App - POST /exchange/orders/limit 201 Created took 8.296167 ms
+[JettyServerThreadPool-37] INFO App - POST /exchange/orders/limit 201 Created took 10.031417 ms
+[JettyServerThreadPool-36] INFO App - Request: MarketOrderRequest(type=incomingOrder, email=noise0@iainschmitt.com, ticker=testTicker, size=3, tradeType=BUY, orderType=Market)
+[JettyServerThreadPool-36] INFO App - Initial Quote: Quote(ticker=testTicker, bid=31, ask=36)
+[JettyServerThreadPool-36] INFO App - Final Quote: Quote(ticker=testTicker, bid=31, ask=36)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 31/-1
+[JettyServerThreadPool-36] INFO App - POST /exchange/orders/market 201 Created took 18.968166 ms
+[Thread-11] INFO App - (12, 1100)
+[Thread-11] INFO App - Updated 1 clients over websockets about new bid
+[JettyServerThreadPool-35] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-35] INFO App - Initial Quote: Quote(ticker=testTicker, bid=31, ask=-1)
+[JettyServerThreadPool-35] INFO App - Final Quote: Quote(ticker=testTicker, bid=31, ask=-1)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+[JettyServerThreadPool-35] INFO App - POST /exchange/orders/cancel_all 201 Created took 11.305208 ms
+[Thread-11] INFO App - (12, 1100)
+[Thread-11] INFO App - Updated 1 clients over websockets about new bid
+[JettyServerThreadPool-36] INFO App - POST /exchange/orders/limit 201 Created took 7.22825 ms
+[JettyServerThreadPool-48] INFO App - POST /exchange/orders/limit 201 Created took 9.6805 ms
+[JettyServerThreadPool-37] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-37] INFO App - Initial Quote: Quote(ticker=testTicker, bid=32, ask=37)
+[JettyServerThreadPool-37] INFO App - Final Quote: Quote(ticker=testTicker, bid=32, ask=37)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+[JettyServerThreadPool-37] INFO App - POST /exchange/orders/cancel_all 201 Created took 10.798583 ms
+[Thread-11] INFO App - (12, 1100)
+[Thread-11] INFO App - Updated 1 clients over websockets about new bid
+[JettyServerThreadPool-41] INFO App - POST /exchange/orders/limit 201 Created took 8.350792 ms
+[JettyServerThreadPool-40] INFO App - POST /exchange/orders/limit 201 Created took 10.822709 ms
+[JettyServerThreadPool-35] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-35] INFO App - Initial Quote: Quote(ticker=testTicker, bid=33, ask=38)
+[JettyServerThreadPool-35] INFO App - Final Quote: Quote(ticker=testTicker, bid=33, ask=38)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+[JettyServerThreadPool-35] INFO App - POST /exchange/orders/cancel_all 201 Created took 9.43525 ms
+[Thread-11] INFO App - (12, 1100)
+[Thread-11] INFO App - Updated 1 clients over websockets about new bid
+[JettyServerThreadPool-36] INFO App - POST /exchange/orders/limit 201 Created took 11.61425 ms
+[JettyServerThreadPool-37] INFO App - POST /exchange/orders/limit 201 Created took 12.628292 ms
+[JettyServerThreadPool-41] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
+[JettyServerThreadPool-41] INFO App - Initial Quote: Quote(ticker=testTicker, bid=34, ask=39)
+[JettyServerThreadPool-41] INFO App - Final Quote: Quote(ticker=testTicker, bid=34, ask=39)
+[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
+[JettyServerThreadPool-41] INFO App - POST /exchange/orders/cancel_all 201 Created took 8.249292 ms
+[Thread-11] INFO App - (12, 1100)
