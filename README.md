@@ -13,6 +13,16 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Feedback Log
 
+### `29c9d78`
+
+The market maker operates like: 
+1) Market makers submit limit buy and sell orders at a given spread
+2) When the market spread changes, all orders are canceled and new limit orders are submitted at the updated spread.
+- Current issue with the market maker is that canceling orders the quote itself
+- This breaks "quote change → submit new orders → new market maker quote" cycle midway through
+- This should be fixed with a semaphore that prevents `onQuote`
+
+
 ### `edd10ca`
 - Last two steps before testing are
   - Large scale order cancelation
@@ -219,6 +229,8 @@ Positive feedback loop
 - The quote that should be sent out is not the quote that is being sent out
   - To do: the debugger is getting unweildy, so it is time to prove that the sent objects are not the received objects with a timestamp
   - 2025.05.27.log is rather strange
+  - May need to move `initialQuote` inside transaction sempahore
+  - Probably should just place all of `request, initialQuote, finalQuote` into the queue
 ```
 [JettyServerThreadPool-35] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
 [JettyServerThreadPool-35] INFO App - Initial Quote: Quote(ticker=testTicker, bid=31, ask=-1)

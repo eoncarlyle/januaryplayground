@@ -6,8 +6,11 @@ import arrow.core.right
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
-import kotlin.math.min
 import kotlin.system.exitProcess
+import arrow.atomic.AtomicInt
+import arrow.atomic.AtomicBoolean
+import arrow.atomic.Atomic
+import kotlinx.coroutines.delay
 
 private enum class SpreadStateChange {
     INCREMENT, DECREMENT, STABLE
@@ -24,11 +27,15 @@ class MarketMaker(
     private val password: String,
     private val ticker: Ticker,
     private val logger: Logger,
-    private var trackingQuote: Quote? = null,
-    private var spreadState: Int = 0
 ) {
+    private val trackingQuote: Atomic<Quote?> = Atomic(null)
+    private val spreadState: AtomicInt = AtomicInt(0)
+    private val openForQuote: AtomicBoolean = AtomicBoolean(true)
+
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
+
+    private var counter = 0
 
     private val backendClient = BackendClient(logger)
     //TODO: market initialisaiton needs to be tied to this
@@ -39,7 +46,7 @@ class MarketMaker(
                 .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
                 .flatMap { state -> handleStartingState(state) }
                 .onRight { quote ->
-                    trackingQuote = quote.getQuote()
+                    trackingQuote.set(quote.getQuote())
                     launch {
                         backendClient.connectWebSocket(
                             email = email,
@@ -59,34 +66,60 @@ class MarketMaker(
     }
 
     private suspend fun onQuote(incomingQuote: Quote) {
-        logger.info("Incoming quote: {}", {})
-        if (trackingQuote != null) {
-            if (trackingQuote != incomingQuote) {
+        counter++
+        if (!openForQuote.get()) {
+            logger.info("Discarding quote, `openForQuote` false")
+            return
+        }
+
+        if (counter < 4) {
+
+            logger.info("Incoming Quote")
+            logger.info("Current quote: {}", trackingQuote.get().toString())
+            logger.info("Incoming quote: {}", incomingQuote.toString())
+
+            delay(3000)
+
+            val currentTrackingQuote = trackingQuote.get()
+            if (currentTrackingQuote != null) {
+                if (currentTrackingQuote != incomingQuote) {
+                    openForQuote.set(false)
+                    backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
+                        .mapLeft {
+                            logger.error("Market maker could not exit positions after inconsistent quote, exiting")
+                            exitProcess(1)
+                        }
+                        .map {
+                            simpleLimitOrderSubmission(currentTrackingQuote, incomingQuote)
+                                .mapLeft {
+                                    logger.warn("Market maker could not submit limit orders after quote reset")
+                                }
+                                .map { quote -> trackingQuote.set(quote) }
+                        }
+                    openForQuote.set(true)
+                }
+            } else {
+                logger.warn("Illegal market maker state: no tracking quote")
+                openForQuote.set(false)
                 backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
-                    .onLeft {
-                        logger.error("Market maker could not exit positions after inconsistent quote, exiting")
+                    .mapLeft {
+                        logger.error("Market maker could not exit positions on null tracking quote, exiting")
                         exitProcess(1)
-                    }.onRight {
+                    }.map {
                         simpleLimitOrderSubmission(
-                            trackingQuote,
+                            currentTrackingQuote,
                             incomingQuote
-                        ).onLeft { logger.warn("Market maker could not submit limit orders after quote reset") }
-                            .onRight { quote -> this.trackingQuote = quote; }
+                        ).mapLeft {
+                            logger.warn("Market maker could not submit limit orders after null tracking quote")
+                        }
+                            .map { quote ->
+                                trackingQuote.set(quote)
+                            }
                     }
+                openForQuote.set(true)
             }
         } else {
-            logger.warn("Illegal market maker state: no tracking quote")
-            backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
-                .onLeft {
-                    logger.error("Market maker could not exit positions on null tracking quote, exiting")
-                    exitProcess(1)
-                }.onRight {
-                    simpleLimitOrderSubmission(
-                        trackingQuote,
-                        incomingQuote
-                    ).onLeft { logger.warn("Market maker could not submit limit orders after null tracking quote") }
-                        .onRight { quote -> this.trackingQuote = quote; }
-                }
+            logger.info("Incoming Quote: {}", incomingQuote.toString())
         }
     }
 
@@ -100,11 +133,12 @@ class MarketMaker(
 
         val interQuoteChange = getInterQuoteChange(priorQuote, currentQuote)
         if (interQuoteChange.spreadStateChange == SpreadStateChange.INCREMENT) {
-            spreadState++
+            spreadState.incrementAndGet()
         } else if (interQuoteChange.spreadStateChange == SpreadStateChange.DECREMENT) {
-            spreadState = min(spreadState--, 0)
+            spreadState.decrementAndGet()
         }
 
+        logger.info(interQuoteChange.toString())
         return backendClient.postLimitOrderRequest(
             LimitOrderRequest(
                 email = email,
@@ -133,14 +167,14 @@ class MarketMaker(
         return if (priorQuote == null || (currentQuote.bid != -1 && currentQuote.ask != -1)) {
             InterQuoteChange(currentQuote.bid, currentQuote.ask, SpreadStateChange.STABLE)
         } else if (currentQuote.bid == -1 && currentQuote.ask != -1) {
-            if (spreadState <= 0) {
+            if (spreadState.get() <= 0) {
                 InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.STABLE)
             } else {
                 InterQuoteChange(priorQuote.bid - 1, priorQuote.ask, SpreadStateChange.DECREMENT)
             }
         } else if (currentQuote.ask == -1 && currentQuote.bid != -1) {
-            if (spreadState <= 0) {
-                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
+            if (spreadState.get() <= 0) {
+                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.STABLE)
             } else {
                 InterQuoteChange(priorQuote.bid, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
             }

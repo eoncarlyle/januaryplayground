@@ -5,6 +5,7 @@ import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
+import kotlin.math.log
 
 class ExchangeService(
     db: DatabaseHelper,
@@ -134,7 +135,6 @@ class ExchangeService(
     private fun createRestingLimitOrder(order: LimitOrderRequest): OrderResult<OrderAcknowledged> {
         val orderRecord = exchangeDao.createLimitPendingOrder(order)
         //LimitPendingOrderRecord
-
         return if (orderRecord != null) {
             Either.Right(
                 OrderAcknowledged(

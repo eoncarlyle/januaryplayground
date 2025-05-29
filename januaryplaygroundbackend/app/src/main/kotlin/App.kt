@@ -10,6 +10,11 @@ import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.util.concurrent.*
 
+private data class QuoteQueueMessage<T>(
+    val request: T,
+    val initialQuote: Quote?,
+    val finalQuote: Quote?
+)
 
 fun main(args: Array<String>) {
     if (args.size < 2) {
@@ -32,7 +37,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
     private val wsUserMap: WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>()
     private val logger by lazy { LoggerFactory.getLogger(App::class.java) }
     private val transactionSemaphores = TransactionSemaphores(db)
-    private val quoteQueue = LinkedBlockingQueue<Quote>()
+    private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Any>>()
     private val objectMapper = ObjectMapper()
 
     private val javalinApp = Javalin.create({ config ->
@@ -88,7 +93,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
             val dto = ctx.bodyAsClass<ExchangeRequestDto>();
             val ticker = dto.ticker
             val semaphore = transactionSemaphores.getSemaphore(ticker)
-            val quote =  marketService.getQuote(ticker)
+            val quote = marketService.getQuote(ticker)
             if (semaphore != null && quote != null) {
                 ctx.status(200)
                 ctx.json(quote)
@@ -126,15 +131,21 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
         this.javalinApp.post("/exchange/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
-            val initialQuote = marketService.getQuote(orderRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {
+                val initialQuote = marketService.getQuote(orderRequest.ticker)
                 marketService.marketOrderRequest(orderRequest, semaphore)
                     .onRight { response ->
                         ctx.status(201)
                         ctx.json(response)
-                        quoteQueueProducer(orderRequest, initialQuote, marketService.getQuote(orderRequest.ticker))
+                        quoteQueue.put(
+                            QuoteQueueMessage(
+                                orderRequest,
+                                initialQuote,
+                                marketService.getQuote(orderRequest.ticker)
+                            )
+                        )
                     }
                     .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
             } else {
@@ -149,27 +160,21 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
         this.javalinApp.post("/exchange/orders/limit") { ctx ->
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
-            val initialQuote = marketService.getQuote(orderRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {
+                val initialQuote = marketService.getQuote(orderRequest.ticker)
                 marketService.limitOrderRequest(orderRequest, semaphore)
                     .onRight { response ->
                         ctx.status(201)
                         ctx.json(response)
-                        when (response) {
-                            is OrderPartiallyFilled -> quoteQueueProducer(
+                        quoteQueue.put(
+                            QuoteQueueMessage(
                                 orderRequest,
                                 initialQuote,
                                 marketService.getQuote(orderRequest.ticker)
                             )
-
-                            is OrderFilled -> quoteQueueProducer(
-                                orderRequest,
-                                initialQuote,
-                                marketService.getQuote(orderRequest.ticker)
-                            )
-                        }
+                        )
                     }
                     .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
             } else {
@@ -181,15 +186,21 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
         this.javalinApp.post("/exchange/orders/cancel_all") { ctx ->
             val cancelRequest = ctx.bodyAsClass<ExchangeRequestDto>()
-            val initialQuote = marketService.getQuote(cancelRequest.ticker)
             val semaphore = transactionSemaphores.getSemaphore(cancelRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {
+                val initialQuote = marketService.getQuote(cancelRequest.ticker)
                 marketService.allOrderCancel(cancelRequest, semaphore)
                     .onRight { response ->
                         ctx.status(201)
                         ctx.json(response)
-                        quoteQueueProducer(cancelRequest, initialQuote, marketService.getQuote(cancelRequest.ticker))
+                        quoteQueue.put(
+                            QuoteQueueMessage(
+                                cancelRequest,
+                                initialQuote,
+                                marketService.getQuote(cancelRequest.ticker)
+                            )
+                        )
                     }
                     .onLeft { cancelFailure ->
                         ctx.json(mapOf("message" to cancelFailure.second))
@@ -236,25 +247,6 @@ class App(db: DatabaseHelper, secure: Boolean) {
         orderQuoteConsumer()
     }
 
-    private fun <T> quoteQueueProducer(request: T, initialQuote: Quote?, finalQuote: Quote?) {
-        logger.info("Request: {}", request.toString())
-        logger.info("Initial Quote: {}", initialQuote.toString())
-        logger.info("Final Quote: {}", initialQuote.toString())
-        if (initialQuote != null && finalQuote != null) {
-            if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
-                quoteQueue.put(finalQuote)
-            }
-        } else {
-            val serialisedRequest = objectMapper.writeValueAsString(request)
-            if (initialQuote == null) {
-                logger.warn("Failure to receive initial quote for $serialisedRequest")
-            }
-            if (finalQuote == null) {
-                logger.warn("Failure to receive final quote for $serialisedRequest")
-            }
-        }
-    }
-
     private fun startServerEventSimulation() {
         Thread {
             while (true) {
@@ -270,14 +262,31 @@ class App(db: DatabaseHelper, secure: Boolean) {
     private fun orderQuoteConsumer() {
         Thread {
             while (true) {
-                val quote = quoteQueue.take()
-                logger.info("Incoming ticker ${quote.ticker} quote for ${quote.bid}/${quote.ask}")
-                logger.info(marketService.getState().toString())
-                val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
-                aliveSockets.forEach { session ->
-                    session.send(QuoteMessage(quote))
+                val (request, initialQuote, finalQuote) = quoteQueue.take()
+
+                if (initialQuote != null && finalQuote != null) {
+                    if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
+                        logger.info("Quote Update")
+                        logger.info("Initial Quote: {}", initialQuote.toString())
+                        logger.info("Final Quote: {}", finalQuote.toString())
+                        logger.info(request.toString())
+
+                        val aliveSockets =
+                            wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
+                        aliveSockets.forEach { session ->
+                            session.send(QuoteMessage(finalQuote))
+                        }
+                        logger.info("Updated ${aliveSockets.size} clients over websockets with new quote");
+                    }
+                } else {
+                    val serialisedRequest = objectMapper.writeValueAsString(request)
+                    if (initialQuote == null) {
+                        logger.warn("Failure to receive initial quote for $serialisedRequest")
+                    }
+                    if (finalQuote == null) {
+                        logger.warn("Failure to receive final quote for $serialisedRequest")
+                    }
                 }
-                logger.info("Updated ${aliveSockets.size} clients over websockets about new bid");
             }
         }.start()
     }
