@@ -223,29 +223,6 @@ Writing new websocket messages types has made me realise two things
   - Related 'There really only should be _one_ of these \[partial order\] ever run'
     - This should be true but it doesn't imply that complete orders will zero out a position
 
-Positive feedback loop
-- Right now when the noise trader buys 4 positions and then three positions, the market maker wants to increment the quote to 31/36
-- The 'racheting' continues because the tracking quote is created by the market maker without feedback from the backend
-- The quote that should be sent out is not the quote that is being sent out
-  - To do: the debugger is getting unweildy, so it is time to prove that the sent objects are not the received objects with a timestamp
-  - 2025.05.27.log is rather strange
-  - May need to move `initialQuote` inside transaction sempahore
-  - Probably should just place all of `request, initialQuote, finalQuote` into the queue
-```
-[JettyServerThreadPool-35] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
-[JettyServerThreadPool-35] INFO App - Initial Quote: Quote(ticker=testTicker, bid=31, ask=-1)
-[JettyServerThreadPool-35] INFO App - Final Quote: Quote(ticker=testTicker, bid=31, ask=-1)
-[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
-[JettyServerThreadPool-35] INFO App - POST /exchange/orders/cancel_all 201 Created took 11.305208 ms
-[Thread-11] INFO App - (12, 1100)
-[Thread-11] INFO App - Updated 1 clients over websockets about new bid
-[JettyServerThreadPool-36] INFO App - POST /exchange/orders/limit 201 Created took 7.22825 ms
-[JettyServerThreadPool-48] INFO App - POST /exchange/orders/limit 201 Created took 9.6805 ms
-[JettyServerThreadPool-37] INFO App - Request: ExchangeRequestDto(email=testmm@iainschmitt.com, ticker=testTicker)
-[JettyServerThreadPool-37] INFO App - Initial Quote: Quote(ticker=testTicker, bid=32, ask=37)
-[JettyServerThreadPool-37] INFO App - Final Quote: Quote(ticker=testTicker, bid=32, ask=37)
-[Thread-11] INFO App - Incoming ticker testTicker quote for 30/-1
-```
 
 TODO
   ~~- Restrict quote to actionable actors~~
@@ -256,7 +233,21 @@ TODO
   - Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good
   - The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem
     - They probably need endpoints to detect this maybe?
-  - Negative price on longs validation
+- ~~Negative price on longs validation~~
+  - Finished
+- Noise trader position bug
+  - Track when this invariant breaks on the backend (after quote maybe?)
+  - We are currently having issues with this with noise trader operation
+
+```sqlite
+SELECT positions, balances
+FROM (
+         SELECT
+             (SELECT SUM(size) FROM position_records) as positions,
+             (SELECT SUM(balance) FROM user) as balances
+     )
+
+```
 
 ## Previous Topic Notes
 

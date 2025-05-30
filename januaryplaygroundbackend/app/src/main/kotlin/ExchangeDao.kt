@@ -54,7 +54,7 @@ class ExchangeDao(
                         val bid = rs.getInt(1)
                         val ask = rs.getInt(2)
                         if (rs.wasNull() || ask == 0 && rs.wasNull()) null
-                        else Quote(ticker, bid, ask)
+                        else Quote(ticker, bid, ask, System.currentTimeMillis())
                     } else null
                 }
             }
@@ -275,7 +275,7 @@ class ExchangeDao(
             //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
             return@query conn.prepareStatement(
                 """
-                    insert into position_records (user, ticker, position_type, size, position_type) values (?, ?, ?, ?, ?)
+                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
                         on conflict (user, ticker, position_type)
                         do update set size = size + excluded.size, received_tick = excluded.received_tick
                     """,

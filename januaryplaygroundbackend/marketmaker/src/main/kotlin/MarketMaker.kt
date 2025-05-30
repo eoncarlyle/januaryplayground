@@ -10,7 +10,6 @@ import kotlin.system.exitProcess
 import arrow.atomic.AtomicInt
 import arrow.atomic.AtomicBoolean
 import arrow.atomic.Atomic
-import kotlinx.coroutines.delay
 
 private enum class SpreadStateChange {
     INCREMENT, DECREMENT, STABLE
@@ -34,8 +33,6 @@ class MarketMaker(
 
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
-
-    private var counter = 0
 
     private val backendClient = BackendClient(logger)
     //TODO: market initialisaiton needs to be tied to this
@@ -66,60 +63,58 @@ class MarketMaker(
     }
 
     private suspend fun onQuote(incomingQuote: Quote) {
-        counter++
+        logger.info("Incoming Quote")
+        logger.info("Current quote: {}", trackingQuote.get().toString())
+        logger.info("Incoming quote: {}", incomingQuote.toString())
+
         if (!openForQuote.get()) {
             logger.info("Discarding quote, `openForQuote` false")
             return
         }
 
-        if (counter < 4) {
-
-            logger.info("Incoming Quote")
-            logger.info("Current quote: {}", trackingQuote.get().toString())
-            logger.info("Incoming quote: {}", incomingQuote.toString())
-
-            delay(3000)
-
-            val currentTrackingQuote = trackingQuote.get()
-            if (currentTrackingQuote != null) {
-                if (currentTrackingQuote != incomingQuote) {
-                    openForQuote.set(false)
-                    backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
-                        .mapLeft {
-                            logger.error("Market maker could not exit positions after inconsistent quote, exiting")
-                            exitProcess(1)
-                        }
-                        .map {
-                            simpleLimitOrderSubmission(currentTrackingQuote, incomingQuote)
-                                .mapLeft {
-                                    logger.warn("Market maker could not submit limit orders after quote reset")
-                                }
-                                .map { quote -> trackingQuote.set(quote) }
-                        }
-                    openForQuote.set(true)
-                }
-            } else {
-                logger.warn("Illegal market maker state: no tracking quote")
+        val currentTrackingQuote = trackingQuote.get()
+        if (currentTrackingQuote != null) {
+            if (incomingQuote.tick < currentTrackingQuote.tick) {
+                logger.info(
+                    "Ignoring stale incoming quote from {}, tracking quote set at {} ",
+                    incomingQuote.tick.toString(),
+                    trackingQuote.toString()
+                )
+            } else if (currentTrackingQuote != incomingQuote) {
                 openForQuote.set(false)
                 backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
                     .mapLeft {
-                        logger.error("Market maker could not exit positions on null tracking quote, exiting")
+                        logger.error("Market maker could not exit positions after inconsistent quote, exiting")
                         exitProcess(1)
-                    }.map {
-                        simpleLimitOrderSubmission(
-                            currentTrackingQuote,
-                            incomingQuote
-                        ).mapLeft {
-                            logger.warn("Market maker could not submit limit orders after null tracking quote")
-                        }
-                            .map { quote ->
-                                trackingQuote.set(quote)
+                    }
+                    .map {
+                        simpleLimitOrderSubmission(currentTrackingQuote, incomingQuote)
+                            .mapLeft {
+                                logger.warn("Market maker could not submit limit orders after quote reset")
                             }
+                            .map { quote -> trackingQuote.set(quote) }
                     }
                 openForQuote.set(true)
             }
         } else {
-            logger.info("Incoming Quote: {}", incomingQuote.toString())
+            logger.warn("Illegal market maker state: no tracking quote")
+            openForQuote.set(false)
+            backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
+                .mapLeft {
+                    logger.error("Market maker could not exit positions on null tracking quote, exiting")
+                    exitProcess(1)
+                }.map {
+                    simpleLimitOrderSubmission(
+                        currentTrackingQuote,
+                        incomingQuote
+                    ).mapLeft {
+                        logger.warn("Market maker could not submit limit orders after null tracking quote")
+                    }
+                        .map { quote ->
+                            trackingQuote.set(quote)
+                        }
+                }
+            openForQuote.set(true)
         }
     }
 
@@ -157,7 +152,9 @@ class MarketMaker(
                     price = interQuoteChange.ask
                 )
             )
-        }.flatMap { _ -> Quote(ticker, interQuoteChange.bid, interQuoteChange.ask).right() }
+        }.flatMap { _ ->
+            Quote(ticker, interQuoteChange.bid, interQuoteChange.ask, System.currentTimeMillis()).right()
+        }
     }
 
     private fun getInterQuoteChange(
@@ -218,7 +215,7 @@ class MarketMaker(
             return if (nonCompliantBids != null || nonCompliantAsks != null) {
                 null
             } else {
-                Quote(ticker, bidPrice, askPrice)
+                Quote(ticker, bidPrice, askPrice, System.currentTimeMillis())
             }
         } else {
             return null

@@ -32,7 +32,8 @@ value class PositivePrice private constructor(val value: Int) {
 class SafeQuote private constructor(
     val ticker: Ticker,
     val bid: PositivePrice,
-    val ask: PositivePrice
+    val ask: PositivePrice,
+    val tick: Long
 ) {
     companion object {
         fun create(quote: Quote): Either<ClientFailure, SafeQuote> =
@@ -42,11 +43,12 @@ class SafeQuote private constructor(
                 ensure(bidPrice.value < askPrice.value) {
                     ClientFailure(-1, "Bid must be less than ask")
                 }
-                SafeQuote(quote.ticker, bidPrice, askPrice)
+                SafeQuote(quote.ticker, bidPrice, askPrice, quote.tick)
             }
     }
+
     fun getQuote(): Quote {
-        return Quote(ticker, bid.value, ask.value)
+        return Quote(ticker, bid.value, ask.value, tick)
     }
 }
 
@@ -137,25 +139,27 @@ class BackendClient(
         expectedCode: HttpStatusCode,
         vararg components: String
     ): Either<ClientFailure, R> {
-        val response = client.post(httpBaseurl) {
-            url {
-                appendPathSegments(*components)
-            }
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        return when (response.status) {
-            expectedCode -> {
-                Either.catch {
-                    response.body<R>()
-                }.mapLeft { error ->
-                    logger.error(error.message)
-                    return@mapLeft ClientFailure(-1, "Could not deserialise")
+        return Either.catch {
+            val response = client.post(httpBaseurl) {
+                url {
+                    appendPathSegments(*components)
                 }
+                contentType(ContentType.Application.Json)
+                setBody(request)
             }
+            return when (response.status) {
+                expectedCode -> {
+                    Either.catch {
+                        response.body<R>()
+                    }.mapLeft { error ->
+                        logger.error(error.message)
+                        return@mapLeft ClientFailure(-1, "Could not deserialise")
+                    }
+                }
 
-            else -> Either.Left(ClientFailure(response.status.value, response.body()))
-        }
+                else -> Either.Left(ClientFailure(response.status.value, response.body()))
+            }
+        }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
     public suspend fun <T, R> retry(

@@ -1,5 +1,6 @@
 import arrow.core.Either
 import arrow.core.flatMap
+import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
@@ -15,7 +16,7 @@ class NoiseTrader(
     private val ticker: Ticker,
     private var tradeTypeState: TradeType = TradeType.BUY
 ) {
-    private val transactionSize = 3
+    private val transactionSize = 2
     private val logger by lazy { LoggerFactory.getLogger(NoiseTrader::class.java) }
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
 
@@ -24,8 +25,10 @@ class NoiseTrader(
     fun main(): Unit = runBlocking {
         Either.catch {
             backendClient.login(email, password)
-                .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
-                .flatMap { state -> handleStartingState(state) }
+            either {
+                val startingState = backendClient.getStartingState(exchangeRequestDto).bind()
+                handleStartingState(startingState).bind()
+            }
                 .onRight { _ ->
                     launch {
                         while (true) {

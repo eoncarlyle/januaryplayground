@@ -30,5 +30,6 @@ data class ValidOrderRecord<T: OrderRequest>(
 data class Quote(
     val ticker: Ticker,
     val bid: Int,
-    val ask: Int
+    val ask: Int,
+    val tick: Long
 )
