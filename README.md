@@ -234,10 +234,8 @@ TODO
   - The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem
     - They probably need endpoints to detect this maybe?
 - ~~Negative price on longs validation~~
-  - Finished
-- Noise trader position bug
-  - Track when this invariant breaks on the backend (after quote maybe?)
-  - We are currently having issues with this with noise trader operation
+- ~~Noise trader position bug~~
+- Negative balance bug: at least the positions/balance invariant is respsected
 
 ```sqlite
 SELECT positions, balances

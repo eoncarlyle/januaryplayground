@@ -131,6 +131,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
         this.javalinApp.post("/exchange/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
+            logger.info(objectMapper.writeValueAsString(orderRequest))
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {
@@ -160,6 +161,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
 
         this.javalinApp.post("/exchange/orders/limit") { ctx ->
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
+            logger.info(objectMapper.writeValueAsString(orderRequest))
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {

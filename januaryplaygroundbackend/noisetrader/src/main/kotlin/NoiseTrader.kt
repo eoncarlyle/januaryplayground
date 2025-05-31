@@ -16,7 +16,7 @@ class NoiseTrader(
     private val ticker: Ticker,
     private var tradeTypeState: TradeType = TradeType.BUY
 ) {
-    private val transactionSize = 2
+    private val transactionSize = 1
     private val logger by lazy { LoggerFactory.getLogger(NoiseTrader::class.java) }
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
 
@@ -32,7 +32,7 @@ class NoiseTrader(
                 .onRight { _ ->
                     launch {
                         while (true) {
-                            delay(5.seconds)
+                            delay(1.seconds)
                             if (Random.nextInt(0..5) == 0) {
                                 backendClient.postMarketOrderRequest(
                                     MarketOrderRequest(
@@ -43,9 +43,14 @@ class NoiseTrader(
                                         orderType = OrderType.Market
                                     )
                                 ).onRight {
-                                    tradeTypeState = if (tradeTypeState.isBuy()) TradeType.SELL else TradeType.BUY
+                                    if (Random.nextInt(0..1) == 0) {
+                                        tradeTypeState = if (tradeTypeState.isBuy()) TradeType.SELL else TradeType.BUY
+                                    }
                                 }.onLeft { failure ->
                                     logger.warn("Noise trader order failed: $failure")
+                                    if (failure.first == 400) {
+                                        tradeTypeState = if (tradeTypeState.isBuy()) TradeType.SELL else TradeType.BUY
+                                    }
                                 }
                             }
                         }

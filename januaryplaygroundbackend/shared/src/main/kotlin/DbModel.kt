@@ -22,7 +22,7 @@ data class DeleteAllPositionsRecord(
     val orderCount: Int
 )
 
-data class ValidOrderRecord<T: OrderRequest>(
+data class ValidOrderRecord<T : OrderRequest>(
     val order: T,
     val userBalance: Int
 )
@@ -31,5 +31,11 @@ data class Quote(
     val ticker: Ticker,
     val bid: Int,
     val ask: Int,
-    val tick: Long
-)
+    val tick: Long,
+) {
+    fun hasBidAskEmpty() = bid == -1 && ask == -1
+    fun hasbidAskFull() = bid != -1 && ask != -1
+    fun hasBidsWithoutAsks() = bid != -1 && ask == 1
+    fun hasAsksWithoutBids() = bid == -1 && ask != -1
+}
+

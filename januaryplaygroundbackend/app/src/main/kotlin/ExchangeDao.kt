@@ -1,4 +1,5 @@
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import java.sql.Connection
 import java.sql.Statement
 
 // This isn't really a true DAO because that implies more of a 1-to-1 relationship with tables, but
@@ -273,6 +274,7 @@ class ExchangeDao(
             // SQLite docs:
             // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
             //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
+
             return@query conn.prepareStatement(
                 """
                     insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
@@ -293,6 +295,23 @@ class ExchangeDao(
             }
         }
         return if (positionId != -1L) FilledOrderRecord(positionId, orderFilledTick) else null
+    }
+
+    private fun statePair(conn: Connection): Pair<Int, Int> {
+        return conn.prepareStatement(
+            """
+               select positions, balances
+                    from (
+                         select
+                             (select sum(size) from position_records) as positions,
+                             (select sum(balance) from user) as balances
+                     )
+                """
+        ).use { stmt ->
+            stmt.executeQuery().use { rs ->
+                Pair(rs.getInt("positions"), rs.getInt("balances"))
+            }
+        }
     }
 
     fun createLimitPendingOrder(order: LimitOrderRequest): LimitPendingOrderRecord? {

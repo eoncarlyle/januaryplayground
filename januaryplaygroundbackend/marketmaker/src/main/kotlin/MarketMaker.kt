@@ -161,22 +161,27 @@ class MarketMaker(
         priorQuote: Quote?,
         currentQuote: Quote
     ): InterQuoteChange {
-        return if (priorQuote == null || (currentQuote.bid != -1 && currentQuote.ask != -1)) {
+        return if (priorQuote == null || (currentQuote.hasbidAskFull())) {
             InterQuoteChange(currentQuote.bid, currentQuote.ask, SpreadStateChange.STABLE)
-        } else if (currentQuote.bid == -1 && currentQuote.ask != -1) {
-            if (spreadState.get() <= 0) {
-                InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.STABLE)
-            } else {
-                InterQuoteChange(priorQuote.bid - 1, priorQuote.ask, SpreadStateChange.DECREMENT)
-            }
-        } else if (currentQuote.ask == -1 && currentQuote.bid != -1) {
-            if (spreadState.get() <= 0) {
-                InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.STABLE)
-            } else {
-                InterQuoteChange(priorQuote.bid, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
-            }
         } else {
-            InterQuoteChange(priorQuote.bid - 1, priorQuote.ask + 1, SpreadStateChange.INCREMENT)
+
+            when {
+                currentQuote.hasAsksWithoutBids() -> {
+                    if (spreadState.get() <= 0) {
+                        InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.STABLE)
+                    } else {
+                        InterQuoteChange(priorQuote.bid - 1, priorQuote.ask, SpreadStateChange.DECREMENT)
+                    }
+                }
+                currentQuote.hasBidsWithoutAsks() -> {
+                    if (spreadState.get() <= 0) {
+                        InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.STABLE)
+                    } else {
+                        InterQuoteChange(priorQuote.bid, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
+                    }
+                }
+                else -> InterQuoteChange(priorQuote.bid - 1, priorQuote.ask + 1, SpreadStateChange.INCREMENT)
+            }
         }
     }
 
@@ -228,7 +233,7 @@ class MarketMaker(
         val orders = state.orders
 
         logger.info("Initial quote: ${startingQuote.ticker}/${startingQuote.bid}/${startingQuote.ask}")
-        logger.info("Initial position count: ${positions.count()}")
+        logger.info("Initial position count: ${positions.sumOf { it.size } }")
 
         if (positions.isNotEmpty()) {
             if (positions.any { it.positionType != PositionType.LONG }) {
