@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Noise Trader 1" type="JetRunConfigurationType">
+    <option name="MAIN_CLASS_NAME" value="MainKt" />
+    <module name="januaryplaygroundbackend.noisetrader.main" />
+    <option name="PROGRAM_PARAMETERS" value="noise1@iainschmitt.com noisePassword testTicker" />
+    <shortenClasspath name="NONE" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

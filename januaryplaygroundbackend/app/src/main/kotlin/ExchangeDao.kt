@@ -209,23 +209,11 @@ class ExchangeDao(
                         );
                     """
                 ).use { stmt ->
-                    stmt.setInt(1, completeOrder.size)
+                    stmt.setInt(1, completeOrder.size * order.sign())
                     stmt.setString(2, completeOrder.user)
                     stmt.setString(3, order.ticker)
                     stmt.setInt(4, PositionType.LONG.ordinal)
 
-                    stmt.executeUpdate()
-                }
-
-                conn.prepareStatement(
-                """
-                    delete from position_records 
-                        where user = ? and ticker = ? and position_type = ? and size = 0;
-                    """
-                ).use { stmt ->
-                    stmt.setString(1, completeOrder.user)
-                    stmt.setString(2, order.ticker)
-                    stmt.setInt(3, PositionType.LONG.ordinal)
                     stmt.executeUpdate()
                 }
             }
@@ -256,7 +244,7 @@ class ExchangeDao(
                         );
                     """
                 ).use { stmt ->
-                    stmt.setInt(1, partialOrder.size - partialOrder.finalSize)
+                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.setString(3, order.ticker)
                     stmt.setInt(4, PositionType.LONG.ordinal)
@@ -271,30 +259,115 @@ class ExchangeDao(
                 stmt.executeUpdate()
             }
 
-            // SQLite docs:
-            // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
-            //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
-
-            return@query conn.prepareStatement(
-                """
-                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                        on conflict (user, ticker, position_type)
-                        do update set size = size + excluded.size, received_tick = excluded.received_tick
-                    """,
-                Statement.RETURN_GENERATED_KEYS
-            ).use { stmt ->
-                stmt.setString(1, order.email)
-                stmt.setString(2, order.ticker)
-                stmt.setInt(3, PositionType.LONG.ordinal) //TODO: think about long/short orders
-                stmt.setInt(4, order.size)
-                stmt.setLong(5, orderFilledTick)
-                stmt.executeUpdate()
-
-                val rs = stmt.generatedKeys
-                if (rs.next()) rs.getLong(1) else -1
-            }
+            //TODO: think about long/short orders
+            return@query if (order.isBuy()) buyerLongPositionUpdate(
+                conn,
+                order,
+                orderFilledTick
+            ) else sellerLongPositionUpdate(conn, order, orderFilledTick)
         }
         return if (positionId != -1L) FilledOrderRecord(positionId, orderFilledTick) else null
+    }
+
+    private fun buyerLongPositionUpdate(
+        conn: Connection,
+        order: Order,
+        orderFilledTick: Long
+    ): Long {
+        // SQLite docs:
+        // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
+        //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
+        return conn.prepareStatement(
+            """
+                insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
+                    on conflict (user, ticker, position_type)
+                    do update set size = size + excluded.size, received_tick = excluded.received_tick
+                """,
+            Statement.RETURN_GENERATED_KEYS
+        ).use { stmt ->
+            stmt.setString(1, order.email)
+            stmt.setString(2, order.ticker)
+            stmt.setInt(3, PositionType.LONG.ordinal)
+            stmt.setInt(4, order.size)
+            stmt.setLong(5, orderFilledTick)
+            stmt.executeUpdate()
+
+            val rs = stmt.generatedKeys
+            if (rs.next()) rs.getLong(1) else -1
+        }
+    }
+
+    private fun sellerLongPositionUpdate(
+        conn: Connection,
+        order: Order,
+        orderFilledTick: Long
+    ): Long {
+        return conn.prepareStatement(
+            """
+            update position_records set 
+                size = size - ?, 
+                received_tick = ?
+            where id = (
+                select id from position_records
+                where user = ?
+                and ticker = ?
+                and position_type = ?
+                order by received_tick limit 1
+            )
+            returning id, size;
+        """
+        ).use { stmt ->
+            stmt.setInt(1, order.size)
+            stmt.setLong(2, orderFilledTick)
+            stmt.setString(3, order.email)
+            stmt.setString(4, order.ticker)
+            stmt.setInt(5, PositionType.LONG.ordinal)
+
+            val rs = stmt.executeQuery()
+            if (rs.next()) {
+                if (rs.getInt(2) == 0) {
+                    deleteEmptyPositions(conn, order.email, order.ticker)
+                }
+                rs.getLong(1)
+            } else {
+                -1
+            }
+        }
+    }
+
+    private fun deleteEmptyPositions(
+        conn: Connection,
+        user: String,
+        ticker: Ticker,
+    ) {
+        conn.prepareStatement(
+        """
+            delete from position_records 
+                where user = ? and ticker = ? and position_type = ? and size = 0;
+            """
+        ).use { stmt ->
+            stmt.setString(1, user)
+            stmt.setString(2, ticker)
+            stmt.setInt(3, PositionType.LONG.ordinal)
+            stmt.executeUpdate()
+        }
+    }
+
+    // TODO more resilient handling of errors
+    private fun deleteFilledOrders(
+        conn: Connection,
+        ticker: Ticker,
+    ) {
+        conn.prepareStatement(
+            """
+            delete from main.order_records
+                where ticker = ? and filled_tick != -1;
+            """
+        ).use { stmt ->
+            stmt.setString(1, ticker)
+            stmt.setInt(2, PositionType.LONG.ordinal)
+            stmt.executeUpdate()
+        }
     }
 
     private fun statePair(conn: Connection): Pair<Int, Int> {

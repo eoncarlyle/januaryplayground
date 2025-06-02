@@ -236,7 +236,8 @@ TODO
 - ~~Negative price on longs validation~~
 - ~~Noise trader position bug~~
 - Negative balance bug: at least the positions/balance invariant is respsected
-  - Lines 278 and 248: how do these work for sales? Is this the issue?
+- Lines 278 and 248: how do these work for sales? Is this the issue?
+  - Sales clearly do not work right now and the 
 ```sqlite
 SELECT positions, balances
 FROM (

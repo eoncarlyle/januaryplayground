@@ -9,14 +9,6 @@ interface OrderRequest: Order {
     override val orderType: OrderType
 }
 
-fun OrderRequest.isBuy(): Boolean {
-    return tradeType.isBuy()
-}
-
-fun Order.sign(): Int {
-    return if (this.tradeType == TradeType.BUY) 1 else -1
-}
-
 data class MarketOrderRequest(
     // This is no longer neccesary, I think
     override val type: String = "incomingOrder",

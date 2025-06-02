@@ -1,6 +1,7 @@
 package com.iainschmitt.januaryplaygroundbackend.shared
 
 import com.fasterxml.jackson.annotation.JsonAlias
+import com.fasterxml.jackson.annotation.JsonIgnore
 import java.math.BigDecimal
 
 class CredentialsDto(val email: String, val password: String)
@@ -90,6 +91,16 @@ interface Order {
     val orderType: OrderType;
     val size: Int;
     val email: String;
+
+    @JsonIgnore
+    fun sign(): Int {
+        return if (this.tradeType == TradeType.BUY) 1 else -1
+    }
+
+    @JsonIgnore
+    fun isBuy(): Boolean {
+        return tradeType.isBuy()
+    }
 }
 
 data class ExchangeRequestDto(

@@ -132,6 +132,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/exchange/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
             logger.info(objectMapper.writeValueAsString(orderRequest))
+            logger.info("Starting state: {}", marketService.getState().toString())
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {
@@ -140,6 +141,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     .onRight { response ->
                         ctx.status(201)
                         ctx.json(response)
+                        logger.info("Final state: {}", marketService.getState().toString())
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
@@ -162,6 +164,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/exchange/orders/limit") { ctx ->
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
             logger.info(objectMapper.writeValueAsString(orderRequest))
+            logger.info("Starting state: {}", marketService.getState().toString())
             val semaphore = transactionSemaphores.getSemaphore(orderRequest.ticker)
             // Use optionals to unnest
             if (semaphore != null) {
@@ -170,6 +173,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     .onRight { response ->
                         ctx.status(201)
                         ctx.json(response)
+                        logger.info("Final state: {}", marketService.getState().toString())
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
@@ -189,6 +193,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/exchange/orders/cancel_all") { ctx ->
             val cancelRequest = ctx.bodyAsClass<ExchangeRequestDto>()
             val semaphore = transactionSemaphores.getSemaphore(cancelRequest.ticker)
+            logger.info("Starting quote: {}", marketService.getState().toString())
             // Use optionals to unnest
             if (semaphore != null) {
                 val initialQuote = marketService.getQuote(cancelRequest.ticker)
@@ -196,6 +201,7 @@ class App(db: DatabaseHelper, secure: Boolean) {
                     .onRight { response ->
                         ctx.status(201)
                         ctx.json(response)
+                        logger.info("Final quote: {}", marketService.getState().toString())
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 cancelRequest,

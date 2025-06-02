@@ -218,7 +218,7 @@ class ExchangeService(
                 )
             )
         } else {
-            return if (proposedOrders.sumOf { op -> (op.size) } <= userLongPositions) Either.Right(
+            return if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) Either.Right(
                 proposedOrders
             )
             else Either.Left(

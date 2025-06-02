@@ -1,12 +1,11 @@
 import arrow.core.Either
-import arrow.core.flatMap
 import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 import kotlin.random.Random
 import kotlin.random.nextInt
 
@@ -14,10 +13,10 @@ class NoiseTrader(
     private val email: String,
     private val password: String,
     private val ticker: Ticker,
+    private val logger: Logger,
     private var tradeTypeState: TradeType = TradeType.BUY
 ) {
     private val transactionSize = 1
-    private val logger by lazy { LoggerFactory.getLogger(NoiseTrader::class.java) }
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
 
     private val backendClient = BackendClient(logger)
