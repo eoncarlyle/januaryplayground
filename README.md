@@ -15,7 +15,7 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ### `29c9d78`
 
-The market maker operates like: 
+The market maker operates like:
 1) Market makers submit limit buy and sell orders at a given spread
 2) When the market spread changes, all orders are canceled and new limit orders are submitted at the updated spread.
 - Current issue with the market maker is that canceling orders the quote itself
@@ -238,10 +238,11 @@ TODO
 - ~~Negative balance bug: at least the positions/balance invariant is respsected~~
 - ~~Lines 278 and 248: how do these work for sales? Is this the issue?~~
   - ~~Sales clearly do not work right now~~
-- Fix the `getMarketMakerImpliedQuote` that doesn't do anything
-- Allow for starting market maker without quote
-- Actual spread narrowing by the market maker
-- onQuote action 
+- ~~Fix the `getMarketMakerImpliedQuote` that doesn't do anything~~
+- ~~Allow for starting market maker without quote~~
+- Fix multi-ticker activity
+- Actual spread narrowing by the market maker and noise trader activity
+- onQuote action
 
 ## Previous Topic Notes
 
