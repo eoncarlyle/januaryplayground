@@ -5,7 +5,6 @@ import com.iainschmitt.januaryplaygroundbackend.shared.*
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
-import kotlin.math.log
 
 class ExchangeService(
     db: DatabaseHelper,
@@ -19,7 +18,8 @@ class ExchangeService(
         semaphore.acquire()
         try {
             return validateOrder(order).map { (validOrder, userBalance) ->
-                val userLongPositionCount = exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
+                val userLongPositionCount =
+                    exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
                 val marketOrderProposal =
                     getMarketOrderProposal(
                         validOrder,
@@ -97,7 +97,8 @@ class ExchangeService(
         crossingOrders: SortedOrderBook,
         userBalance: Int
     ): OrderResult<LimitOrderResponse> {
-        val userLongPositionCount = exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
+        val userLongPositionCount =
+            exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
         val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositionCount, crossingOrders)
         return fillOrder(order, immediateOrderProposal)
     }
@@ -108,7 +109,8 @@ class ExchangeService(
         crossingOrders: SortedOrderBook,
         userBalance: Int
     ): OrderResult<OrderPartiallyFilled> {
-        val userLongPositionCount = exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
+        val userLongPositionCount =
+            exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
         val immediateOrderProposal = getMarketOrderProposal(order, userBalance, userLongPositionCount, crossingOrders)
 
         return fillOrder(order, immediateOrderProposal)
@@ -270,16 +272,35 @@ class ExchangeService(
         }
     }
 
-    fun getQuote(ticker: Ticker): Quote? {
+    fun getWriteQuote(ticker: Ticker): Quote? {
         return exchangeDao.getQuote(ticker)
     }
 
-    fun getUserLongPositions(user: String, ticker: Ticker): List<PositionRecord> {
-        return exchangeDao.getUserLongPositions(user, ticker)
+    fun getQuote(ticker: Ticker, lightswitch: Lightswitch): Quote? {
+        try {
+            lightswitch.lock()
+            return exchangeDao.getQuote(ticker)
+        } finally {
+            lightswitch.unlock()
+        }
     }
 
-    fun getUserOrders(user: String, ticker: Ticker): List<OrderBookEntry> {
-        return exchangeDao.getUserOrders(user, ticker)
+    fun getUserLongPositions(user: String, ticker: Ticker, lightswitch: Lightswitch): List<PositionRecord> {
+        try {
+            lightswitch.lock()
+            return exchangeDao.getUserLongPositions(user, ticker)
+        } finally {
+            lightswitch.unlock()
+        }
+    }
+
+    fun getUserOrders(user: String, ticker: Ticker, lightswitch: Lightswitch): List<OrderBookEntry> {
+        try {
+            lightswitch.lock()
+            return exchangeDao.getUserOrders(user, ticker)
+        } finally {
+            lightswitch.unlock()
+        }
     }
 
     private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
@@ -307,6 +328,10 @@ class ExchangeService(
 
         // Need to disambiguate between removed, filled orders
         return if (!transactionExists) Some(SingleOrderCancelFailureCode.UNKNOWN_ORDER) else None
+    }
+
+    fun validateTicker(ticker: Ticker): Boolean {
+        return exchangeDao.getTicker(ticker) != null
     }
 
     private fun getSortedMatchingOrderBook(

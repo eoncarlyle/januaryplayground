@@ -1,4 +1,5 @@
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import kotlinx.coroutines.channels.ticker
 import java.sql.Connection
 import java.sql.Statement
 
@@ -24,6 +25,20 @@ class ExchangeDao(
                 stmt.executeQuery().use { rs -> if (rs.next()) TickerRecord(rs.getString(1), rs.getInt(2)) else null }
             }
         }
+    }
+
+    fun getAllTickers(): ArrayList<TickerRecord> {
+        val tickers = ArrayList<TickerRecord>()
+        db.query { conn ->
+            conn.prepareStatement("select symbol, open from ticker").use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        tickers.add(TickerRecord(rs.getString("symbol"), rs.getInt("open")))
+                    }
+                }
+            }
+        }
+        return tickers
     }
 
     fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean {

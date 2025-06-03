@@ -5,7 +5,7 @@
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class AppTest {
+class BackendTest {
     @Test fun placeholder() {
         assertTrue { true }
     }

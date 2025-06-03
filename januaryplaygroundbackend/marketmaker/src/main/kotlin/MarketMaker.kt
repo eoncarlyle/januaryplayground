@@ -10,6 +10,7 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.round
 
 class MarketMaker(
     private val email: String,
@@ -219,8 +220,16 @@ class MarketMaker(
                 logger.warn("Fallback quote used, assumption that market is empty")
                 fallbackQuote.right()
             }
-
-            quote.hasbidAskFull() -> quote.right()
+            quote.hasbidAskFull() -> {
+                if ((quote.ask - quote.bid) == spread) {
+                    return quote.right()
+                } else {
+                    val midpoint = round((quote.bid + quote.ask) / 2.0).toInt()
+                    val bid = midpoint - round((quote.bid - quote.ask)/ 2.0).toInt()
+                    val ask = bid + spread
+                    return Quote(ticker, bid, ask, System.currentTimeMillis()).right()
+                }
+            }
             quote.hasAsksWithoutBids() -> Quote(
                 ticker,
                 quote.bid - 1 - spread,
