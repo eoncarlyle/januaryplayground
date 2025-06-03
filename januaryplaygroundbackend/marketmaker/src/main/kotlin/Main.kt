@@ -11,11 +11,6 @@ fun main(args: Array<String>): Unit = runBlocking {
         logger.error("Illegal arguments {}", args)
         exitProcess(1)
     } else {
-        /*
-        val email = "testmm@iainschmitt.com"
-        val password = "myTestMmPassword"
-        val ticker = "testTicker"
-         */
         val email = args[0]
         val password = args[1]
         val ticker = args[2]

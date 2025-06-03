@@ -235,18 +235,13 @@ TODO
     - They probably need endpoints to detect this maybe?
 - ~~Negative price on longs validation~~
 - ~~Noise trader position bug~~
-- Negative balance bug: at least the positions/balance invariant is respsected
-- Lines 278 and 248: how do these work for sales? Is this the issue?
-  - Sales clearly do not work right now and the 
-```sqlite
-SELECT positions, balances
-FROM (
-         SELECT
-             (SELECT SUM(size) FROM position_records) as positions,
-             (SELECT SUM(balance) FROM user) as balances
-     )
-
-```
+- ~~Negative balance bug: at least the positions/balance invariant is respsected~~
+- ~~Lines 278 and 248: how do these work for sales? Is this the issue?~~
+  - ~~Sales clearly do not work right now~~
+- Fix the `getMarketMakerImpliedQuote` that doesn't do anything
+- Allow for starting market maker without quote
+- Actual spread narrowing by the market maker
+- onQuote action 
 
 ## Previous Topic Notes
 

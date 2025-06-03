@@ -7,16 +7,10 @@ fun main(args: Array<String>) = runBlocking {
     val logger = (LoggerFactory.getILoggerFactory() as LoggerContext).getLogger("MainKt")
     logger.level = ch.qos.logback.classic.Level.INFO
 
-
     if (args.size != 3) {
         logger.error("Illegal arguments {}", args)
         exitProcess(1)
     } else {
-        /*
-        val email = "noise0@iainschmitt.com"
-        val password = "noisePassword"
-        val ticker = "testTicker"
-         */
         val email = args[0]
         val password = args[1]
         val ticker = args[2]

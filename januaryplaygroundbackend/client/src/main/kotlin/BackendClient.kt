@@ -266,12 +266,10 @@ class BackendClient(
                                                 is ServerLifecycleMessage -> logger.info(
                                                     objectMapper.writeValueAsString(message)
                                                 )
-
                                                 is QuoteMessage -> onQuote(message.quote)
                                                 is ServerTimeMessage -> logger.debug(
                                                     objectMapper.writeValueAsString(message)
                                                 )
-
                                                 else -> {
                                                     logger.warn(
                                                         "Client received something unexpected ${
@@ -284,7 +282,6 @@ class BackendClient(
                                             }
                                         }
                                     }
-
                                     else -> logger.debug("Received other frame type: {}", frame)
                                 }
                             }
