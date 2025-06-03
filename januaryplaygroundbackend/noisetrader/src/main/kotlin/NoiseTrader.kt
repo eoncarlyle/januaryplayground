@@ -64,7 +64,7 @@ class NoiseTrader(
             }
     }
 
-    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, SafeQuote> {
+    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, Quote> {
         val startingQuote = state.quote
         val positions = state.positions
         val orders = state.orders

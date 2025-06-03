@@ -53,7 +53,7 @@ class SafeQuote private constructor(
 }
 
 data class StartingState(
-    val quote: SafeQuote,
+    val quote: Quote,
     val positions: List<PositionRecord>,
     val orders: List<OrderBookEntry>
 )
@@ -227,10 +227,9 @@ class BackendClient(
     ): Either<ClientFailure, StartingState> {
         return either {
             val quote = getQuote(exchangeRequestDto).bind()
-            val safeQuote = SafeQuote.create(quote).bind()
             val positions = getUserLongPositions(exchangeRequestDto).bind()
             val orders = getUserOrders(exchangeRequestDto).bind()
-            StartingState(safeQuote, positions, orders)
+            StartingState(quote, positions, orders)
         }
     }
 

@@ -2,6 +2,7 @@ import arrow.core.Either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import arrow.core.flatMap
 import arrow.core.left
+import arrow.core.raise.either
 import arrow.core.right
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -9,16 +10,6 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-
-private enum class SpreadStateChange {
-    INCREMENT, DECREMENT, STABLE
-}
-
-private data class InterQuoteChange(
-    val bid: Int,
-    val ask: Int,
-    val spreadStateChange: SpreadStateChange
-)
 
 class MarketMaker(
     private val email: String,
@@ -28,9 +19,8 @@ class MarketMaker(
 ) {
     private val mutex = Mutex()
     private var trackingQuote: Quote? = null
-    private var spreadState: Int = 0
-    private var openForQuote = true
-
+    private var spread: Int = 5
+    private val fallbackQuote = Quote(ticker, 30, 35, System.currentTimeMillis())
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
 
@@ -40,10 +30,10 @@ class MarketMaker(
         Either.catch {
             backendClient.login(email, password)
                 .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
-                .flatMap { state -> handleStartingState(state) }
+                .flatMap { state -> mutex.withLock { handleStartingStateInMutex(state) } }
                 .onRight { quote ->
                     mutex.withLock {
-                        trackingQuote = quote.getQuote()
+                        trackingQuote = quote
                     }
                     launch {
                         backendClient.connectWebSocket(
@@ -69,11 +59,6 @@ class MarketMaker(
             logger.info("Current quote: {}", trackingQuote.toString())
             logger.info("Incoming quote: {}", incomingQuote.toString())
 
-            if (!openForQuote) {
-                logger.info("Discarding quote, `openForQuote` false")
-                return
-            }
-
             val currentTrackingQuote = trackingQuote
             if (currentTrackingQuote != null) {
                 if (incomingQuote.tick < currentTrackingQuote.tick) {
@@ -82,114 +67,74 @@ class MarketMaker(
                         incomingQuote.tick.toString(),
                         trackingQuote.toString()
                     )
-                } else if (currentTrackingQuote != incomingQuote) {
-                    openForQuote = false
-                    backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
-                        .mapLeft {
-                            logger.error("Market maker could not exit positions after inconsistent quote, exiting")
-                            exitProcess(1)
-                        }
-                        .map {
-                            simpleLimitOrderSubmissionInMutex(currentTrackingQuote, incomingQuote)
-                                .mapLeft {
-                                    logger.warn("Market maker could not submit limit orders after quote reset")
-                                }
-                                .map { quote -> trackingQuote = quote }
-                        }
-                    openForQuote = true
+                } else if (!currentTrackingQuote.equivalent(incomingQuote)) {
+                    cancelAndResubmit(
+                        incomingQuote,
+                        "Market maker could not exit positions after inconsistent quote, exiting",
+                        "Market maker could not submit limit orders after quote reset"
+                    )
+                } else {
+                    logger.info(
+                        "Incoming quote from {} equivalent to tracking quote {} ",
+                        incomingQuote.tick.toString(),
+                        trackingQuote.toString()
+                    )
                 }
             } else {
                 logger.warn("Illegal market maker state: no tracking quote")
-                openForQuote = false
-                backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
-                    .mapLeft {
-                        logger.error("Market maker could not exit positions on null tracking quote, exiting")
-                        exitProcess(1)
-                    }.map {
-                        simpleLimitOrderSubmissionInMutex(
-                            currentTrackingQuote,
-                            incomingQuote
-                        ).mapLeft {
-                            logger.warn("Market maker could not submit limit orders after null tracking quote")
-                        }
-                            .map { quote ->
-                                trackingQuote = quote
-                            }
-                    }
-                openForQuote = true
+                cancelAndResubmit(
+                    incomingQuote,
+                    "Market maker could not exit positions on null tracking quote, exiting",
+                    "Market maker could not submit limit orders after null tracking quote"
+                )
             }
         }
     }
 
+    private suspend fun cancelAndResubmit(incomingQuote: Quote, cancelErrorMsg: String, submitErrorMsg: String) =
+        backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
+            .mapLeft {
+                logger.error(cancelErrorMsg)
+                exitProcess(1)
+            }
+            .onRight {
+                simpleLimitOrderSubmissionInMutex(incomingQuote)
+                    .mapLeft { logger.warn(submitErrorMsg) }
+                    .onRight { trackingQuote = it }
+            }
+
     private suspend fun simpleLimitOrderSubmissionInMutex(
-        priorQuote: Quote?,
         currentQuote: Quote
     ): Either<ClientFailure, Quote> {
-        if (priorQuote == null && (currentQuote.bid == -1 || currentQuote.ask == -1)) {
-            return ClientFailure(-1, "Not enough tracking state calculate new quote, closing").left()
-        }
-        val interQuoteChange = getInterQuoteChangeInMutex(priorQuote, currentQuote)
-        if (interQuoteChange.spreadStateChange == SpreadStateChange.INCREMENT) {
-            spreadState += 1
-        } else if (interQuoteChange.spreadStateChange == SpreadStateChange.DECREMENT) {
-            spreadState -= 1
-        }
+        return either {
+            val nextQuote = calculateNextQuote(currentQuote).bind()
+            logger.info("Next quote: {}", nextQuote.toString())
 
-        logger.info(interQuoteChange.toString())
-        return backendClient.postLimitOrderRequest(
-            LimitOrderRequest(
-                email = email,
-                ticker = ticker,
-                size = marketSize,
-                tradeType = TradeType.BUY,
-                price = interQuoteChange.bid
-            )
-        ).flatMap { _ ->
+            backendClient.postLimitOrderRequest(
+                LimitOrderRequest(
+                    email = email,
+                    ticker = ticker,
+                    size = marketSize,
+                    tradeType = TradeType.BUY,
+                    price = nextQuote.bid
+                )
+            ).bind()
+
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
                     email = email,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,
-                    price = interQuoteChange.ask
+                    price = nextQuote.ask
                 )
-            )
-        }.flatMap { _ ->
-            Quote(ticker, interQuoteChange.bid, interQuoteChange.ask, System.currentTimeMillis()).right()
+            ).bind()
+
+            nextQuote
         }
     }
-
-    private fun getInterQuoteChangeInMutex(
-        priorQuote: Quote?,
-        currentQuote: Quote
-    ): InterQuoteChange {
-        return if (priorQuote == null || (currentQuote.hasbidAskFull())) {
-            InterQuoteChange(currentQuote.bid, currentQuote.ask, SpreadStateChange.STABLE)
-        } else {
-            when {
-                currentQuote.hasAsksWithoutBids() -> {
-                    if (spreadState <= 0) {
-                        InterQuoteChange(priorQuote.bid - 1, priorQuote.ask - 1, SpreadStateChange.STABLE)
-                    } else {
-                        InterQuoteChange(priorQuote.bid - 1, priorQuote.ask, SpreadStateChange.DECREMENT)
-                    }
-                }
-
-                currentQuote.hasBidsWithoutAsks() -> {
-                    if (spreadState <= 0) {
-                        InterQuoteChange(priorQuote.bid + 1, priorQuote.ask + 1, SpreadStateChange.STABLE)
-                    } else {
-                        InterQuoteChange(priorQuote.bid, priorQuote.ask + 1, SpreadStateChange.DECREMENT)
-                    }
-                }
-
-                else -> InterQuoteChange(priorQuote.bid - 1, priorQuote.ask + 1, SpreadStateChange.INCREMENT)
-            }
-        }
-    }
-
     private suspend fun initialLimitOrderSubmission(
-        currentQuote: SafeQuote
+        currentQuote: Quote
     ): Either<ClientFailure, LimitOrderResponse> {
         return backendClient.postLimitOrderRequest(
             LimitOrderRequest(
@@ -197,7 +142,7 @@ class MarketMaker(
                 ticker = ticker,
                 size = marketSize,
                 tradeType = TradeType.BUY,
-                price = currentQuote.bid.value
+                price = currentQuote.bid
             )
         ).flatMap { _ ->
             backendClient.postLimitOrderRequest(
@@ -206,7 +151,7 @@ class MarketMaker(
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,
-                    price = currentQuote.ask.value
+                    price = currentQuote.ask
                 )
             )
         }
@@ -214,13 +159,15 @@ class MarketMaker(
 
     private fun getMarketMakerImpliedQuote(ticker: Ticker, orders: List<OrderBookEntry>): Quote? {
         // Multiple orders could exist at same price point
-        val bidPrice = orders.filter { order -> order.tradeType.isBuy() }.minOfOrNull { order -> order.price }
-        val askPrice = orders.filter { order -> order.tradeType.isSell() }.maxOfOrNull { order -> order.price }
+        val bids = orders.filter { order -> order.tradeType.isBuy() }
+        val asks = orders.filter { order -> order.tradeType.isSell() }
+        val bidPrice = bids.maxOfOrNull { order -> order.price }
+        val askPrice = asks.minOfOrNull { order -> order.price }
 
         if (bidPrice != null && askPrice != null) {
-            val nonCompliantBids = orders.find { order -> order.tradeType.isBuy() && order.tradeType.isBuy() }
-            val nonCompliantAsks = orders.find { order -> order.tradeType.isSell() && order.tradeType.isSell() }
-            return if (nonCompliantBids != null || nonCompliantAsks != null) {
+            val nonCompliantBids = bids.find { order -> order.price != bidPrice }
+            val nonCompliantAsks = asks.find { order -> order.price != askPrice }
+            return if (nonCompliantBids != null || nonCompliantAsks != null || bidPrice > askPrice) {
                 null
             } else {
                 Quote(ticker, bidPrice, askPrice, System.currentTimeMillis())
@@ -230,12 +177,12 @@ class MarketMaker(
         }
     }
 
-    private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, SafeQuote> {
-        val startingQuote = state.quote
+    private suspend fun handleStartingStateInMutex(state: StartingState): Either<ClientFailure, Quote> {
+        val firstQuote = state.quote
         val positions = state.positions
         val orders = state.orders
 
-        logger.info("Initial quote: ${startingQuote.ticker}/${startingQuote.bid}/${startingQuote.ask}")
+        logger.info("Initial quote: ${firstQuote.ticker}/${firstQuote.bid}/${firstQuote.ask}")
         logger.info("Initial position count: ${positions.sumOf { it.size }}")
 
         if (positions.isNotEmpty()) {
@@ -243,27 +190,52 @@ class MarketMaker(
                 return ClientFailure(-1, "Unimplemented short positions found").left()
             }
             if (orders.isNotEmpty()) {
-                val orderImpliedQuote = getMarketMakerImpliedQuote(ticker, orders)
-                return if (orderImpliedQuote == null || !quotesEqual(orderImpliedQuote, startingQuote)) {
-                    backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
+                val marketMakerImpliedQuote = getMarketMakerImpliedQuote(ticker, orders)
+                return if (marketMakerImpliedQuote == null || marketMakerImpliedQuote != firstQuote) {
+                    either {
+                        backendClient.postAllOrderCancel(exchangeRequestDto).bind()
+                        val secondQuote = calculateNextQuote(firstQuote, true).bind()
+                        initialLimitOrderSubmission(secondQuote).bind()
+                        secondQuote
+                    }.mapLeft { failure ->
                         logger.error("Client failure: ${failure.first}/${failure.second}")
                         failure
-                    }.map {
-                        initialLimitOrderSubmission(startingQuote)
-                    }.map { startingQuote }
+                    }
                 } else {
-                    startingQuote.right()
+                    firstQuote.right()
                 }
             } else {
-                return initialLimitOrderSubmission(startingQuote).map { startingQuote }
+                return initialLimitOrderSubmission(firstQuote).map { firstQuote }
             }
         } else {
             logger.warn("No positions, market maker cannot proceed")
-            return Either.Left(ClientFailure(-1, "No positions, market maker cannot proceed"))
+            return ClientFailure(-1, "No positions, market maker cannot proceed").left()
         }
     }
 
-    private fun quotesEqual(quote: Quote, safeQuote: SafeQuote): Boolean {
-        return (quote.ask == safeQuote.ask.value) && (quote.ask == safeQuote.ask.value)
+    private fun calculateNextQuote(quote: Quote, isSecondQuote: Boolean = false): Either<ClientFailure, Quote> {
+        return when {
+            quote.hasBidAskEmpty() && isSecondQuote -> {
+                logger.warn("Fallback quote used, assumption that market is empty")
+                fallbackQuote.right()
+            }
+
+            quote.hasbidAskFull() -> quote.right()
+            quote.hasAsksWithoutBids() -> Quote(
+                ticker,
+                quote.bid - 1 - spread,
+                quote.ask - 1,
+                System.currentTimeMillis()
+            ).right()
+
+            quote.hasBidsWithoutAsks() -> Quote(
+                ticker,
+                quote.bid + 1,
+                quote.ask + 1 + spread,
+                System.currentTimeMillis()
+            ).right()
+
+            else -> ClientFailure(-1, "Illegal `calculateQuote` state").left()
+        }
     }
 }

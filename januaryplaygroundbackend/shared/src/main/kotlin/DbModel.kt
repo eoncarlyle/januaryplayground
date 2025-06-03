@@ -37,5 +37,7 @@ data class Quote(
     fun hasbidAskFull() = bid != -1 && ask != -1
     fun hasBidsWithoutAsks() = bid != -1 && ask == 1
     fun hasAsksWithoutBids() = bid == -1 && ask != -1
+
+    fun equivalent(other: Quote) = ticker == other.ticker && bid == other.bid && ask == other.ask
 }
 
