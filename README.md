@@ -240,6 +240,7 @@ TODO
   - ~~Sales clearly do not work right now~~
 - ~~Fix the `getMarketMakerImpliedQuote` that doesn't do anything~~
 - ~~Allow for starting market maker without quote~~
+- Multi market activity: either spread should match other market makers or should preserve spread and handle accordingly, current state doesn't make sense
 - Fix multi-ticker activity
 - Actual spread narrowing by the market maker and noise trader activity
 - onQuote action
