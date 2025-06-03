@@ -10,7 +10,6 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.math.round
 
 class MarketMaker(
     private val email: String,
@@ -224,9 +223,9 @@ class MarketMaker(
                 if ((quote.ask - quote.bid) == spread) {
                     return quote.right()
                 } else {
-                    val midpoint = round((quote.bid + quote.ask) / 2.0).toInt()
-                    val bid = midpoint - round((quote.bid - quote.ask)/ 2.0).toInt()
-                    val ask = bid + spread
+                    val midpoint = (quote.bid + quote.ask) / 2
+                    val bid = midpoint - spread / 2
+                    val ask = bid + spread / 2
                     return Quote(ticker, bid, ask, System.currentTimeMillis()).right()
                 }
             }
