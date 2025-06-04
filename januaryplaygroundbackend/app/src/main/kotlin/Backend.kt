@@ -5,10 +5,8 @@ import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.bodyAsClass
 import io.javalin.http.util.NaiveRateLimit
-import io.javalin.websocket.WsContext
 import org.slf4j.LoggerFactory
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
@@ -20,13 +18,12 @@ private data class QuoteQueueMessage<T>(
 )
 
 class Backend(db: DatabaseHelper, secure: Boolean) {
-    private val wsUserMap: WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>()
+    private val wsUserMap = WsUserMap()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Any>>()
     private val objectMapper = ObjectMapper()
     private val readWriteSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(readWriteSemaphore)
-
 
     private val javalinApp = Javalin.create({ config ->
         config.bundledPlugins.enableCors { cors ->
@@ -123,7 +120,6 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
             logger.info(objectMapper.writeValueAsString(orderRequest))
             logger.info("Starting state: {}", marketService.getState().toString())
-            // Use optionals to unnest
             if (marketService.validateTicker(orderRequest.ticker)) {
                 val initialQuote = marketService.getWriteQuote(orderRequest.ticker)
                 marketService.marketOrderRequest(orderRequest, readWriteSemaphore)
@@ -246,10 +242,11 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         Thread {
             while (true) {
                 Thread.sleep(5000) // Every 5 seconds
-                val aliveSockets = wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
-                aliveSockets.forEach { session ->
-                    session.send(objectMapper.writeValueAsString(ServerTimeMessage(System.currentTimeMillis())))
+
+                wsUserMap.forEachLiveSocket { ctx ->
+                    ctx.send(objectMapper.writeValueAsString(ServerTimeMessage(System.currentTimeMillis())))
                 }
+
             }
         }.start()
     }
@@ -266,12 +263,10 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                         logger.info("Final Quote: {}", finalQuote.toString())
                         logger.info(request.toString())
 
-                        val aliveSockets =
-                            wsUserMap.keys.filter { it.session.isOpen && wsUserMap[it]?.authenticated ?: false }
-                        aliveSockets.forEach { session ->
-                            session.send(QuoteMessage(finalQuote))
+                        val liveSockets = wsUserMap.forEachLiveSocket { ctx ->
+                            ctx.send(QuoteMessage(finalQuote))
                         }
-                        logger.info("Updated ${aliveSockets.size} clients over websockets with new quote");
+                        logger.info("Updated ${liveSockets} clients over websockets with new quote");
                     }
                 } else {
                     val serialisedRequest = objectMapper.writeValueAsString(request)

@@ -38,6 +38,7 @@ class MarketMaker(
                     launch {
                         backendClient.connectWebSocket(
                             email = email,
+                            tickers = listOf(ticker),
                             onOpen = { logger.info("WebSocket connection opened") },
                             onQuote = { quote -> onQuote(quote) },
                             onClose = { code, reason -> logger.error("Connection closed: $code, $reason") }
@@ -55,6 +56,11 @@ class MarketMaker(
 
     private suspend fun onQuote(incomingQuote: Quote) {
         mutex.withLock {
+
+            if (ticker != incomingQuote.ticker) {
+                return
+            }
+
             logger.info("Incoming Quote")
             logger.info("Current quote: {}", trackingQuote.toString())
             logger.info("Incoming quote: {}", incomingQuote.toString())
@@ -133,6 +139,7 @@ class MarketMaker(
             nextQuote
         }
     }
+
     private suspend fun initialLimitOrderSubmission(
         currentQuote: Quote
     ): Either<ClientFailure, LimitOrderResponse> {
@@ -219,16 +226,18 @@ class MarketMaker(
                 logger.warn("Fallback quote used, assumption that market is empty")
                 fallbackQuote.right()
             }
+
             quote.hasbidAskFull() -> {
                 if ((quote.ask - quote.bid) == spread) {
                     return quote.right()
                 } else {
                     val midpoint = (quote.bid + quote.ask) / 2
                     val bid = midpoint - spread / 2
-                    val ask = bid + spread / 2
+                    val ask = bid + spread
                     return Quote(ticker, bid, ask, System.currentTimeMillis()).right()
                 }
             }
+
             quote.hasAsksWithoutBids() -> Quote(
                 ticker,
                 quote.bid - 1 - spread,

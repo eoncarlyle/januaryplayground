@@ -21,14 +21,12 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor_version")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
 }
-// Apply a specific Java toolchain to ease working on different environments.
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
-
-
 
 tasks.test {
     useJUnitPlatform()

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import io.javalin.websocket.WsContext
-import java.util.concurrent.ConcurrentHashMap
 
 enum class WebSocketResponseStatus(val code: Int) {
     SUCCESS(200),
@@ -18,11 +17,35 @@ enum class WebSocketResponseStatus(val code: Int) {
 // Will have fields added to it
 class WsUserMapRecord(val token: String?, val email: String?, val authenticated: Boolean)
 
-typealias WsUserMap = ConcurrentHashMap<WsContext, WsUserMapRecord>
+class WsUserMap {
+    private val map = HashMap<WsContext, WsUserMapRecord>()
+
+    fun forEachLiveSocket(action: (WsContext) -> Unit): Int{
+        synchronized(this) {
+            val aliveSockets = map.keys.filter { it.session.isOpen && map[it]?.authenticated ?: false }
+            aliveSockets.forEach { ctx -> action(ctx) }
+            return aliveSockets.size
+        }
+    }
+
+    fun set(ctx: WsContext, record: WsUserMapRecord) {
+        synchronized(this) {
+            map[ctx] = record
+        }
+    }
+
+    fun remove(ctx: WsContext) {
+        synchronized(this) {
+            map.remove(ctx)
+        }
+    }
+}
+
 
 enum class WebSocketLifecycleOperation {
     @JsonAlias("authenticate")
     AUTHENTICATE,
+
     @JsonAlias("close")
     CLOSE
 }
@@ -59,7 +82,8 @@ data class OutgoingError(
 data class ClientLifecycleMessage(
     val token: String,
     val operation: WebSocketLifecycleOperation,
-    val email: String
+    val email: String,
+    val tickers: List<Ticker>
 ) : WebSocketMessage {
     override val type: String = "clientLifecycle"
 }
@@ -80,12 +104,12 @@ data class ServerLifecycleMessage(
 
 data class ServerTimeMessage(
     val time: Long
-): WebSocketMessage {
+) : WebSocketMessage {
     override val type: String = "outgoingServerTime"
 }
 
 data class QuoteMessage(
     val quote: Quote
-): WebSocketMessage {
+) : WebSocketMessage {
     override val type: String = "outgoingQuote"
 }

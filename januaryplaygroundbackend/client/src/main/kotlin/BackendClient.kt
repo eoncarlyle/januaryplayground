@@ -14,43 +14,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consumeEach
 import org.slf4j.Logger
 import arrow.core.raise.either
-import arrow.core.raise.ensure
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 
 typealias ClientFailure = Pair<Int, String>
-
-@JvmInline
-value class PositivePrice private constructor(val value: Int) {
-    companion object {
-        fun create(value: Int): Either<ClientFailure, PositivePrice> =
-            if (value > 0) PositivePrice(value).right()
-            else ClientFailure(-1, "Price must be positive: $value").left()
-    }
-}
-
-class SafeQuote private constructor(
-    val ticker: Ticker,
-    val bid: PositivePrice,
-    val ask: PositivePrice,
-    val tick: Long
-) {
-    companion object {
-        fun create(quote: Quote): Either<ClientFailure, SafeQuote> =
-            either {
-                val bidPrice = PositivePrice.create(quote.bid).bind()
-                val askPrice = PositivePrice.create(quote.ask).bind()
-                ensure(bidPrice.value < askPrice.value) {
-                    ClientFailure(-1, "Bid must be less than ask")
-                }
-                SafeQuote(quote.ticker, bidPrice, askPrice, quote.tick)
-            }
-    }
-
-    fun getQuote(): Quote {
-        return Quote(ticker, bid.value, ask.value, tick)
-    }
-}
 
 data class StartingState(
     val quote: Quote,
@@ -235,6 +202,7 @@ class BackendClient(
 
     suspend fun connectWebSocket(
         email: String,
+        tickers: List<Ticker>,
         onOpen: () -> Unit = {},
         onQuote: suspend (Quote) -> Unit = {},
         onClose: (Int, String?) -> Unit = { _, _ -> },
@@ -242,70 +210,98 @@ class BackendClient(
     ) = coroutineScope {
         temporarySession(email).onRight { token ->
             try {
-                client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = port) {
-                    logger.info("WebSocket connection established")
-                    onOpen()
-
-                    val authMessage = ClientLifecycleMessage(
-                        email = email, token = token, operation = WebSocketLifecycleOperation.AUTHENTICATE
-                    )
-                    send(Frame.Text(objectMapper.writeValueAsString(authMessage)))
-
-                    launch {
-                        try {
-                            incoming.consumeEach { frame ->
-                                when (frame) {
-                                    is Frame.Text -> {
-                                        val text = frame.readText()
-                                        logger.debug("Received WebSocket message: $text")
-                                        Either.catch {
-                                            objectMapper.readValue(text, object : TypeReference<WebSocketMessage>() {})
-                                        }.mapLeft { logger.warn("Could not deserialise $text") }.onRight { message ->
-                                            when (message) {
-                                                is ServerLifecycleMessage -> logger.info(
-                                                    objectMapper.writeValueAsString(message)
-                                                )
-                                                is QuoteMessage -> onQuote(message.quote)
-                                                is ServerTimeMessage -> logger.debug(
-                                                    objectMapper.writeValueAsString(message)
-                                                )
-                                                else -> {
-                                                    logger.warn(
-                                                        "Client received something unexpected ${
-                                                            objectMapper.writeValueAsString(
-                                                                message
-                                                            )
-                                                        }"
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    else -> logger.debug("Received other frame type: {}", frame)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            logger.error("Error processing WebSocket messages", e)
-                            onError(e)
-                        }
-                    }
-
-                    while (isActive) {
-                        delay(5000)
-                        try {
-                            send(Frame.Ping(ByteArray(0)))
-                        } catch (e: Exception) {
-                            logger.error("Error sending ping", e)
-                            break
-                        }
-                    }
-                }
+                authenticateListener(token, email, tickers, onOpen, onQuote, onError)
             } catch (e: Exception) {
                 logger.error("WebSocket connection error", e)
                 onError(e)
             } finally {
                 logger.info("WebSocket connection closed")
+                //
                 onClose(1000, "Connection closed")
+            }
+        }
+    }
+
+    private suspend fun authenticateListener(
+        token: String,
+        email: String,
+        tickers: List<Ticker>,
+        onOpen: () -> Unit,
+        onQuote: suspend (Quote) -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
+        client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = port) {
+            logger.info("WebSocket connection established")
+            onOpen()
+            send(
+                Frame.Text(
+                    objectMapper.writeValueAsString(
+                        ClientLifecycleMessage(
+                            email = email,
+                            token = token,
+                            operation = WebSocketLifecycleOperation.AUTHENTICATE,
+                            tickers = tickers
+                        )
+                    )
+                )
+            )
+
+            websocketListener(onQuote, onError)
+
+            while (isActive) {
+                delay(5000)
+                try {
+                    send(Frame.Ping(ByteArray(0)))
+                } catch (e: Exception) {
+                    logger.error("Error sending ping", e)
+                    break
+                }
+            }
+        }
+    }
+
+    private fun DefaultClientWebSocketSession.websocketListener(
+        onQuote: suspend (Quote) -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
+        launch {
+            try {
+                incoming.consumeEach { frame ->
+                    when (frame) {
+                        is Frame.Text -> {
+                            val text = frame.readText()
+                            logger.debug("Received WebSocket message: $text")
+                            Either.catch {
+                                objectMapper.readValue(text, object : TypeReference<WebSocketMessage>() {})
+                            }.mapLeft { logger.warn("Could not deserialise $text") }.onRight { message ->
+                                when (message) {
+                                    is ServerLifecycleMessage -> logger.info(
+                                        objectMapper.writeValueAsString(message)
+                                    )
+                                    is QuoteMessage -> onQuote(message.quote)
+                                    is ServerTimeMessage -> logger.debug(
+                                        objectMapper.writeValueAsString(message)
+                                    )
+
+                                    else -> {
+                                        logger.warn(
+                                            "Client received something unexpected ${
+                                                objectMapper.writeValueAsString(
+                                                    message
+                                                )
+                                            }"
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        else -> logger.debug("Received other frame type: {}", frame)
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error("Error processing WebSocket messages", e)
+                onError(e)
             }
         }
     }

@@ -1,5 +1,4 @@
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import kotlinx.coroutines.channels.ticker
 import java.sql.Connection
 import java.sql.Statement
 
@@ -535,5 +534,4 @@ class ExchangeDao(
         }
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
-
 }
