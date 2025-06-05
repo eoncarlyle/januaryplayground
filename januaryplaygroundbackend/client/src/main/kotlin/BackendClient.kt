@@ -16,6 +16,9 @@ import org.slf4j.Logger
 import arrow.core.raise.either
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 typealias ClientFailure = Pair<Int, String>
 
@@ -129,7 +132,7 @@ class BackendClient(
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
-    public suspend fun <T, R> retry(
+    suspend fun <T, R> retry(
         argument: T,
         request: suspend (T) -> Either<ClientFailure, R>,
         maxAttempts: Int,
@@ -146,7 +149,6 @@ class BackendClient(
                 }
             }
         }
-        // Not actually reachable
         return Either.Left(ClientFailure(-1, "Exhausted allowed retries"))
     }
 
@@ -203,21 +205,31 @@ class BackendClient(
     suspend fun connectWebSocket(
         email: String,
         tickers: List<Ticker>,
+        initialDelay: Duration = 1.seconds,
+        maxDelay: Duration = 30.seconds,
+        backoffFactor: Double = 2.0,
         onOpen: () -> Unit = {},
         onQuote: suspend (Quote) -> Unit = {},
         onClose: (Int, String?) -> Unit = { _, _ -> },
         onError: (Throwable) -> Unit = {}
     ) = coroutineScope {
-        temporarySession(email).onRight { token ->
+        var currentDelay = initialDelay
+        var attempt = 0
+
+        while (isActive) {
             try {
-                authenticateListener(token, email, tickers, onOpen, onQuote, onError)
+                temporarySession(email).onRight { temporaryToken ->
+                    authenticateListener(temporaryToken, email, tickers, onOpen, onQuote, onError)
+                }
+                return@coroutineScope
             } catch (e: Exception) {
-                logger.error("WebSocket connection error", e)
+                attempt++
+                logger.error("WebSocket connection error (attempt $attempt)", e)
                 onError(e)
-            } finally {
-                logger.info("WebSocket connection closed")
-                //
-                onClose(1000, "Connection closed")
+
+                logger.info("Retrying WebSocket connection in $currentDelay")
+                delay(currentDelay)
+                currentDelay = (currentDelay * backoffFactor).coerceAtMost(maxDelay)
             }
         }
     }
@@ -249,7 +261,7 @@ class BackendClient(
             websocketListener(onQuote, onError)
 
             while (isActive) {
-                delay(5000)
+                delay(5000.milliseconds)
                 try {
                     send(Frame.Ping(ByteArray(0)))
                 } catch (e: Exception) {
