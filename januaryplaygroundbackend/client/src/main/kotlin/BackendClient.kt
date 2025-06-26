@@ -1,12 +1,12 @@
 import arrow.core.*
+import arrow.core.Either
+import arrow.core.Either.Left
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.cookies.*
 import io.ktor.client.plugins.websocket.*
-import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import io.ktor.websocket.*
@@ -16,6 +16,12 @@ import org.slf4j.Logger
 import arrow.core.raise.either
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.appendPathSegments
+import io.ktor.http.contentType
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -55,8 +61,8 @@ class BackendClient(
         }
 
         return when (response.status) {
-            HttpStatusCode.OK -> Either.Right(response.body())
-            else -> Either.Left(ClientFailure(response.status.value, "Login failed"))
+            HttpStatusCode.OK -> response.body<Map<String, String>>().right()
+            else -> ClientFailure(response.status.value, "Login failed").left()
         }
     }
 
@@ -69,8 +75,8 @@ class BackendClient(
         }
 
         return when (response.status) {
-            HttpStatusCode.OK -> Either.Right(response.body())
-            else -> Either.Left(ClientFailure(response.status.value, "Authentication failed"))
+            HttpStatusCode.OK -> response.body<Map<String, Any>>().right()
+            else -> ClientFailure(response.status.value, "Authentication failed").left()
         }
     }
 
@@ -90,7 +96,7 @@ class BackendClient(
                     .toEither { ClientFailure(response.status.value, "No token in response") }
             }
 
-            else -> Either.Left(ClientFailure(response.status.value, "Temporary session authentication failed"))
+            else -> ClientFailure(response.status.value, "Temporary session authentication failed").left()
         }
     }
 
@@ -127,7 +133,7 @@ class BackendClient(
                     }
                 }
 
-                else -> Either.Left(ClientFailure(response.status.value, response.body()))
+                else -> ClientFailure(response.status.value, response.body()).left()
             }
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
@@ -149,7 +155,7 @@ class BackendClient(
                 }
             }
         }
-        return Either.Left(ClientFailure(-1, "Exhausted allowed retries"))
+        return ClientFailure(-1, "Exhausted allowed retries").left()
     }
 
 
@@ -188,7 +194,37 @@ class BackendClient(
     }
 
     suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
-        return post(exchangeRequestDto, HttpStatusCode.Created, "exchange", "orders", "cancel_all")
+        return Either.catch {
+            val response = client.post(httpBaseurl) {
+                url {
+                    appendPathSegments("exchange", "orders", "cancel_all")
+                }
+                contentType(ContentType.Application.Json)
+                setBody(exchangeRequestDto)
+            }
+            val rawBody = response.body() as String
+            logger.info("Raw response body: $rawBody")
+            logger.info("response.status: ${response.status.value}")
+            return when (response.status) {
+                HttpStatusCode.Accepted -> {
+                    Either.catch {
+                        response.body<AllOrderCancelResponse.FilledOrdersCancelled>()
+                    }.mapLeft { error ->
+                        logger.error(error.message)
+                        return@mapLeft ClientFailure(-1, "Could not deserialise")
+                    }
+                }
+                HttpStatusCode.NoContent -> {
+                    Either.catch {
+                        response.body<AllOrderCancelResponse.NoOrdersCancelled>()
+                    }.mapLeft { error ->
+                        logger.error(error.message)
+                        return@mapLeft ClientFailure(-1, "Could not deserialise")
+                    }
+                }
+                else -> Left(ClientFailure(response.status.value, response.body<String>()))
+            }
+        }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
     suspend fun getStartingState(

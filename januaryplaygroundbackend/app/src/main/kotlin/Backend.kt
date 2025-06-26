@@ -3,6 +3,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.Javalin
 import io.javalin.http.Context
+import io.javalin.http.HttpStatus
 import io.javalin.http.bodyAsClass
 import io.javalin.http.util.NaiveRateLimit
 import org.slf4j.LoggerFactory
@@ -50,10 +51,10 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private fun orderFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
         when (orderFailure.first) {
-            OrderFailureCode.INTERNAL_ERROR -> ctx.status(500)
-            OrderFailureCode.UNKNOWN_TICKER -> ctx.status(404)
-            OrderFailureCode.UNKNOWN_USER -> ctx.status(404)
-            else -> ctx.status(400)
+            OrderFailureCode.INTERNAL_ERROR -> ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            OrderFailureCode.UNKNOWN_TICKER -> ctx.status(HttpStatus.NOT_FOUND)
+            OrderFailureCode.UNKNOWN_USER -> ctx.status(HttpStatus.NOT_FOUND)
+            else -> ctx.status(HttpStatus.BAD_REQUEST)
         }
     }
 
@@ -70,7 +71,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             val email = ctx.bodyAsClass<Map<String, Any>>()["email"] ?: ""
             if (authService.evaluateUserAuth(ctx, email.toString()) == null) {
                 ctx.json(mapOf("message" to "Auth for user $email is invalid"))
-                ctx.status(403)
+                ctx.status(HttpStatus.UNAUTHORIZED)
             }
         }
 
@@ -80,14 +81,14 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             if (marketService.validateTicker(ticker)) {
                 val quote = marketService.getQuote(ticker, readerLightswitch)
                 if (quote != null) {
-                    ctx.status(200)
+                    ctx.status(HttpStatus.OK)
                     ctx.json(quote)
                 } else {
-                    ctx.status(500)
+                    ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     ctx.json("message" to "Unknown error with '$ticker'")
                 }
             } else {
-                ctx.status(404)
+                ctx.status(HttpStatus.NOT_FOUND)
                 ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
             }
         }
@@ -96,10 +97,10 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             val dto = ctx.bodyAsClass<ExchangeRequestDto>();
             val ticker = dto.ticker
             if (marketService.validateTicker(ticker)) {
-                ctx.status(200)
+                ctx.status(HttpStatus.OK)
                 ctx.json(marketService.getUserLongPositions(dto.email, dto.ticker, readerLightswitch))
             } else {
-                ctx.status(404)
+                ctx.status(HttpStatus.NOT_FOUND)
                 ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
             }
         }
@@ -108,10 +109,10 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             val dto = ctx.bodyAsClass<ExchangeRequestDto>();
             val ticker = dto.ticker
             if (marketService.validateTicker(ticker)) {
-                ctx.status(200)
+                ctx.status(HttpStatus.OK)
                 ctx.json(marketService.getUserOrders(dto.email, dto.ticker, readerLightswitch))
             } else {
-                ctx.status(404)
+                ctx.status(HttpStatus.NOT_FOUND)
                 ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
             }
         }
@@ -124,7 +125,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 val initialQuote = marketService.getWriteQuote(orderRequest.ticker)
                 marketService.marketOrderRequest(orderRequest, readWriteSemaphore)
                     .onRight { response ->
-                        ctx.status(201)
+                        ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
                         logger.info("Final state: {}", marketService.getState().toString())
                         quoteQueue.put(
@@ -155,7 +156,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 val initialQuote = marketService.getWriteQuote(orderRequest.ticker)
                 marketService.limitOrderRequest(orderRequest, readWriteSemaphore)
                     .onRight { response ->
-                        ctx.status(201)
+                        ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
                         logger.info("Final state: {}", marketService.getState().toString())
                         quoteQueue.put(
@@ -182,7 +183,13 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 val initialQuote = marketService.getWriteQuote(cancelRequest.ticker)
                 marketService.allOrderCancel(cancelRequest, readWriteSemaphore)
                     .onRight { response ->
-                        ctx.status(201)
+
+                        when (response) {
+                            is AllOrderCancelResponse.FilledOrdersCancelled ->
+                                ctx.status(HttpStatus.ACCEPTED)
+                            else -> ctx.status(HttpStatus.NO_CONTENT)
+                        }
+
                         ctx.json(response)
                         logger.info("Final quote: {}", marketService.getState().toString())
                         quoteQueue.put(
@@ -196,13 +203,13 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                     .onLeft { cancelFailure ->
                         ctx.json(mapOf("message" to cancelFailure.second))
                         when (cancelFailure.first) {
-                            AllOrderCancelFailureCode.UNKNOWN_TICKER -> ctx.status(404)
-                            else -> ctx.status(400)
+                            AllOrderCancelFailureCode.UNKNOWN_TICKER -> ctx.status(HttpStatus.NOT_FOUND)
+                            else -> ctx.status(HttpStatus.BAD_REQUEST)
                         }
                     }
             } else {
                 ctx.json(mapOf("message" to "Unknown ticker ${cancelRequest.ticker}"))
-                ctx.status(404)
+                ctx.status(HttpStatus.NOT_FOUND)
             }
         }
 

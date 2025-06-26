@@ -42,20 +42,18 @@ class ExchangeService(
             .flatMap { marketOrderProposal ->
                 val filledOrderRecord = exchangeDao.fillOrder(order, marketOrderProposal)
                 if (filledOrderRecord != null) {
-                    return@flatMap Either.Right(
-                        OrderFilled(
-                            order.ticker,
-                            filledOrderRecord.positionId,
-                            filledOrderRecord.filledTick,
-                            order.tradeType,
-                            order.orderType,
-                            order.size,
-                            order.email
-                        )
-                    )
+                    return@flatMap OrderFilled(
+                        order.ticker,
+                        filledOrderRecord.positionId,
+                        filledOrderRecord.filledTick,
+                        order.tradeType,
+                        order.orderType,
+                        order.size,
+                        order.email
+                    ).right()
                 } else {
                     logger.error("Position key not set in transaction")
-                    return@flatMap Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "An internal error occurred"))
+                    return@flatMap Pair(OrderFailureCode.INTERNAL_ERROR, "An internal error occurred").left()
                 }
             }
     }
@@ -138,7 +136,6 @@ class ExchangeService(
         val orderRecord = exchangeDao.createLimitPendingOrder(order)
         //LimitPendingOrderRecord
         return if (orderRecord != null) {
-            Either.Right(
                 OrderAcknowledged(
                     order.ticker,
                     orderRecord.orderId,
@@ -147,10 +144,9 @@ class ExchangeService(
                     order.orderType,
                     order.size,
                     order.email
-                )
-            )
+            ).right()
         } else {
-            Either.Left(Pair(OrderFailureCode.INTERNAL_ERROR, "Internal error"))
+            Pair(OrderFailureCode.INTERNAL_ERROR, "Internal error").left()
         }
     }
 
@@ -200,7 +196,7 @@ class ExchangeService(
                 }
             }
         }
-        return Either.Left(Pair(OrderFailureCode.INSUFFICIENT_SHARES, "Insufficient shares for order"))
+        return Pair(OrderFailureCode.INSUFFICIENT_SHARES, "Insufficient shares for order").left()
     }
 
     private fun getMarketOrderFinalStageOrderProposal(
@@ -210,25 +206,17 @@ class ExchangeService(
         userLongPositions: Int
     ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
         if (order.isBuy()) {
-            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= userBalance) Either.Right(
-                proposedOrders
-            )
-            else Either.Left(
-                Pair(
-                    OrderFailureCode.INSUFFICIENT_BALANCE,
-                    "Insufficient balance for order"
-                )
-            )
+            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= userBalance) proposedOrders.right()
+            else Pair(
+                OrderFailureCode.INSUFFICIENT_BALANCE,
+                "Insufficient balance for order"
+            ).left()
         } else {
-            return if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) Either.Right(
-                proposedOrders
-            )
-            else Either.Left(
-                Pair(
-                    OrderFailureCode.INSUFFICIENT_SHARES,
-                    "Insufficient shares for order"
-                )
-            )
+            return if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) proposedOrders.right()
+            else Pair(
+                OrderFailureCode.INSUFFICIENT_SHARES,
+                "Insufficient shares for order"
+            ).left()
         }
     }
 
@@ -240,31 +228,23 @@ class ExchangeService(
         semaphore.acquire()
         try {
             if (exchangeDao.getTicker(order.ticker) == null) {
-                return Either.Left(
-                    Pair(
-                        AllOrderCancelFailureCode.UNKNOWN_TICKER,
-                        "Ticker symbol '${order.ticker}' not found"
-                    )
-                )
+                return Pair(
+                    AllOrderCancelFailureCode.UNKNOWN_TICKER,
+                    "Ticker symbol '${order.ticker}' not found"
+                ).left()
             }
 
             val deleteRecord = exchangeDao.deleteAllUserOrders(order.email, order.ticker);
 
             return when {
-                deleteRecord.orderCount > 0 -> Either.Right(
-                    AllOrderCancelResponse(
+                deleteRecord.orderCount > 0 ->
+                    AllOrderCancelResponse.FilledOrdersCancelled(
                         order.ticker,
                         deleteRecord.cancelledTick,
                         deleteRecord.orderCount
-                    )
-                )
+                    ).right()
 
-                else -> Either.Left(
-                    AllOrderCancelFailure(
-                        AllOrderCancelFailureCode.INSUFFICIENT_SHARES,
-                        "No unfilled orders to cancel"
-                    )
-                )
+                else -> AllOrderCancelResponse.NoOrdersCancelled().right()
             }
 
         } finally {

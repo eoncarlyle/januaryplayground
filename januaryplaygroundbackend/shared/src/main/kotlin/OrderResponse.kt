@@ -108,11 +108,18 @@ enum class SingleOrderCancelFailureCode {
 
 enum class AllOrderCancelFailureCode {
     UNKNOWN_TICKER,
-    INSUFFICIENT_SHARES
 }
 
-data class AllOrderCancelResponse(
-    val ticker: Ticker,
-    val cancelledTick: Long,
-    val orders: Int
-)
+
+
+sealed class AllOrderCancelResponse {
+    data class FilledOrdersCancelled(
+        val ticker: Ticker,
+        val cancelledTick: Long,
+        val orders: Int
+    ) : AllOrderCancelResponse()
+
+    data class NoOrdersCancelled(
+        val msg: String = "No unfilled orders"
+    ) : AllOrderCancelResponse()
+}

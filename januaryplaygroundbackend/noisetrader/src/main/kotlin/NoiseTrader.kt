@@ -1,5 +1,7 @@
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.raise.either
+import arrow.core.right
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
@@ -73,7 +75,7 @@ class NoiseTrader(
         logger.info("Initial position count: ${positions.count()}")
 
         if (positions.any { it.positionType != PositionType.LONG }) {
-            return Either.Left(ClientFailure(-1, "Unimplemented short positions found"))
+            return ClientFailure(-1, "Unimplemented short positions found").left()
         } else {
             tradeTypeState = if (positions.any { it.positionType == PositionType.LONG }) {
                 TradeType.SELL
@@ -83,7 +85,7 @@ class NoiseTrader(
         }
 
         return when (orders.size) {
-            0 -> Either.Right(startingQuote)
+            0 -> startingQuote.right()
             else -> backendClient.postAllOrderCancel(exchangeRequestDto).mapLeft { failure ->
                 logger.error("Client failure: ${failure.first}/${failure.second}")
                 failure
