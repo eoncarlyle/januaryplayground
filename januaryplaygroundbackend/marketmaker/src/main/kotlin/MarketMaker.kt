@@ -104,8 +104,7 @@ class MarketMaker(
                 exitProcess(1)
             }
             .onRight {
-                simpleLimitOrderSubmissionInMutex(incomingQuote)
-                    .mapLeft { logger.warn(submitErrorMsg) }
+                simpleLimitOrderSubmissionInMutex(incomingQuote).mapLeft { logger.warn(submitErrorMsg) }
                     .onRight { trackingQuote = it }
             }
 
@@ -252,6 +251,9 @@ class MarketMaker(
                 System.currentTimeMillis()
             ).right()
 
+            // This should be fixed with historical data. We now are able to delete orders where there are none,
+            // but this doesn't do us any favors when we want quotes.
+            // This should be loaded up from the DB on startup but after startup the writes should be buffered
             else -> ClientFailure(-1, "Illegal `calculateQuote` state").left()
         }
     }

@@ -119,7 +119,5 @@ sealed class AllOrderCancelResponse {
         val orders: Int
     ) : AllOrderCancelResponse()
 
-    data class NoOrdersCancelled(
-        val msg: String = "No unfilled orders"
-    ) : AllOrderCancelResponse()
+    data object NoOrdersCancelled: AllOrderCancelResponse()
 }

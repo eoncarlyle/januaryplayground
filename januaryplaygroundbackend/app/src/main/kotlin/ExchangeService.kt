@@ -238,13 +238,13 @@ class ExchangeService(
 
             return when {
                 deleteRecord.orderCount > 0 ->
-                    AllOrderCancelResponse.FilledOrdersCancelled(
-                        order.ticker,
-                        deleteRecord.cancelledTick,
-                        deleteRecord.orderCount
-                    ).right()
+                        AllOrderCancelResponse.FilledOrdersCancelled(
+                            order.ticker,
+                            deleteRecord.cancelledTick,
+                            deleteRecord.orderCount
+                        ).right()
 
-                else -> AllOrderCancelResponse.NoOrdersCancelled().right()
+                else -> AllOrderCancelResponse.NoOrdersCancelled.right()
             }
 
         } finally {
