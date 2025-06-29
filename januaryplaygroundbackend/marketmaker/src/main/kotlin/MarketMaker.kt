@@ -19,7 +19,10 @@ class MarketMaker(
 ) {
     private val mutex = Mutex()
     private var trackingQuote: Quote? = null
-    private var spread: Int = 5
+    private var exchangeSequenceTimestamp: Long = -1
+    private val spreadFloor: Int = 3
+    private val initialSpread = 5
+    private var spread: Int = initialSpread
     private val fallbackQuote = Quote(ticker, 30, 35, System.currentTimeMillis())
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
@@ -61,19 +64,19 @@ class MarketMaker(
                 return
             }
 
-            logger.info("Incoming Quote")
+            logger.info("--------Incoming Quote---------")
             logger.info("Current quote: {}", trackingQuote.toString())
-            logger.info("Incoming quote: {}", incomingQuote.toString())
+            logger.info("tIncoming quote: {}", incomingQuote.toString())
 
             val currentTrackingQuote = trackingQuote
             if (currentTrackingQuote != null) {
-                if (incomingQuote.tick < currentTrackingQuote.tick) {
+                if (incomingQuote.exchangeSequenceTimestamp <= exchangeSequenceTimestamp) {
                     logger.info(
                         "Ignoring stale incoming quote from {}, tracking quote set at {} ",
-                        incomingQuote.tick.toString(),
-                        trackingQuote.toString()
+                        incomingQuote.exchangeSequenceTimestamp.toString(),
+                        exchangeSequenceTimestamp.toString()
                     )
-                } else if (!currentTrackingQuote.equivalent(incomingQuote)) {
+                } else if (!currentTrackingQuote.weaklyEquivalent(incomingQuote)) {
                     cancelAndResubmit(
                         incomingQuote,
                         "Market maker could not exit positions after inconsistent quote, exiting",
@@ -82,7 +85,7 @@ class MarketMaker(
                 } else {
                     logger.info(
                         "Incoming quote from {} equivalent to tracking quote {} ",
-                        incomingQuote.tick.toString(),
+                        incomingQuote.exchangeSequenceTimestamp.toString(),
                         trackingQuote.toString()
                     )
                 }
@@ -105,12 +108,16 @@ class MarketMaker(
             }
             .onRight {
                 simpleLimitOrderSubmissionInMutex(incomingQuote).mapLeft { logger.warn(submitErrorMsg) }
-                    .onRight { trackingQuote = it }
+                    .onRight { pair ->
+                        val (ts, quote) = pair
+                        exchangeSequenceTimestamp = ts
+                        trackingQuote = quote
+                    }
             }
 
     private suspend fun simpleLimitOrderSubmissionInMutex(
         currentQuote: Quote
-    ): Either<ClientFailure, Quote> {
+    ): Either<ClientFailure, Pair<Long, Quote>> {
         return either {
             val nextQuote = calculateNextQuote(currentQuote).bind()
             logger.info("Next quote: {}", nextQuote.toString())
@@ -125,7 +132,7 @@ class MarketMaker(
                 )
             ).bind()
 
-            backendClient.postLimitOrderRequest(
+            val sellLimitOrder = backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
                     email = email,
                     ticker = ticker,
@@ -135,7 +142,7 @@ class MarketMaker(
                 )
             ).bind()
 
-            nextQuote
+            Pair(sellLimitOrder.exchangeSequenceTimestamp, nextQuote)
         }
     }
 
@@ -219,42 +226,65 @@ class MarketMaker(
         }
     }
 
-    private fun calculateNextQuote(quote: Quote, isSecondQuote: Boolean = false): Either<ClientFailure, Quote> {
-        return when {
-            quote.hasBidAskEmpty() && isSecondQuote -> {
+    private fun calculateNextQuote(
+        incomingQuoteQuote: Quote,
+        isFirstQuote: Boolean = false
+    ): Either<ClientFailure, Quote> {
+        val nextQuoteCandidate = when {
+            incomingQuoteQuote.hasBidAskEmpty() && isFirstQuote -> {
+                //TODO : this is bad
                 logger.warn("Fallback quote used, assumption that market is empty")
-                fallbackQuote.right()
+                fallbackQuote
             }
 
-            quote.hasbidAskFull() -> {
-                if ((quote.ask - quote.bid) == spread) {
-                    return quote.right()
+            incomingQuoteQuote.hasbidAskFull() -> {
+                if ((incomingQuoteQuote.ask - incomingQuoteQuote.bid) == spread) {
+                    incomingQuoteQuote
                 } else {
-                    val midpoint = (quote.bid + quote.ask) / 2
+                    val midpoint = (incomingQuoteQuote.bid + incomingQuoteQuote.ask) / 2
                     val bid = midpoint - spread / 2
                     val ask = bid + spread
-                    return Quote(ticker, bid, ask, System.currentTimeMillis()).right()
+                    Quote(ticker, bid, ask, System.currentTimeMillis())
                 }
             }
 
-            quote.hasAsksWithoutBids() -> Quote(
-                ticker,
-                quote.bid - 1 - spread,
-                quote.ask - 1,
-                System.currentTimeMillis()
-            ).right()
+            incomingQuoteQuote.hasAsksWithoutBids() -> {
+                Quote(
+                    ticker,
+                    incomingQuoteQuote.ask - 1 - spread,
+                    incomingQuoteQuote.ask - 1,
+                    System.currentTimeMillis()
+                )
+            }
 
-            quote.hasBidsWithoutAsks() -> Quote(
+            incomingQuoteQuote.hasBidsWithoutAsks() -> Quote(
                 ticker,
-                quote.bid + 1,
-                quote.ask + 1 + spread,
+                incomingQuoteQuote.bid + 1,
+                incomingQuoteQuote.bid + 1 + spread,
                 System.currentTimeMillis()
-            ).right()
+            )
 
-            // This should be fixed with historical data. We now are able to delete orders where there are none,
-            // but this doesn't do us any favors when we want quotes.
-            // This should be loaded up from the DB on startup but after startup the writes should be buffered
-            else -> ClientFailure(-1, "Illegal `calculateQuote` state").left()
+            else -> {
+                //! Mutable state modification!
+                spread += 1
+                if (trackingQuote == null) {
+                    logger.warn("Tracking quote empty: `calculateNextQuote` call will return Left")
+                }
+                Quote(
+                    ticker,
+                    trackingQuote?.bid?.minus(1) ?: -1,
+                    trackingQuote?.ask?.plus(1) ?: -1,
+                    System.currentTimeMillis()
+                )
+            }
+        }
+
+        return nextQuoteCandidate.right().flatMap { quote ->
+            if (quote.bid > 0 && quote.ask > 0) {
+                quote.right()
+            } else {
+                ClientFailure(-1, "Illegal `calculateQuote` state").left()
+            }
         }
     }
 }

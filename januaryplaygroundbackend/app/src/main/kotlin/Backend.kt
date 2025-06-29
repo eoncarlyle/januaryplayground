@@ -12,21 +12,22 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 
-private data class QuoteQueueMessage<T>(
-    val request: T,
-    val initialQuote: Quote?,
-    val finalQuote: Quote?
+private data class QuoteQueueMessage<T: Queueable>(
+    val request: Any,
+    val response: T,
+    val initialStatelessQuote: StatelessQuote?,
+    val finalStatelessQuote: StatelessQuote?
 )
 
 class Backend(db: DatabaseHelper, secure: Boolean) {
     private val wsUserMap = WsUserMap()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
-    private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Any>>()
+    private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
     private val objectMapper = ObjectMapper()
     private val readWriteSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(readWriteSemaphore)
 
-    private val javalinApp = Javalin.create({ config ->
+    private val javalinApp = Javalin.create { config ->
         config.bundledPlugins.enableCors { cors ->
             // TODO: specify this correctly in production
             cors.addRule {
@@ -43,7 +44,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 ms
             )
         }
-    })
+    }
 
     private val authService = AuthService(db, secure, wsUserMap, logger)
     private val marketService = ExchangeService(db, secure, wsUserMap, logger)
@@ -79,8 +80,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             val dto = ctx.bodyAsClass<ExchangeRequestDto>();
             val ticker = dto.ticker
             if (marketService.validateTicker(ticker)) {
-                val quote = marketService.getQuote(ticker, readerLightswitch)
-                if (quote != null) {
+                val partialQuote = marketService.getStatelessQuoteOutsideLock(ticker, readerLightswitch)
+                if (partialQuote != null) {
+                    val quote = partialQuote.getQuote(System.currentTimeMillis())
                     ctx.status(HttpStatus.OK)
                     ctx.json(quote)
                 } else {
@@ -120,19 +122,20 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/exchange/orders/market") { ctx ->
             val orderRequest = ctx.bodyAsClass<MarketOrderRequest>()
             logger.info(objectMapper.writeValueAsString(orderRequest))
-            logger.info("Starting state: {}", marketService.getState().toString())
+            //logger.info("Starting state: {}", marketService.getState().toString())
             if (marketService.validateTicker(orderRequest.ticker)) {
-                val initialQuote = marketService.getWriteQuote(orderRequest.ticker)
+                val initialQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
                 marketService.marketOrderRequest(orderRequest, readWriteSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
-                        logger.info("Final state: {}", marketService.getState().toString())
+                        //logger.info("Final state: {}", marketService.getState().toString())
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
+                                response,
                                 initialQuote,
-                                marketService.getWriteQuote(orderRequest.ticker)
+                                marketService.getStatelessQuoteInLock(orderRequest.ticker)
                             )
                         )
                     }
@@ -153,7 +156,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             logger.info("Starting state: {}", marketService.getState().toString())
             // Use optionals to unnest
             if (marketService.validateTicker(orderRequest.ticker)) {
-                val initialQuote = marketService.getWriteQuote(orderRequest.ticker)
+                val initialQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
                 marketService.limitOrderRequest(orderRequest, readWriteSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
@@ -162,8 +165,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
+                                response,
                                 initialQuote,
-                                marketService.getWriteQuote(orderRequest.ticker)
+                                marketService.getStatelessQuoteInLock(orderRequest.ticker)
                             )
                         )
                     }
@@ -180,13 +184,14 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             logger.info("Starting quote: {}", marketService.getState().toString())
             // Use optionals to unnest
             if (marketService.validateTicker(cancelRequest.ticker)) {
-                val initialQuote = marketService.getWriteQuote(cancelRequest.ticker)
+                val initialQuote = marketService.getStatelessQuoteInLock(cancelRequest.ticker)
                 marketService.allOrderCancel(cancelRequest, readWriteSemaphore)
                     .onRight { response ->
 
                         when (response) {
                             is AllOrderCancelResponse.FilledOrdersCancelled ->
                                 ctx.status(HttpStatus.ACCEPTED)
+
                             else -> ctx.status(HttpStatus.NO_CONTENT)
                         }
 
@@ -195,8 +200,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 cancelRequest,
+                                response,
                                 initialQuote,
-                                marketService.getWriteQuote(cancelRequest.ticker)
+                                marketService.getStatelessQuoteInLock(cancelRequest.ticker)
                             )
                         )
                     }
@@ -213,7 +219,6 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             }
         }
 
-        // Note about market orders: they need to be ordered by received time in order to be treated correctly
         this.javalinApp.ws("/ws") { ws ->
             ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
             // The only expected inbound messages are for client authentication
@@ -241,11 +246,11 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
         this.javalinApp.start(7070)
 
-        startServerEventSimulation()
+        heartbeatThread()
         orderQuoteConsumer()
     }
 
-    private fun startServerEventSimulation() {
+    private fun heartbeatThread() {
         Thread {
             while (true) {
                 Thread.sleep(5000) // Every 5 seconds
@@ -253,7 +258,6 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 wsUserMap.forEachLiveSocket { ctx ->
                     ctx.send(objectMapper.writeValueAsString(ServerTimeMessage(System.currentTimeMillis())))
                 }
-
             }
         }.start()
     }
@@ -261,19 +265,20 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private fun orderQuoteConsumer() {
         Thread {
             while (true) {
-                val (request, initialQuote, finalQuote) = quoteQueue.take()
+                val (request, queueableResponse, initialQuote, finalQuote) = quoteQueue.take()
+                logger.info("---------OrderQuoteConsumer---------")
+                logger.info("Incoming Quote: {}", initialQuote.toString())
 
                 if (initialQuote != null && finalQuote != null) {
                     if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
-                        logger.info("Quote Update")
-                        logger.info("Initial Quote: {}", initialQuote.toString())
-                        logger.info("Final Quote: {}", finalQuote.toString())
-                        logger.info(request.toString())
+                        val sentQuote = finalQuote.getQuote(queueableResponse.exchangeSequenceTimestamp)
+                        logger.info("Forcing request: $request")
+                        logger.info("Quote transition: [${sentQuote.exchangeSequenceTimestamp}] $initialQuote -> $finalQuote ")
 
                         val liveSockets = wsUserMap.forEachLiveSocket { ctx ->
-                            ctx.send(QuoteMessage(finalQuote))
+                            ctx.send(QuoteMessage(sentQuote))
                         }
-                        logger.info("Updated ${liveSockets} clients over websockets with new quote");
+                        logger.info("Updated $liveSockets clients over websockets with new quote");
                     }
                 } else {
                     val serialisedRequest = objectMapper.writeValueAsString(request)

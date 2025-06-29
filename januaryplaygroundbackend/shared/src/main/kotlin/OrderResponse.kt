@@ -17,16 +17,19 @@ interface OrderCancel {
     val type: String
 }
 
+interface Queueable {
+    val exchangeSequenceTimestamp: Long;
+}
+
 // Only needed for market and fill-or-kill
 interface IOrderAcknowledged : Order {
     val orderId: Long
-    val receivedTick: Long // Will need to include/reference any partial execution!
 }
 
 data class OrderAcknowledged(
     override val ticker: Ticker,
     override val orderId: Long,
-    override val receivedTick: Long,
+    override val exchangeSequenceTimestamp: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
@@ -37,7 +40,6 @@ data class OrderAcknowledged(
 
 interface IOrderFilled : Order {
     val positionId: Long
-    val filledTick: Long
 }
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "subtype", include = JsonTypeInfo.As.PROPERTY)
@@ -46,7 +48,7 @@ interface IOrderFilled : Order {
         value = OrderFilled::class, name="orderFilled"
     ),
 )
-interface MarketOrderResponse
+interface MarketOrderResponse: Queueable
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "subtype", include = JsonTypeInfo.As.EXISTING_PROPERTY)
 @JsonSubTypes(
@@ -60,14 +62,14 @@ interface MarketOrderResponse
         value = OrderPartiallyFilled::class, name="orderPartiallyFilled"
     )
 )
-interface LimitOrderResponse {
+interface LimitOrderResponse: Queueable {
     val subtype: String
 }
 
 data class OrderFilled(
     override val ticker: Ticker,
     override val positionId: Long,
-    override val filledTick: Long,
+    override val exchangeSequenceTimestamp: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
@@ -79,8 +81,8 @@ data class OrderFilled(
 data class OrderPartiallyFilled(
     override val ticker: Ticker,
     override val positionId: Long,
+    override val exchangeSequenceTimestamp: Long,
     val restingOrderId: Long,
-    override val filledTick: Long,
     override val tradeType: TradeType,
     override val orderType: OrderType,
     override val size: Int,
@@ -112,12 +114,11 @@ enum class AllOrderCancelFailureCode {
 
 
 
-sealed class AllOrderCancelResponse {
+sealed class AllOrderCancelResponse: Queueable {
     data class FilledOrdersCancelled(
         val ticker: Ticker,
-        val cancelledTick: Long,
-        val orders: Int
+        val orders: Int, override val exchangeSequenceTimestamp: Long
     ) : AllOrderCancelResponse()
 
-    data object NoOrdersCancelled: AllOrderCancelResponse()
+    data class NoOrdersCancelled(override val exchangeSequenceTimestamp: Long): AllOrderCancelResponse()
 }

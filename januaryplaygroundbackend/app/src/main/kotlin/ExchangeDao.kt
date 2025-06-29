@@ -51,7 +51,7 @@ class ExchangeDao(
         }
     }
 
-    fun getQuote(ticker: Ticker): Quote? {
+    fun getPartialQuote(ticker: Ticker): StatelessQuote? {
         return db.query { conn ->
             conn.prepareStatement(
                 """
@@ -69,7 +69,7 @@ class ExchangeDao(
                         val bid = rs.getInt(1)
                         val ask = rs.getInt(2)
                         if (rs.wasNull() || ask == 0 && rs.wasNull()) null
-                        else Quote(ticker, bid, ask, System.currentTimeMillis())
+                        else StatelessQuote(ticker, bid, ask)
                     } else null
                 }
             }

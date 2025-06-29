@@ -42,10 +42,11 @@ class ExchangeService(
             .flatMap { marketOrderProposal ->
                 val filledOrderRecord = exchangeDao.fillOrder(order, marketOrderProposal)
                 if (filledOrderRecord != null) {
+                    val receivedTick = System.currentTimeMillis()
                     return@flatMap OrderFilled(
                         order.ticker,
                         filledOrderRecord.positionId,
-                        filledOrderRecord.filledTick,
+                        receivedTick,
                         order.tradeType,
                         order.orderType,
                         order.size,
@@ -117,11 +118,12 @@ class ExchangeService(
                 // TODO: Use result handling to fix the issue above
                 val resizedOrder = order.getResizedOrder(order.size - getPositionCount(crossingOrders))
                 createRestingLimitOrder(resizedOrder).map { restingOrder ->
+                    val receivedTick = System.currentTimeMillis()
                     OrderPartiallyFilled(
                         order.ticker,
                         filledOrder.positionId,
                         restingOrder.orderId,
-                        filledOrder.filledTick,
+                        receivedTick,
                         order.tradeType,
                         order.orderType,
                         order.size,
@@ -136,14 +138,15 @@ class ExchangeService(
         val orderRecord = exchangeDao.createLimitPendingOrder(order)
         //LimitPendingOrderRecord
         return if (orderRecord != null) {
-                OrderAcknowledged(
-                    order.ticker,
-                    orderRecord.orderId,
-                    orderRecord.receivedTick,
-                    order.tradeType,
-                    order.orderType,
-                    order.size,
-                    order.email
+            val receivedTick = System.currentTimeMillis()
+            OrderAcknowledged(
+                order.ticker,
+                orderRecord.orderId,
+                receivedTick,
+                order.tradeType,
+                order.orderType,
+                order.size,
+                order.email
             ).right()
         } else {
             Pair(OrderFailureCode.INTERNAL_ERROR, "Internal error").left()
@@ -238,13 +241,13 @@ class ExchangeService(
 
             return when {
                 deleteRecord.orderCount > 0 ->
-                        AllOrderCancelResponse.FilledOrdersCancelled(
-                            order.ticker,
-                            deleteRecord.cancelledTick,
-                            deleteRecord.orderCount
-                        ).right()
+                    AllOrderCancelResponse.FilledOrdersCancelled(
+                        order.ticker,
+                        deleteRecord.orderCount,
+                        System.currentTimeMillis()
+                    ).right()
 
-                else -> AllOrderCancelResponse.NoOrdersCancelled.right()
+                else -> AllOrderCancelResponse.NoOrdersCancelled(System.currentTimeMillis()).right()
             }
 
         } finally {
@@ -252,14 +255,14 @@ class ExchangeService(
         }
     }
 
-    fun getWriteQuote(ticker: Ticker): Quote? {
-        return exchangeDao.getQuote(ticker)
+    fun getStatelessQuoteInLock(ticker: Ticker): StatelessQuote? {
+        return exchangeDao.getPartialQuote(ticker)
     }
 
-    fun getQuote(ticker: Ticker, lightswitch: Lightswitch): Quote? {
+    fun getStatelessQuoteOutsideLock(ticker: Ticker, lightswitch: Lightswitch): StatelessQuote? {
         try {
             lightswitch.lock()
-            return exchangeDao.getQuote(ticker)
+            return exchangeDao.getPartialQuote(ticker)
         } finally {
             lightswitch.unlock()
         }
@@ -304,9 +307,7 @@ class ExchangeService(
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {
         val transactionExists = exchangeDao.unfilledOrderExists(pendingOrderId, email)
-        //if (!transactionExists) NotFoundResponse("Transaction '${pendingOrderId}' for user '${email}' not found")
 
-        // Need to disambiguate between removed, filled orders
         return if (!transactionExists) Some(SingleOrderCancelFailureCode.UNKNOWN_ORDER) else None
     }
 
@@ -319,7 +320,7 @@ class ExchangeService(
     ): SortedOrderBook {
         val matchingPendingOrders = exchangeDao.getMatchingOrderBook(order.ticker, order.tradeType)
         val book: SortedOrderBook = HashMap()
-        // Previous function was much clunkier
+
         matchingPendingOrders.forEach { entry ->
             book.getOrPut(entry.price) { ArrayList() }.add(entry)
         }

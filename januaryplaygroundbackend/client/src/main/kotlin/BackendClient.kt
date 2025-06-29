@@ -203,8 +203,6 @@ class BackendClient(
                 setBody(exchangeRequestDto)
             }
             val rawBody = response.body() as String
-            logger.info("Raw response body: $rawBody")
-            logger.info("response.status: ${response.status.value}")
             return when (response.status) {
                 HttpStatusCode.Accepted -> {
                     Either.catch {
@@ -216,7 +214,12 @@ class BackendClient(
                 }
                 // Faced annoying serialisation problems
                 HttpStatusCode.NoContent -> {
-                    AllOrderCancelResponse.NoOrdersCancelled.right()
+                    Either.catch {
+                        response.body<AllOrderCancelResponse.NoOrdersCancelled>()
+                    }.mapLeft { error ->
+                        logger.error(error.message)
+                        return@mapLeft ClientFailure(-1, "Could not deserialise")
+                    }
                 }
                 else -> Left(ClientFailure(response.status.value, response.body<String>()))
             }
