@@ -2,11 +2,11 @@ package com.iainschmitt.januaryplaygroundbackend.shared
 
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonIgnore
-import java.math.BigDecimal
 
 class CredentialsDto(val email: String, val password: String)
 typealias Ticker = String
 
+fun Ticker.unknownMessage() = "Unknown ticker '$this'"
 
 enum class TradeType {
     //@JsonAlias("buy")
@@ -102,12 +102,6 @@ interface Order {
         return tradeType.isBuy()
     }
 }
-
-data class ExchangeRequestDto(
-    val email: String,
-    val ticker: Ticker,
-)
-
 data class PositionRecord(
     val id: Int,
     val ticker: Ticker,

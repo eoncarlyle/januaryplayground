@@ -180,6 +180,14 @@ class BackendClient(
             "orders"
         )
     }
+    suspend fun getUserBalance(userEmail: String): Either<ClientFailure, BalanceResponse> {
+        return post<BalanceRequestDto, BalanceResponse>(
+            BalanceRequestDto(userEmail),
+            HttpStatusCode.OK,
+            "exchange",
+            "balance"
+        )
+    }
 
     suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> {
         return post<ExchangeRequestDto, Quote>(exchangeRequestDto, HttpStatusCode.OK, "exchange", "quote")

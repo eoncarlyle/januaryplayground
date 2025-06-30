@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 import java.util.concurrent.Semaphore
 
 typealias OrderFailure = Pair<OrderFailureCode, String>
-typealias SemaphoreResult<T> = Either<T, Semaphore>
 typealias OrderResult<T> = Either<OrderFailure, T>
 typealias AllOrderCancelFailure = Pair<AllOrderCancelFailureCode, String>
 typealias OrderCancelResult<L, R> = Either<L, R>
@@ -112,8 +111,6 @@ enum class AllOrderCancelFailureCode {
     UNKNOWN_TICKER,
 }
 
-
-
 sealed class AllOrderCancelResponse: Queueable {
     data class FilledOrdersCancelled(
         val ticker: Ticker,
@@ -122,3 +119,7 @@ sealed class AllOrderCancelResponse: Queueable {
 
     data class NoOrdersCancelled(override val exchangeSequenceTimestamp: Long): AllOrderCancelResponse()
 }
+
+data class BalanceResponse(
+    val balance: Int
+)

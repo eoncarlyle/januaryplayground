@@ -268,19 +268,28 @@ class ExchangeService(
         }
     }
 
-    fun getUserLongPositions(user: String, ticker: Ticker, lightswitch: Lightswitch): List<PositionRecord> {
+    fun getUserBalance(userEmail: String, lightswitch: Lightswitch): Int? {
         try {
             lightswitch.lock()
-            return exchangeDao.getUserLongPositions(user, ticker)
+            return exchangeDao.getUserBalance(userEmail)
         } finally {
             lightswitch.unlock()
         }
     }
 
-    fun getUserOrders(user: String, ticker: Ticker, lightswitch: Lightswitch): List<OrderBookEntry> {
+    fun getUserLongPositions(userEmail: String, ticker: Ticker, lightswitch: Lightswitch): List<PositionRecord> {
         try {
             lightswitch.lock()
-            return exchangeDao.getUserOrders(user, ticker)
+            return exchangeDao.getUserLongPositions(userEmail, ticker)
+        } finally {
+            lightswitch.unlock()
+        }
+    }
+
+    fun getUserOrders(userEmail: String, ticker: Ticker, lightswitch: Lightswitch): List<OrderBookEntry> {
+        try {
+            lightswitch.lock()
+            return exchangeDao.getUserOrders(userEmail, ticker)
         } finally {
             lightswitch.unlock()
         }

@@ -65,8 +65,8 @@ class MarketMaker(
             }
 
             logger.info("--------Incoming Quote---------")
-            logger.info("Current quote: {}", trackingQuote.toString())
-            logger.info("tIncoming quote: {}", incomingQuote.toString())
+            logger.info("Current quote: $trackingQuote")
+            logger.info("Incoming quote: $incomingQuote")
 
             val currentTrackingQuote = trackingQuote
             if (currentTrackingQuote != null) {

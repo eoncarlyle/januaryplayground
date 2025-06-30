@@ -41,3 +41,12 @@ data class LimitOrderRequest(
         )
     }
 }
+
+data class ExchangeRequestDto(
+    val email: String,
+    val ticker: Ticker,
+)
+
+data class BalanceRequestDto(
+    val userEmail: String,
+)

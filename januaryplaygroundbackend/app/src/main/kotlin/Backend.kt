@@ -12,7 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 
-private data class QuoteQueueMessage<T: Queueable>(
+private data class QuoteQueueMessage<T : Queueable>(
     val request: Any,
     val response: T,
     val initialStatelessQuote: StatelessQuote?,
@@ -49,7 +49,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private val authService = AuthService(db, secure, wsUserMap, logger)
     private val marketService = ExchangeService(db, secure, wsUserMap, logger)
 
-    private fun orderFailureHandler(ctx: Context, orderFailure: OrderFailure) {
+    private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
         when (orderFailure.first) {
             OrderFailureCode.INTERNAL_ERROR -> ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -91,7 +91,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 }
             } else {
                 ctx.status(HttpStatus.NOT_FOUND)
-                ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
+                ctx.json("message" to ticker.unknownMessage())
             }
         }
 
@@ -103,7 +103,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 ctx.json(marketService.getUserLongPositions(dto.email, dto.ticker, readerLightswitch))
             } else {
                 ctx.status(HttpStatus.NOT_FOUND)
-                ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
+                ctx.json("message" to ticker.unknownMessage())
             }
         }
 
@@ -115,7 +115,19 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 ctx.json(marketService.getUserOrders(dto.email, dto.ticker, readerLightswitch))
             } else {
                 ctx.status(HttpStatus.NOT_FOUND)
-                ctx.json("message" to "Unknown ticker '$ticker' during order semaphore acquisition")
+                ctx.json("message" to ticker.unknownMessage())
+            }
+        }
+
+        this.javalinApp.post("/exchange/balance") { ctx ->
+            val dto = ctx.bodyAsClass<BalanceRequestDto>();
+            val result = marketService.getUserBalance(dto.userEmail, readerLightswitch)
+            if (result != null) {
+                ctx.status(HttpStatus.OK)
+                ctx.json(BalanceResponse(result))
+            } else {
+                ctx.status(HttpStatus.NOT_FOUND)
+                ctx.json("message" to "Unknown user '${dto.userEmail}'")
             }
         }
 
@@ -139,21 +151,21 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                             )
                         )
                     }
-                    .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+                    .onLeft { orderFailure -> exchangeFailureHandler(ctx, orderFailure) }
             } else {
                 val orderFailure =
                     OrderFailure(
                         OrderFailureCode.UNKNOWN_TICKER,
-                        "Unknown ticker '${orderRequest.ticker}' during order semaphore acquisition"
+                        orderRequest.ticker.unknownMessage()
                     )
-                orderFailureHandler(ctx, orderFailure)
+                exchangeFailureHandler(ctx, orderFailure)
             }
         }
 
         this.javalinApp.post("/exchange/orders/limit") { ctx ->
             val orderRequest = ctx.bodyAsClass<LimitOrderRequest>()
             logger.info(objectMapper.writeValueAsString(orderRequest))
-            logger.info("Starting state: {}", marketService.getState().toString())
+            //logger.info("Starting state: {}", marketService.getState().toString())
             // Use optionals to unnest
             if (marketService.validateTicker(orderRequest.ticker)) {
                 val initialQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
@@ -161,7 +173,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
-                        logger.info("Final state: {}", marketService.getState().toString())
+                        //logger.info("Final state: {}", marketService.getState().toString())
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
@@ -171,11 +183,11 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                             )
                         )
                     }
-                    .onLeft { orderFailure -> orderFailureHandler(ctx, orderFailure) }
+                    .onLeft { orderFailure -> exchangeFailureHandler(ctx, orderFailure) }
             } else {
                 val orderFailure =
-                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, "Unknown ticker during order semaphore acquisition")
-                orderFailureHandler(ctx, orderFailure)
+                    OrderFailure(OrderFailureCode.UNKNOWN_TICKER, orderRequest.ticker.unknownMessage())
+                exchangeFailureHandler(ctx, orderFailure)
             }
         }
 
@@ -214,7 +226,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                         }
                     }
             } else {
-                ctx.json(mapOf("message" to "Unknown ticker ${cancelRequest.ticker}"))
+                ctx.json(mapOf("message" to cancelRequest.ticker.unknownMessage()))
                 ctx.status(HttpStatus.NOT_FOUND)
             }
         }
@@ -267,15 +279,16 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             while (true) {
                 val (request, queueableResponse, initialQuote, finalQuote) = quoteQueue.take()
                 logger.info("---------OrderQuoteConsumer---------")
-                logger.info("Incoming Quote: {}", initialQuote.toString())
+                logger.info("Incoming Quote: $initialQuote")
 
                 if (initialQuote != null && finalQuote != null) {
-                    if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
+                    if (initialQuote.ticker != finalQuote.ticker) {
+                        logger.warn("Illegal ticker combination, must be fixed by better typing: ${initialQuote.ticker}, ${finalQuote.ticker}")
+                    } else if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
                         val sentQuote = finalQuote.getQuote(queueableResponse.exchangeSequenceTimestamp)
                         logger.info("Forcing request: $request")
                         logger.info("Quote transition: [${sentQuote.exchangeSequenceTimestamp}] $initialQuote -> $finalQuote ")
-
-                        val liveSockets = wsUserMap.forEachLiveSocket { ctx ->
+                        val liveSockets = wsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) { ctx ->
                             ctx.send(QuoteMessage(sentQuote))
                         }
                         logger.info("Updated $liveSockets clients over websockets with new quote");

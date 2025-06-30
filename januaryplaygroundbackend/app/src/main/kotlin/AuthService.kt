@@ -140,7 +140,7 @@ class AuthService(
 
     fun handleWsConnection(ctx: WsConnectContext) {
         logger.info("Incoming connection")
-        wsUserMap.set(ctx, WsUserMapRecord(null, null, false))
+        wsUserMap.set(ctx, WsUserMapRecord(null, null, false, listOf()))
         ctx.sendAsClass(
             ServerLifecycleMessage(
                 WebSocketLifecycleOperation.AUTHENTICATE,
@@ -165,7 +165,7 @@ class AuthService(
 
         when (message.operation) {
             WebSocketLifecycleOperation.AUTHENTICATE -> {
-                wsUserMap.set(ctx, WsUserMapRecord(token, email, true))
+                wsUserMap.set(ctx, WsUserMapRecord(token, email, true, message.tickers))
                 ctx.sendAsClass(
                     ServerLifecycleMessage(
                         WebSocketLifecycleOperation.AUTHENTICATE,
