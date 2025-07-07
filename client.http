@@ -31,7 +31,7 @@ POST http://localhost:7070/auth/login
 Content-Type: application/json
 
 {
-  "email": "noise0@iainschmitt.com",
+  "email": "noise1@iainschmitt.com",
   "password": "noisePassword"
 }
 
@@ -41,10 +41,10 @@ Content-Type: application/json
 
 {
   "type": "incomingOrder",
-  "email": "noise0@iainschmitt.com",
+  "email": "noise1@iainschmitt.com",
   "ticker": "testTicker",
-  "size": 4,
-  "tradeType": "BUY",
+  "size": 1,
+  "tradeType": "SELL",
   "orderType": "Market"
 }
 

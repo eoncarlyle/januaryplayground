@@ -11,9 +11,92 @@ In Janurary 2025 I wanted to find an excuse to work with the following technolog
 
 This repository is a playground for working on a grab bag of these technologies, I probably won't find a way to shoehorn all of these in
 
-## Feedback Log
 
-### `29c9d78`
+## Active Topic Notes
+
+### Notification and Orchestrator Design
+Clients can be treated as external services: with a valid password they can sign up, and they can use the resulting client cookies to make REST requests; WebSocket auth is slightly more complicated but follows similar logic. There's no stopping someone from making their own market maker and having it be treated the same way. However, I want to be able to continually operate the market maker and noise traders without stopping anything. This should also be a relatively durable process, so there should be more than an in-flight network request making things work here. Because even my simple market maker outperforms randome noise traders, continual activity requires 'restocking' noise traders that run out of credits.
+
+The flow works something like this
+1) The orchestrator starts running a handful of noise traders
+2) The market maker sends a request to the backend to notify it when it has over a certain number of credits
+3) The market maker has the option to place funds into the orchestrator account with a REST call
+4) While communication between clients and backend is carried out over WebSockets, communication between internal services will use Kafka, which I have recently setup with SSL
+5) The backend is a producer on the client-orchestration topic, and it will send an event on this topic ordering another
+6) The orchestrator consumes these events, and creates a new noise trader on demand
+7) The orchestartor should have the power to liquidate nosie traders that it creates
+
+The resulting requirements will be
+1) Budget event notification endpoint: simple at first, just under or over a budget limit
+2) Credit transfer endpoint
+3) Client orchestrator service
+4) Adding an 'orchestrated_by' column in the database
+5) Adding an orchestrated sign-in that ties a given client to an orchestrator
+6) Liquidation endpoint callable by orchestrators
+7) Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out
+
+
+### To Do
+- Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good
+- ~~The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem~~
+  - Notification service could alert
+- Test multi-ticker, multi-market maker activity
+- Actual spread narrowing by the market maker and noise trader activity
+  - Measure based off of volitility
+- Noise trader lifecyle (detail above)
+- Fix domain model to turn order types into buy/sell/short
+- Observation frontend
+- Client order submission frontend
+
+
+## Previous Topic Notes
+
+### WebSocket Authentication Detail
+- Create an endpoint that returns a short-lived token over JSON for authenticated HTTP contexts
+- If legitimate, invalidate the token and then store it in the WebSocket user store
+- Send short-lived token with initial WebSocket response on `"auth"` messages
+- At `e1fe7dd`, the websocket would only authenticate when logged in for the first time but not when the page was reloaded
+  - In `setupWebsocket`, a `console.log(socket.readyState);`
+
+### New authentication
+- Run top-level auth
+- Change the backend to include when the session will expire
+- Save both in storage and in global state
+- Write async job that logs out when the tu
+- Write function that logs out (state and cookies) if 403s are hit
+
+### Client-side Websockets
+- ~Use socket.io for the client side~: vanilla websockets will work instead
+- There are only a handful of routes that this will be relevant for: I we need to decide which components need websockets before putting this into place?
+- One possibility is storing effectively a singleton in the application state
+  - This would mean creating a WebSocket object in the
+- The state built off of the singleton could be organised on the page level
+  - The types of
+- If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
+  - We need subsequent websockets to pick up where previous ones left off
+
+## Auth Notes
+- Session based authentication: storing cookies them for validation
+- Could add `userRoles` to the session object as well
+- `return@beforematched` and `ctx.skipRemainingHandlers()` important
+- Everything are HTTP only cookies, this is handled between server and browser, JS is completely out of the loop
+- Session, refresh token possible as well
+- Spent almost an hour because cookies aren't saved unless explicitly allowed
+  - Should review the following
+  - https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#including_credentials
+
+### Market Kafka Topics
+  - Market open/close
+  - Order submission requests (trader, position, volume, time)
+  - Order submission results (trader, position, volume, time)
+  - Existing order book updates
+  - Fringe topics
+    - Lifecycle events: traders running out of money or joining market (not instrument specific)
+    - Admin action
+
+### Feedback Log
+
+#### `29c9d78`
 
 The market maker operates like:
 1) Market makers submit limit buy and sell orders at a given spread
@@ -23,13 +106,13 @@ The market maker operates like:
 - This should be fixed with a semaphore that prevents `onQuote`
 
 
-### `edd10ca`
+#### `edd10ca`
 - Last two steps before testing are
   - Large scale order cancelation
   - Refactoring to more rational types (sort inbound/outbound, make the model vs. http model make more sense)
   - WebSocket notification of prices
 
-### `ac5e8f8`
+#### `ac5e8f8`
 - The market order matching logic in getMarketOrderProposal could benefit from better organization
 -  The error handling could be more granular, could add:
   - Validation errors for order parameters
@@ -38,11 +121,11 @@ The market maker operates like:
 - `OrderPartialFilled` not utilised
 - Consider Arrow's `ValidatedNel` class
 
-### `bcedfa7`
+#### `bcedfa7`
 > The authentication flow seems to delete the token immediately after successful authentication...
 > ...This might cause issues if there's any network instability during the WebSocket connection process. Consider adding a grace period or different token lifecycle management.
 
-### `48e627d`
+#### `48e627d`
 - Note: diff evaluated from `32686c8` to `48e627d`
 - Backend
   - Add validation for WebSocket message payloads
@@ -56,20 +139,20 @@ The market maker operates like:
   - Add loading spinner during auth
   - WebSocket reconnection logic
 
-### `32686c8`
+#### `32686c8`
 - Consider sealed class hierarchy for `WebSocketMessage`
 - Configuration file for cookie durations
 - More verbose error messages
 - Consider allowing to authentication retries to the websockets
 - Consider token-bucketed rate limiting rather than the naive approach
 
-### `c03ce94`
+#### `c03ce94`
 - Should handle network errors separately from auth failures (explicit 403 handing in auth)
 - Add session invalidation on logout
 - Implement proper session cleanup for expired sessions
 - The auth feedback mechanism needs completion
 
-### `39c923e`
+#### `39c923e`
 - Consider adding fallback/safety checks for localStorage availability
 - Might want to add error boundaries for cases where localStorage is disabled
 - Auth State
@@ -81,20 +164,20 @@ The market maker operates like:
 - Consider delay between `setAuth`, `redirectOnSuccess`
 - Consider loading state during form submission
 
-### `cd9bc43`
+#### `cd9bc43`
 - ~Add rate-limiting for auth endpoints~
 - Reduce duplicate code in `LogIn` and `SignUp`
 - Consider a `useAuthForm` for shared auth work
 - Consider CSRF protection
 
-### `41afb33`
+#### `41afb33`
 - Database security
   - Hide databse errors (change HTTP error based off of command-line security flag)
   - Harden SQL statements against injection
 - Session management
   - Implement expired session cleanup
 
-### `2996280`
+#### `2996280`
 - ~Change how passwords are handled~
   - ~Send raw password over HTTPS~
   - ~Hash server-side with unique salt: `val hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt())`~
@@ -104,7 +187,7 @@ The market maker operates like:
 - If you were using anything other than SQLite, use a database thread pool
 - Add input validation to DB queries
 
-### `62e5324`
+#### `62e5324`
 - ~Use atomic integer for `usercount`~
 - Change `startServerEventSimulation` to be able to stop thread, use coroutine as welll
 
@@ -129,7 +212,22 @@ private fun startServerEventSimulation() {
   - Websocket lifecycle means that the nesting in the hook is unnecessary
   - Can `if(socket) return;` at top of `useEffect`
 
-## Active Topic Notes
+### Putting the pieces together
+
+- Market order responses are not deserialised
+- ~~Partial fills do not update orders~~
+  - I don't love using the `where` statement
+  - If there are any issues with that side of the code then an order id should be tied to a position
+  - We only need to match orders to their positions: position without an order not issue for initialisation
+- ~~A 'null' result on `(select max(price) from order_records where ticker = 'testTicker' and trade_type = 0 and filled_tick = -1) as bid` is interpreted as zero, must change quote~~
+  - ~~A `-1` price should reflect no bids or asks, should default to shifting the market upwards~~
+  - If both bids, asks exhausted then widen the market
+  - If only one of bid or ask has been exhausted and the market has widened, then the market can be narrowed
+- New rule about the market: positions are coalesced, so if a trader has a two long positions on `myTestTicker` and they buy two more, the position will be updated rather than a new position logged
+  - This will require a unique `unique(user, ticker, position_type)` but this seems like a small price to pay
+  - The advantage to this is that only one row needs to be updated to keep positions updated
+  - Related 'There really only should be _one_ of these \[partial order\] ever run'
+    - This should be true but it doesn't imply that complete orders will zero out a position
 
 ### Table design
 - The columns `user` and `ticker` in the `position` table refer to `email` and `symbol` in the `user` and `ticker` tables
@@ -205,89 +303,3 @@ Writing new websocket messages types has made me realise two things
   - If no positions, can't be a market maker (can't sell what you don't have),
   - This can be manual for now, but later on there should be some endpoint that initialises market makers by ticker
   - This should probably be different than initialisation, as the operation to initialise is by ticker
-
-## Putting the pieces together
-
-- Market order responses are not deserialised
-- ~~Partial fills do not update orders~~
-  - I don't love using the `where` statement
-  - If there are any issues with that side of the code then an order id should be tied to a position
-  - We only need to match orders to their positions: position without an order not issue for initialisation
-- ~~A 'null' result on `(select max(price) from order_records where ticker = 'testTicker' and trade_type = 0 and filled_tick = -1) as bid` is interpreted as zero, must change quote~~
-  - ~~A `-1` price should reflect no bids or asks, should default to shifting the market upwards~~
-  - If both bids, asks exhausted then widen the market
-  - If only one of bid or ask has been exhausted and the market has widened, then the market can be narrowed
-- New rule about the market: positions are coalesced, so if a trader has a two long positions on `myTestTicker` and they buy two more, the position will be updated rather than a new position logged
-  - This will require a unique `unique(user, ticker, position_type)` but this seems like a small price to pay
-  - The advantage to this is that only one row needs to be updated to keep positions updated
-  - Related 'There really only should be _one_ of these \[partial order\] ever run'
-    - This should be true but it doesn't imply that complete orders will zero out a position
-
-
-TODO
-  ~~- Restrict quote to actionable actors~~
-  ~~- Add another actionable sell limit order to test partial order filling in app.sqlite/backup-app.sqlite (good to test actionable orders though)~~
-  - Market gapping logic as described above
-  ~~- Link positions to market orders: selecting a single position during deletes/updates is not working correctly~~
-    - Cannot guarantee position linking at order submission: this would mean that traders posting an order must have the goods at order time, but I want to support orderers only having the goods at clearance time
-  - Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good
-  - The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem
-    - They probably need endpoints to detect this maybe?
-- ~~Negative price on longs validation~~
-- ~~Noise trader position bug~~
-- ~~Negative balance bug: at least the positions/balance invariant is respsected~~
-- ~~Lines 278 and 248: how do these work for sales? Is this the issue?~~
-  - ~~Sales clearly do not work right now~~
-- ~~Fix the `getMarketMakerImpliedQuote` that doesn't do anything~~
-- ~~Allow for starting market maker without quote~~
-- ~~Multi market activity: either spread should match other market makers or should preserve spread and handle accordingly, current state doesn't make sense~~
-- Fix multi-ticker activity
-- Cleaning up sequence timestamps
-  - Consolidate all timestamps into one timestamp on the orderable fields
-  - Change the partial quote name to something less lame
-- Actual spread narrowing by the market maker and noise trader activity
-
-## Previous Topic Notes
-
-### WebSocket Authentication Detail
-- Create an endpoint that returns a short-lived token over JSON for authenticated HTTP contexts
-- If legitimate, invalidate the token and then store it in the WebSocket user store
-- Send short-lived token with initial WebSocket response on `"auth"` messages
-- At `e1fe7dd`, the websocket would only authenticate when logged in for the first time but not when the page was reloaded
-  - In `setupWebsocket`, a `console.log(socket.readyState);`
-
-### New authentication
-- Run top-level auth
-- Change the backend to include when the session will expire
-- Save both in storage and in global state
-- Write async job that logs out when the tu
-- Write function that logs out (state and cookies) if 403s are hit
-
-### Client-side Websockets
-- ~Use socket.io for the client side~: vanilla websockets will work instead
-- There are only a handful of routes that this will be relevant for: I we need to decide which components need websockets before putting this into place?
-- One possibility is storing effectively a singleton in the application state
-  - This would mean creating a WebSocket object in the
-- The state built off of the singleton could be organised on the page level
-  - The types of
-- If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
-  - We need subsequent websockets to pick up where previous ones left off
-
-## Auth Notes
-- Session based authentication: storing cookies them for validation
-- Could add `userRoles` to the session object as well
-- `return@beforematched` and `ctx.skipRemainingHandlers()` important
-- Everything are HTTP only cookies, this is handled between server and browser, JS is completely out of the loop
-- Session, refresh token possible as well
-- Spent almost an hour because cookies aren't saved unless explicitly allowed
-  - Should review the following
-  - https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#including_credentials
-
-## Market Kafka Topics
-  - Market open/close
-  - Order submission requests (trader, position, volume, time)
-  - Order submission results (trader, position, volume, time)
-  - Existing order book updates
-  - Fringe topics
-    - Lifecycle events: traders running out of money or joining market (not instrument specific)
-    - Admin actions: granting shares and funds?
