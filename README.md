@@ -27,13 +27,13 @@ The flow works something like this
 7) The orchestartor should have the power to liquidate nosie traders that it creates
 
 The resulting requirements will be
-1) Budget event notification endpoint: simple at first, just under or over a budget limit
-2) Credit transfer endpoint
-3) Client orchestrator service
-4) Adding an 'orchestrated_by' column in the database
-5) Adding an orchestrated sign-in that ties a given client to an orchestrator
-6) Liquidation endpoint callable by orchestrators
-7) Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out
+- [ ] Budget event notification endpoint: simple at first, just under or over a budget limit
+- [x] Credit transfer endpoint
+- [ ] Client orchestrator service
+- [x] Adding an 'orchestrated_by' column in the database
+- [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
+- [ ] Liquidation endpoint callable by orchestrators
+- [ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out
 
 
 ### To Do

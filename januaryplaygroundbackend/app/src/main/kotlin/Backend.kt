@@ -1,4 +1,5 @@
 import arrow.core.Either
+import arrow.core.getOrElse
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.Javalin
@@ -24,8 +25,8 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
     private val objectMapper = ObjectMapper()
-    private val readWriteSemaphore = Semaphore(1)
-    private val readerLightswitch = Lightswitch(readWriteSemaphore)
+    private val writeSemaphore = Semaphore(1)
+    private val readerLightswitch = Lightswitch(writeSemaphore)
 
     private val javalinApp = Javalin.create { config ->
         config.bundledPlugins.enableCors { cors ->
@@ -64,34 +65,41 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
         this.javalinApp.post("/auth/signup") { ctx -> authService.signUp(ctx) }
         this.javalinApp.post("/auth/login") { ctx -> authService.logIn(ctx) }
-        this.javalinApp.get("/auth/evaluate") { ctx -> authService.evaluateAuth(ctx) }
+        this.javalinApp.get("/auth/evaluate") { ctx -> authService.evaluateAuthHandler(ctx) }
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
+        this.javalinApp.post("/auth/orchestrator/signup") { ctx -> authService.signUpOrchestrated(ctx, writeSemaphore) }
+        this.javalinApp.post("/auth/credit-transfer") { ctx -> authService.transferCredits(ctx, writeSemaphore) }
 
         this.javalinApp.beforeMatched("/exchange") { ctx ->
-            val email = ctx.bodyAsClass<Map<String, Any>>()["email"] ?: ""
-            if (authService.evaluateUserAuth(ctx, email.toString()) == null) {
-                ctx.json(mapOf("message" to "Auth for user $email is invalid"))
+            val maybeAuth = authService.evaluateAuth(ctx)
+            if (maybeAuth.isNone()) {
+                ctx.json(mapOf("message" to "Auth for user " + "'${maybeAuth.getOrElse { "" }}' is invalid"))
                 ctx.status(HttpStatus.UNAUTHORIZED)
             }
         }
 
         this.javalinApp.post("/exchange/quote") { ctx ->
-            val dto = ctx.bodyAsClass<ExchangeRequestDto>();
-            val ticker = dto.ticker
-            if (marketService.validateTicker(ticker)) {
-                val partialQuote = marketService.getStatelessQuoteOutsideLock(ticker, readerLightswitch)
-                if (partialQuote != null) {
-                    val quote = partialQuote.getQuote(System.currentTimeMillis())
-                    ctx.status(HttpStatus.OK)
-                    ctx.json(quote)
-                } else {
-                    ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    ctx.json("message" to "Unknown error with '$ticker'")
-                }
-            } else {
-                ctx.status(HttpStatus.NOT_FOUND)
-                ctx.json("message" to ticker.unknownMessage())
+            //Extra braces below responded in very strange way
+            parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
+                    val ticker = dto.ticker
+                    if (marketService.validateTicker(ticker)) {
+                        val partialQuote = marketService.getStatelessQuoteOutsideLock(ticker, readerLightswitch)
+                        if (partialQuote != null) {
+                            val quote = partialQuote.getQuote(System.currentTimeMillis())
+                            ctx.status(HttpStatus.OK)
+                            ctx.json(quote)
+                        } else {
+                            ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            ctx.json("message" to "Unknown error with '$ticker'")
+                        }
+                    } else {
+                        ctx.status(HttpStatus.NOT_FOUND)
+                        ctx.json("message" to ticker.unknownMessage())
+                    }
+            }.mapLeft {pair ->
+                ctx.status(pair.first)
+                ctx.json(mapOf("message" to pair.second))
             }
         }
 
@@ -137,7 +145,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             //logger.info("Starting state: {}", marketService.getState().toString())
             if (marketService.validateTicker(orderRequest.ticker)) {
                 val initialQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
-                marketService.marketOrderRequest(orderRequest, readWriteSemaphore)
+                marketService.marketOrderRequest(orderRequest, writeSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
@@ -169,7 +177,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             // Use optionals to unnest
             if (marketService.validateTicker(orderRequest.ticker)) {
                 val initialQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
-                marketService.limitOrderRequest(orderRequest, readWriteSemaphore)
+                marketService.limitOrderRequest(orderRequest, writeSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
@@ -197,7 +205,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             // Use optionals to unnest
             if (marketService.validateTicker(cancelRequest.ticker)) {
                 val initialQuote = marketService.getStatelessQuoteInLock(cancelRequest.ticker)
-                marketService.allOrderCancel(cancelRequest, readWriteSemaphore)
+                marketService.allOrderCancel(cancelRequest, writeSemaphore)
                     .onRight { response ->
 
                         when (response) {

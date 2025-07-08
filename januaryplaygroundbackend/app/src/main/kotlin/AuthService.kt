@@ -1,12 +1,22 @@
+import arrow.core.Either
+import arrow.core.Option
+import arrow.core.Some
+import arrow.core.getOrElse
+import arrow.core.none
+import arrow.core.raise.either
+import arrow.core.raise.ensure
+import arrow.core.raise.option
 import com.fasterxml.uuid.Generators
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.*
 import io.javalin.websocket.WsConnectContext
 import io.javalin.websocket.WsContext
+import java.util.concurrent.Semaphore
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
 import java.time.Duration
 import java.time.Instant
+import kotlin.collections.mapOf
 
 // Should break out the queries here into AuthDao
 class AuthService(
@@ -21,107 +31,98 @@ class AuthService(
     private val expireTime = "expireTime"
 
     fun signUp(ctx: Context) {
-        val dto = ctx.bodyAsClass<CredentialsDto>();
-        val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
-        if (emailPresent(dto.email)) {
-            // If the start of this lamda was `return lamda@`, then doing `return@lamda` below after
-            // setting
-            // status and return code would do the exit early stuff
-            throw ForbiddenResponse("Account with email `${dto.email}` already exists")
-        }
+        parseCtxBodyMiddleware<CredentialsDto>(ctx) { dto ->
+            either {
+                val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
+                ensure(!emailPresent(dto.email)) {raise(400 to "Account with email `${dto.email}` already exists") }
 
-        try {
-            db.query { conn ->
-                conn.prepareStatement(
-                    "insert into user (email, password_hash) values (?, ?)"
-                )
-                    .use { stmt ->
-                        stmt.setString(1, dto.email)
-                        stmt.setString(2, passwordHash)
-                        stmt.executeUpdate()
+                Either.catch {
+                    db.query { conn ->
+                        conn.prepareStatement(
+                            "insert into user (email, password_hash) values (?, ?)"
+                        )
+                            .use { stmt ->
+                                stmt.setString(1, dto.email)
+                                stmt.setString(2, passwordHash)
+                                stmt.executeUpdate()
+                            }
                     }
+                }.onLeft { raise(500 to "Internal error") }
+                val session = createSession(dto.email)
+                ctx.cookie(session.first)
+                ctx.status(200)
+                ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
+            }.onLeft { throwable ->
+                ctx.status(500)
+                ctx.json(mapOf("message" to throwable))
             }
-            val session = createSession(dto.email)
-            ctx.cookie(session.first)
-            ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
-            ctx.status(200)
-        } catch (e: Exception) {
-            throw InternalError(exceptionMessage("`signUpHandler` error", e))
         }
     }
+
 
     fun logIn(ctx: Context) {
-        val dto = ctx.bodyAsClass<CredentialsDto>()
-        val passwordHash: String? =
-            db.query { conn ->
-                conn.prepareStatement("select password_hash from user where email = ?").use { stmt
-                    ->
-                    stmt.setString(1, dto.email)
-                    stmt.executeQuery().use { rs ->
-                        if (rs.next()) rs.getString("password_hash") else null
+        parseCtxBodyMiddleware<CredentialsDto>(ctx) {dto ->
+            val maybePasswordHash =
+                db.query { conn ->
+                    conn.prepareStatement("select password_hash from user where email = ?").use { stmt
+                        ->
+                        stmt.setString(1, dto.email)
+                        stmt.executeQuery().use { rs ->
+                            if (rs.next()) Option.fromNullable(rs.getString("password_hash")) else none()
+                        }
                     }
                 }
+
+            maybePasswordHash.filter { passwordHash -> BCrypt.checkpw(dto.password, passwordHash) }.onSome {
+                val session = createSession(dto.email)
+                ctx.cookie(session.first)
+                ctx.status(200)
+                ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
+            }.onNone {
+                ctx.status(404)
+                ctx.json(mapOf("message" to "Email or password not found"))
             }
-
-        if (passwordHash != null && BCrypt.checkpw(dto.password, passwordHash)) {
-            val session = createSession(dto.email)
-            ctx.cookie(session.first)
-            ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
-            ctx.status(200)
-        } else {
-            throw ForbiddenResponse("Email or password not found")
         }
     }
 
-    fun evaluateAuth(ctx: Context) {
-        val token = ctx.cookie(session)
-        val userAuth = if (token != null) evaluateUserAuth(token) else null
-        if (token != null && userAuth != null) {
-            ctx.json(
-                mapOf(
-                    "email" to userAuth.first, "expireTime" to userAuth.second
+    fun evaluateAuthHandler(ctx: Context) {
+        val maybeAuth = evaluateAuth(ctx)
+        when (maybeAuth) {
+            is Some -> {
+                ctx.json(
+                    mapOf(
+                        "email" to maybeAuth.value.first, "expireTime" to maybeAuth.value.second
+                    )
                 )
-            )
-            ctx.status(200)
-        } else {
-            ctx.json(mapOf("message" to "Fail"))
-            ctx.status(403)
-        }
-    }
-    fun evaluateAuthMiddleware(ctx: Context, email: String) {
-        val token = ctx.cookie(session)
-        val userAuth = if (token != null) evaluateUserAuth(token) else null
-        val valid = token != null && userAuth != null && email == userAuth.first
-
-        if (!valid) {
-            ctx.json(mapOf("message" to "Fail"))
-            ctx.status(403)
+                ctx.status(200)
+            }
+            else -> {
+                ctx.json(mapOf("message" to "Fail"))
+                ctx.status(403)
+            }
         }
     }
 
-    // Yet only used by the websockets
     fun temporarySession(ctx: Context) {
-        val token = ctx.cookie(session)
-        val userAuth = if (token != null) evaluateUserAuth(token) else null
-        val dto = ctx.bodyAsClass(TemporarySessionDto::class.java)
-        if (token != null && userAuth != null) {
-            //val websocketSession = createSession(dto.email, Duration.ofMinutes(1)
-            val websocketSession = createSession(dto.email, Duration.ofMinutes(2), false)
-            ctx.json(mapOf("token" to websocketSession.first.value))
-            ctx.status(201)
-        } else {
-            ctx.json(mapOf("message" to "Fail"))
-            ctx.status(403)
+        parseCtxBodyMiddleware<TemporarySessionDto>(ctx) { dto ->
+            val maybeAuth = evaluateAuth(ctx)
+
+            maybeAuth.onSome {
+                val websocketSession = createSession(dto.email, Duration.ofMinutes(2), false)
+                ctx.json(mapOf("token" to websocketSession.first.value))
+                ctx.status(201)
+            }.onNone {
+                ctx.json(mapOf("message" to "Fail"))
+                ctx.status(403)
+            }
         }
     }
 
     fun logOut(ctx: Context) {
         val token = ctx.cookie(session)
-        val userAuth = if (token != null) {
-            evaluateUserAuth(token)
-        } else null
+        val maybeAuth = evaluateAuth(ctx)
 
-        if (token != null && userAuth != null) {
+        if (token != null && maybeAuth.isSome()) {
             when (deleteToken(token)) {
                 true -> {
                     ctx.removeCookie(session); ctx.status(200)
@@ -138,6 +139,87 @@ class AuthService(
         }
     }
 
+    fun signUpOrchestrated(ctx: Context, writeSemaphore: Semaphore) {
+        writeSemaphore.acquire()
+        try {
+            val result = either {
+                val dto = parseCtxBody<OrchestratedCredentialsDto>(ctx).bind()
+                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
+                ensure(isAdmin(auth.first)) { 403 to "Must be admin to create orchestrated user" }
+                ensure(hasAtLeastAsManyCredits(auth.first, dto.initialCreditBalance)) { 403 to "Insufficient Funds" }
+
+                val passwordHash = BCrypt.hashpw(dto.userPassword, BCrypt.gensalt())
+
+                Either.catch {
+                    db.query { conn ->
+                        conn.prepareStatement(
+                            "update user set balance = balance - ? where email = ?"
+                        ).use { stmt ->
+                            stmt.setInt(1, dto.initialCreditBalance)
+                            stmt.setString(2, auth.first)
+                            stmt.executeUpdate()
+                        }
+                        conn.prepareStatement(
+                            "insert into user (email, password_hash, orchestrated_by) values (?, ?, ?)"
+                        ).use { stmt ->
+                            stmt.setString(1, dto.userEmail)
+                            stmt.setString(2, passwordHash)
+                            stmt.setString(3, auth.first)
+                            stmt.executeUpdate()
+                        }
+                    }
+                }.mapLeft { throwable -> 500 to "Internal server error" }.bind()
+                201 to "Update successful"
+            }
+            result.onLeft { error ->
+                ctx.status(error.first)
+                ctx.json("message" to error.second)
+            }.onRight { success -> ctx.status(201) }
+        } finally {
+            writeSemaphore.release()
+        }
+    }
+
+    fun transferCredits(ctx: Context, writeSemaphore: Semaphore) {
+        writeSemaphore.acquire()
+        try {
+            parseCtxBodyMiddleware<CreditTransferDto>(ctx) { dto ->
+                val result = either {
+                    val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
+                    ensure(hasAtLeastAsManyCredits(auth.first, dto.creditAmount)) { 403 to "Insufficient Funds" }
+                    ensure(emailPresent(dto.targetUserEmail)) { 400 to "Target user does not exist" }
+
+                    Either.catch {
+                        db.query { conn ->
+                            conn.prepareStatement(
+                                "update user set balance = balance - ? where email = ?"
+                            ).use { stmt ->
+                                stmt.setInt(1, dto.creditAmount)
+                                stmt.setString(2, auth.first)
+                                stmt.executeUpdate()
+                            }
+                            conn.prepareStatement(
+                                "update user set balance = balance + ? where email = ?"
+                            ).use { stmt ->
+                                stmt.setInt(1, dto.creditAmount)
+                                stmt.setString(2, dto.targetUserEmail)
+                                stmt.executeUpdate()
+                            }
+                        }
+                    }.mapLeft { throwable -> 500 to "Internal server error" }.bind()
+                    201 to "Update successful"
+                }
+
+                result.onLeft { error ->
+                    ctx.status(error.first)
+                    ctx.json("message" to error.second)
+                }.onRight { success -> ctx.status(201) }
+            }
+        } finally {
+            writeSemaphore.release()
+        }
+    }
+
     fun handleWsConnection(ctx: WsConnectContext) {
         logger.info("Incoming connection")
         wsUserMap.set(ctx, WsUserMapRecord(null, null, false, listOf()))
@@ -151,13 +233,12 @@ class AuthService(
         )
     }
 
-
     fun handleWsLifecycleMessage(ctx: WsContext, message: ClientLifecycleMessage) {
         logger.info("Incoming auth request")
         val token = message.token
         val email = message.email
 
-        val userAuth = evaluateUserAuth(token)
+        val userAuth = evaluateAuthFromToken(token)
         if (userAuth == null || userAuth.first != email) {
             ctx.closeSession(WebSocketResponseStatus.UNAUTHORIZED.code, "invalid token")
             return
@@ -210,19 +291,7 @@ class AuthService(
         return edits > 0
     }
 
-    fun tokenValid(token: String): Boolean {
-        val expireTimestamp: Long? =
-            db.query { conn ->
-                conn.prepareStatement("select expire_timestamp from session where token = ?")
-                    .use { stmt ->
-                        stmt.setString(1, token)
-                        stmt.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
-                    }
-            }
-        return expireTimestamp != null && expireTimestamp > Instant.now().toEpochMilli()
-    }
-
-    private fun evaluateUserAuth(token: String): Pair<String, Long>? {
+    private fun evaluateAuthFromToken(token: String): Pair<String, Long>? {
         val pair =
             db.query { conn ->
                 conn.prepareStatement("select email, expire_timestamp from session where token = ?")
@@ -237,28 +306,50 @@ class AuthService(
             pair
         }
     }
-    fun evaluateUserAuth(ctx: Context, email: String): Pair<String, Long>? {
-        val token = ctx.cookie(session)
-        val pair =
-            db.query { conn ->
-                conn.prepareStatement("select email, expire_timestamp from session where token = ? and email = ?")
-                    .use { stmt ->
-                        stmt.setString(1, token)
-                        stmt.setString(2, email)
-                        stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
-                    }
-            }
-        return if (pair == null || pair.second < Instant.now().toEpochMilli()) {
-            null
-        } else {
-            pair
-        }
+
+    fun evaluateAuth(ctx: Context): Option<Pair<String, Long>> {
+        return option {
+            val email = Option.fromNullable(ctx.bodyAsClass<Map<String, Any>>()["email"])
+                .map { it.toString() }.bind()
+            val token = Option.fromNullable(ctx.cookie(session)).bind()
+            val maybePair =
+                db.query { conn ->
+                    conn.prepareStatement("select email, expire_timestamp from session where token = ? and email = ?")
+                        .use { stmt ->
+                            stmt.setString(1, token)
+                            stmt.setString(2, email)
+                            stmt.executeQuery()
+                                .use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
+                        }
+                }
+            Option.fromNullable(maybePair).bind()
+        }.filter { pair -> pair.second >= Instant.now().toEpochMilli() }
     }
 
     private fun emailPresent(email: String): Boolean {
         return db.query { conn ->
             conn.prepareStatement("select email from user where email = ?").use { stmt ->
                 stmt.setString(1, email)
+                stmt.executeQuery().use { rs -> rs.next() }
+            }
+        }
+    }
+
+    private fun isAdmin(email: String): Boolean {
+        return db.query { conn ->
+            conn.prepareStatement("select email from user where email = ? and is_admin = 1").use { stmt ->
+                stmt.setString(1, email)
+                stmt.executeQuery().use { rs -> rs.next() }
+            }
+        }
+    }
+
+    // Assumes already within transaction semaphore!
+    private fun hasAtLeastAsManyCredits(email: String, credits: Int): Boolean {
+        return db.query { conn ->
+            conn.prepareStatement("select email from user where email = ? and balance >= ?").use { stmt ->
+                stmt.setString(1, email)
+                stmt.setInt(2, credits)
                 stmt.executeQuery().use { rs -> rs.next() }
             }
         }

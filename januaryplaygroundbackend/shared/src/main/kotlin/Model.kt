@@ -1,9 +1,31 @@
 package com.iainschmitt.januaryplaygroundbackend.shared
 
+import arrow.core.Either
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonIgnore
+import io.javalin.http.Context
 
 class CredentialsDto(val email: String, val password: String)
+
+class OrchestratedCredentialsDto(val userEmail: String, val userPassword: String, val initialCreditBalance: Int)
+
+class CreditTransferDto(val targetUserEmail: String, val creditAmount: Int)
+
+inline fun <reified T> parseCtxBody(ctx: Context): Either<Pair<Int, String>, T> {
+    return Either.catch { ctx.bodyAsClass(T::class.java) }
+        .mapLeft { 400 to "Bad request: could not deserialize" }
+}
+
+inline fun <reified T> parseCtxBodyMiddleware(
+    ctx: Context,
+    f: (T) -> Unit
+) {
+    parseCtxBody<T>(ctx).onRight { dto -> f(dto) }.onLeft { error ->
+        ctx.status(error.first)
+        ctx.json("message" to error.second)
+    }
+}
+
 typealias Ticker = String
 
 fun Ticker.unknownMessage() = "Unknown ticker '$this'"
@@ -14,6 +36,7 @@ enum class TradeType {
 
     //@JsonAlias("sell")
     SELL;
+
     fun isBuy(): Boolean {
         return this == BUY
     }
@@ -102,6 +125,7 @@ interface Order {
         return tradeType.isBuy()
     }
 }
+
 data class PositionRecord(
     val id: Int,
     val ticker: Ticker,

@@ -14,8 +14,8 @@ class ExchangeService(
 ) {
 
     private val exchangeDao = ExchangeDao(db)
-    fun marketOrderRequest(order: MarketOrderRequest, semaphore: Semaphore): OrderResult<MarketOrderResponse> {
-        semaphore.acquire()
+    fun marketOrderRequest(order: MarketOrderRequest, writeSemaphore: Semaphore): OrderResult<MarketOrderResponse> {
+        writeSemaphore.acquire()
         try {
             return validateOrder(order).map { (validOrder, userBalance) ->
                 val userLongPositionCount =
@@ -30,7 +30,7 @@ class ExchangeService(
                 return fillOrder(validOrder, marketOrderProposal)
             }
         } finally {
-            semaphore.release()
+            writeSemaphore.release()
         }
     }
 
@@ -59,8 +59,8 @@ class ExchangeService(
             }
     }
 
-    fun limitOrderRequest(order: LimitOrderRequest, semaphore: Semaphore): OrderResult<LimitOrderResponse> {
-        semaphore.acquire()
+    fun limitOrderRequest(order: LimitOrderRequest, writeSemaphore: Semaphore): OrderResult<LimitOrderResponse> {
+        writeSemaphore.acquire()
         try {
             return validateOrder(order).map { (validOrder, userBalance) ->
                 val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
@@ -82,7 +82,7 @@ class ExchangeService(
                 }
             }
         } finally {
-            semaphore.release()
+            writeSemaphore.release()
         }
     }
 
@@ -90,7 +90,7 @@ class ExchangeService(
         return exchangeDao.getState();
     }
 
-    // Assumes already within transaction semaphore, probably terrible idea
+    // Assumes already within transaction semaphore!
     private fun immediatelyFilledLimitOrder(
         order: LimitOrderRequest,
         crossingOrders: SortedOrderBook,
@@ -102,7 +102,7 @@ class ExchangeService(
         return fillOrder(order, immediateOrderProposal)
     }
 
-    // Assumes already within transaction semaphore, probably terrible idea
+    // Assumes already within transaction semaphore!
     private fun partiallyFilledLimitOrder(
         order: LimitOrderRequest,
         crossingOrders: SortedOrderBook,
@@ -226,9 +226,9 @@ class ExchangeService(
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun allOrderCancel(
         order: ExchangeRequestDto,
-        semaphore: Semaphore
+        writeSemaphore: Semaphore
     ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> {
-        semaphore.acquire()
+        writeSemaphore.acquire()
         try {
             if (exchangeDao.getTicker(order.ticker) == null) {
                 return Pair(
@@ -251,7 +251,7 @@ class ExchangeService(
             }
 
         } finally {
-            semaphore.release()
+            writeSemaphore.release()
         }
     }
 
