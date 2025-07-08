@@ -180,6 +180,50 @@ class AuthService(
         }
     }
 
+    fun liquidateOrchestratedUser(ctx: Context, writeSemaphore: Semaphore) {
+        writeSemaphore.acquire()
+        try {
+            val result = either {
+                val dto = parseCtxBody<LiquidateOrchestratedUserDto>(ctx).bind()
+                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
+                ensure(isAdmin(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
+                ensure(isOrchestratedBy(dto.targetUserEmail, auth.first )) {
+                    403 to "Target account not orchestrated by user"
+                }
+
+                val targetUserBalance = getBalance(dto.targetUserEmail).getOrElse { 0 }
+
+                Either.catch {
+                    db.query { conn ->
+                        conn.prepareStatement(
+                            "update user set balance = balance - ? where email = ?"
+                        ).use { stmt ->
+                            stmt.setInt(1, targetUserBalance)
+                            stmt.setString(2, dto.targetUserEmail)
+                            stmt.executeUpdate()
+                        }
+                    }
+                    db.query { conn ->
+                        conn.prepareStatement(
+                            "update user set balance = balance + ? where email = ?"
+                        ).use { stmt ->
+                            stmt.setInt(1, targetUserBalance)
+                            stmt.setString(2, auth.first)
+                            stmt.executeUpdate()
+                        }
+                    }
+                }.mapLeft { throwable -> 500 to "Internal server error" }.bind()
+                201 to "Update successful"
+            }
+            result.onLeft { error ->
+                ctx.status(error.first)
+                ctx.json("message" to error.second)
+            }.onRight { success -> ctx.status(201) }
+        } finally {
+            writeSemaphore.release()
+        }
+    }
+
     fun transferCredits(ctx: Context, writeSemaphore: Semaphore) {
         writeSemaphore.acquire()
         try {
@@ -344,6 +388,16 @@ class AuthService(
         }
     }
 
+    private fun isOrchestratedBy(targetUserEmail: String, orchestatorEmail: String): Boolean {
+        return db.query { conn ->
+            conn.prepareStatement("select email from user where email = ? and orchestrated_by = ?").use { stmt ->
+                stmt.setString(1, targetUserEmail)
+                stmt.setString(2, orchestatorEmail)
+                stmt.executeQuery().use { rs -> rs.next() }
+            }
+        }
+    }
+
     // Assumes already within transaction semaphore!
     private fun hasAtLeastAsManyCredits(email: String, credits: Int): Boolean {
         return db.query { conn ->
@@ -351,6 +405,16 @@ class AuthService(
                 stmt.setString(1, email)
                 stmt.setInt(2, credits)
                 stmt.executeQuery().use { rs -> rs.next() }
+            }
+        }
+    }
+
+    // Assumes already within transaction semaphore!
+    private fun getBalance(email: String): Option<Int> {
+        return db.query { conn ->
+            conn.prepareStatement("select balance from user where email = ?").use { stmt ->
+                stmt.setString(1, email)
+                stmt.executeQuery().use { rs -> if (rs.next()) Option.fromNullable(rs.getInt(1)) else none() }
             }
         }
     }

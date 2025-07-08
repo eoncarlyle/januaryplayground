@@ -68,6 +68,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
         this.javalinApp.post("/auth/orchestrator/signup") { ctx -> authService.signUpOrchestrated(ctx, writeSemaphore) }
+        this.javalinApp.post("/auth/orchestrator/liquidate") { ctx -> authService.liquidateOrchestratedUser(ctx, writeSemaphore) }
         this.javalinApp.post("/auth/credit-transfer") { ctx -> authService.transferCredits(ctx, writeSemaphore) }
 
         this.javalinApp.beforeMatched("/exchange") { ctx ->
@@ -75,6 +76,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             if (maybeAuth.isNone()) {
                 ctx.json(mapOf("message" to "Auth for user " + "'${maybeAuth.getOrElse { "" }}' is invalid"))
                 ctx.status(HttpStatus.UNAUTHORIZED)
+                ctx.skipRemainingHandlers()
             }
         }
 

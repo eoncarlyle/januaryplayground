@@ -9,6 +9,8 @@ class CredentialsDto(val email: String, val password: String)
 
 class OrchestratedCredentialsDto(val userEmail: String, val userPassword: String, val initialCreditBalance: Int)
 
+class LiquidateOrchestratedUserDto(val targetUserEmail: String)
+
 class CreditTransferDto(val targetUserEmail: String, val creditAmount: Int)
 
 inline fun <reified T> parseCtxBody(ctx: Context): Either<Pair<Int, String>, T> {

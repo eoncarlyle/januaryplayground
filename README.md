@@ -32,7 +32,7 @@ The resulting requirements will be
 - [ ] Client orchestrator service
 - [x] Adding an 'orchestrated_by' column in the database
 - [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
-- [ ] Liquidation endpoint callable by orchestrators
+- [x] Liquidation endpoint callable by orchestrators
 - [ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out
 
 
