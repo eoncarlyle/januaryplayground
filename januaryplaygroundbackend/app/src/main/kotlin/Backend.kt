@@ -64,7 +64,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
         this.javalinApp.post("/auth/signup") { ctx -> authService.signUp(ctx) }
         this.javalinApp.post("/auth/login") { ctx -> authService.logIn(ctx) }
-        this.javalinApp.get("/auth/evaluate") { ctx -> authService.evaluateAuthHandler(ctx) }
+        this.javalinApp.post("/auth/evaluate") { ctx -> authService.evaluateAuthHandler(ctx) }
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
         this.javalinApp.post("/auth/orchestrator/signup") { ctx -> authService.signUpOrchestrated(ctx, writeSemaphore) }

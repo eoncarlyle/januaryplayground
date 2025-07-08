@@ -1,6 +1,5 @@
 import arrow.core.Either
 import arrow.core.Option
-import arrow.core.Some
 import arrow.core.getOrElse
 import arrow.core.none
 import arrow.core.raise.either
@@ -34,7 +33,7 @@ class AuthService(
         parseCtxBodyMiddleware<CredentialsDto>(ctx) { dto ->
             either {
                 val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
-                ensure(!emailPresent(dto.email)) {raise(400 to "Account with email `${dto.email}` already exists") }
+                ensure(!emailPresent(dto.email)) { raise(400 to "Account with email `${dto.email}` already exists") }
 
                 Either.catch {
                     db.query { conn ->
@@ -61,7 +60,7 @@ class AuthService(
 
 
     fun logIn(ctx: Context) {
-        parseCtxBodyMiddleware<CredentialsDto>(ctx) {dto ->
+        parseCtxBodyMiddleware<CredentialsDto>(ctx) { dto ->
             val maybePasswordHash =
                 db.query { conn ->
                     conn.prepareStatement("select password_hash from user where email = ?").use { stmt
@@ -86,28 +85,22 @@ class AuthService(
     }
 
     fun evaluateAuthHandler(ctx: Context) {
-        val maybeAuth = evaluateAuth(ctx)
-        when (maybeAuth) {
-            is Some -> {
-                ctx.json(
-                    mapOf(
-                        "email" to maybeAuth.value.first, "expireTime" to maybeAuth.value.second
-                    )
+        evaluateAuth(ctx).onSome { it ->
+            ctx.json(
+                mapOf(
+                    "email" to it.first, "expireTime" to it.second
                 )
-                ctx.status(200)
-            }
-            else -> {
-                ctx.json(mapOf("message" to "Fail"))
-                ctx.status(403)
-            }
+            )
+            ctx.status(200)
+        }.onNone {
+            ctx.json(mapOf("message" to "Fail"))
+            ctx.status(403)
         }
     }
 
     fun temporarySession(ctx: Context) {
         parseCtxBodyMiddleware<TemporarySessionDto>(ctx) { dto ->
-            val maybeAuth = evaluateAuth(ctx)
-
-            maybeAuth.onSome {
+            evaluateAuth(ctx).onSome {
                 val websocketSession = createSession(dto.email, Duration.ofMinutes(2), false)
                 ctx.json(mapOf("token" to websocketSession.first.value))
                 ctx.status(201)
@@ -120,19 +113,13 @@ class AuthService(
 
     fun logOut(ctx: Context) {
         val token = ctx.cookie(session)
-        val maybeAuth = evaluateAuth(ctx)
 
-        if (token != null && maybeAuth.isSome()) {
-            when (deleteToken(token)) {
-                true -> {
-                    ctx.removeCookie(session); ctx.status(200)
-                }
-
-                false -> {
-                    ctx.result("Server Error"); ctx.status(500)
-                }
+        if (token != null && evaluateAuth(ctx).isSome()) {
+            if (deleteToken(token)) {
+                ctx.removeCookie(session); ctx.status(201)
+            } else {
+                ctx.result("Server Error"); ctx.status(500)
             }
-
         } else {
             ctx.result("User not logged in")
             ctx.status(403)
@@ -187,7 +174,7 @@ class AuthService(
                 val dto = parseCtxBody<LiquidateOrchestratedUserDto>(ctx).bind()
                 val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
                 ensure(isAdmin(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
-                ensure(isOrchestratedBy(dto.targetUserEmail, auth.first )) {
+                ensure(isOrchestratedBy(dto.targetUserEmail, auth.first)) {
                     403 to "Target account not orchestrated by user"
                 }
 

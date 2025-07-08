@@ -32,6 +32,7 @@ function App() {
         });
       } else {
         const auth = await fetch(`${getBaseUrl()}/auth/evaluate`, {
+          method: "POST",
           credentials: "include",
         });
         try {
