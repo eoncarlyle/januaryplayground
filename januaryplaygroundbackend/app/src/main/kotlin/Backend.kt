@@ -6,6 +6,7 @@ import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.HttpStatus
 import io.javalin.http.util.NaiveRateLimit
+import io.javalin.websocket.WsConfig
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
@@ -60,6 +61,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     }
 
     fun run() {
+        // # Auth HTTP
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
         this.javalinApp.post("/auth/signup") { ctx -> authService.signUp(ctx) }
@@ -71,51 +73,29 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/orchestrator/liquidate") { ctx -> authService.liquidateOrchestratedUser(ctx, writeSemaphore) }
         this.javalinApp.post("/auth/credit-transfer") { ctx -> authService.transferCredits(ctx, writeSemaphore) }
 
+        // # Exchange HTTP
         this.javalinApp.beforeMatched("/exchange") { exchangeAuthEvaluationMiddleware(it) }
 
-        // Querying state
+        // ## Querying state
         this.javalinApp.post("/exchange/quote") { getQuote(it) }
         this.javalinApp.post("/exchange/positions") { getUserLongPositions(it) }
         this.javalinApp.post("/exchange/orders") { getUserOrders(it) }
         this.javalinApp.post("/exchange/balance") { getUserBalance(it) }
 
-        // Modifying state
+        // ## Modifying stat
         this.javalinApp.post("/exchange/orders/market") { marketOrderRequest(it) }
         this.javalinApp.post("/exchange/orders/limit") { limitOrderRequest(it) }
         this.javalinApp.post("/exchange/orders/cancel_all") { allOrderCancel(it) }
 
-        this.javalinApp.ws("/ws") { ws ->
-            ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
-            // The only expected inbound messages are for client authentication
-            ws.onMessage { ctx ->
-                Either.catch { ctx.messageAsClass<ClientLifecycleMessage>() }
-                    .onRight { clientLifecycleMessage ->
-                        authService.handleWsLifecycleMessage(
-                            ctx,
-                            clientLifecycleMessage
-                        )
-                    }
-                    .onLeft {
-                        logger.error("Unable to serialise '{}'", ctx.message())
-                        ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, "Internal server error"))
-                    }
-            }
-            ws.onClose { ctx ->
-                logger.info("Closing WebSocket connection")
-                try {
-                    authService.handleWsClose(ctx, null)
-                } catch (_: IOException) {
-                    logger.warn("Exception-throwing close")
-                }
-            }
-        }
+        // # WebSockets
+        this.javalinApp.ws("/ws") { webSocketConsumer(it) }
 
         this.javalinApp.start(7070)
         heartbeatThread()
         orderQuoteConsumer()
     }
 
-    fun exchangeAuthEvaluationMiddleware(ctx: Context) {
+    private fun exchangeAuthEvaluationMiddleware(ctx: Context) {
         val maybeAuth = authService.evaluateAuth(ctx)
         if (maybeAuth.isNone()) {
             ctx.json(mapOf("message" to "Auth for user " + "'${maybeAuth.getOrElse { "" }}' is invalid"))
@@ -124,7 +104,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun getQuote(ctx: Context) {
+    private fun getQuote(ctx: Context) {
         //Extra braces below responded in very strange way
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
@@ -148,7 +128,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun getUserLongPositions(ctx: Context) {
+    private fun getUserLongPositions(ctx: Context) {
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
             if (marketService.validateTicker(ticker)) {
@@ -161,7 +141,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun getUserOrders(ctx: Context) {
+    private fun getUserOrders(ctx: Context) {
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
             if (marketService.validateTicker(ticker)) {
@@ -174,7 +154,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun getUserBalance(ctx: Context) {
+    private fun getUserBalance(ctx: Context) {
         parseCtxBody<BalanceRequestDto>(ctx).map { dto ->
             val result = marketService.getUserBalance(dto.userEmail, readerLightswitch)
             if (result != null) {
@@ -187,7 +167,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun marketOrderRequest(ctx: Context) {
+    private fun marketOrderRequest(ctx: Context) {
         parseCtxBody<MarketOrderRequest>(ctx).map { orderRequest ->
             logger.info(objectMapper.writeValueAsString(orderRequest))
             //logger.info("Starting state: {}", marketService.getState().toString())
@@ -219,7 +199,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun limitOrderRequest(ctx: Context) {
+    private fun limitOrderRequest(ctx: Context) {
         parseCtxBodyMiddleware<LimitOrderRequest>(ctx) { orderRequest ->
             logger.info(objectMapper.writeValueAsString(orderRequest))
             //logger.info("Starting state: {}", marketService.getState().toString())
@@ -249,7 +229,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
-    fun allOrderCancel(ctx: Context) {
+    private fun allOrderCancel(ctx: Context) {
         parseCtxBodyMiddleware<ExchangeRequestDto>(ctx) { cancelRequest ->
             logger.info("Starting quote: {}", marketService.getState().toString())
             // Use optionals to unnest
@@ -284,6 +264,32 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             } else {
                 ctx.json(mapOf("message" to cancelRequest.ticker.unknownMessage()))
                 ctx.status(HttpStatus.NOT_FOUND)
+            }
+        }
+    }
+
+    private fun webSocketConsumer(ws: WsConfig) {
+        ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
+        // The only expected inbound messages are for client authentication
+        ws.onMessage { ctx ->
+            Either.catch { ctx.messageAsClass<ClientLifecycleMessage>() }
+                .onRight { clientLifecycleMessage ->
+                    authService.handleWsLifecycleMessage(
+                        ctx,
+                        clientLifecycleMessage
+                    )
+                }
+                .onLeft {
+                    logger.error("Unable to serialise '{}'", ctx.message())
+                    ctx.sendAsClass(OutgoingError(WebSocketResponseStatus.ERROR, "Internal server error"))
+                }
+        }
+        ws.onClose { ctx ->
+            logger.info("Closing WebSocket connection")
+            try {
+                authService.handleWsClose(ctx, null)
+            } catch (_: IOException) {
+                logger.warn("Exception-throwing close")
             }
         }
     }
