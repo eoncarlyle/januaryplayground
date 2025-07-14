@@ -330,7 +330,7 @@ class ExchangeService(
         if (maybeRules != null) {
             return maybeRules
         } else {
-            val rules = getNotificationRules()
+            val rules = exchangeDao.getNotificationRules()
             cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
             return rules
         }
