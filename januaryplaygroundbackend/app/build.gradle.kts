@@ -32,6 +32,7 @@ dependencies {
     implementation("org.slf4j:slf4j-simple:2.0.7")
     implementation("io.arrow-kt:arrow-core:2.0.1")
     implementation("io.arrow-kt:arrow-fx-coroutines:2.0.1")
+    implementation("io.github.reactivecircus.cache4k:cache4k:0.14.0")
 }
 
 java {

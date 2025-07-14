@@ -2,6 +2,7 @@ import arrow.core.*
 import arrow.core.raise.either
 import arrow.core.raise.ensure
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import io.github.reactivecircus.cache4k.Cache
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
@@ -12,8 +13,12 @@ class ExchangeService(
     private val wsUserMap: WsUserMap,
     private val logger: Logger,
 ) {
-
     private val exchangeDao = ExchangeDao(db)
+    private val cache = Cache.Builder<String, List<NotificationRule>>()
+        .maximumCacheSize(1)
+        .build()
+    private val NOTIFICATION_RULE_CACHE_KEY = "notifications"
+
     fun marketOrderRequest(order: MarketOrderRequest, writeSemaphore: Semaphore): OrderResult<MarketOrderResponse> {
         writeSemaphore.acquire()
         try {
@@ -312,6 +317,23 @@ class ExchangeService(
         val userBalance = exchangeDao.getUserBalance(order.email)
         ensure(userBalance != null) { Pair(OrderFailureCode.UNKNOWN_USER, "Unknown user attempting to transact") }
         ValidOrderRecord(order, userBalance)
+    }
+
+    fun createNotificationRule(rule: NotificationRule) {
+        exchangeDao.createNotificationRule(rule)
+        val updatedRules = (cache.get(NOTIFICATION_RULE_CACHE_KEY) ?: emptyList()) + rule
+        cache.put(NOTIFICATION_RULE_CACHE_KEY, updatedRules)
+    }
+
+    fun getNotificationRules(): List<NotificationRule> {
+        val maybeRules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
+        if (maybeRules != null) {
+            return maybeRules
+        } else {
+            val rules = getNotificationRules()
+            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
+            return rules
+        }
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {

@@ -1,3 +1,4 @@
+import arrow.core.raise.option
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import java.sql.Connection
 import java.sql.Statement
@@ -212,7 +213,7 @@ class ExchangeDao(
                 }
 
                 conn.prepareStatement(
-                """
+                    """
                     update position_records set size = size - ?
                         where id = (
                             select id from position_records
@@ -355,7 +356,7 @@ class ExchangeDao(
         ticker: Ticker,
     ) {
         conn.prepareStatement(
-        """
+            """
             delete from position_records 
                 where user = ? and ticker = ? and position_type = ? and size = 0;
             """
@@ -533,5 +534,51 @@ class ExchangeDao(
                 }
         }
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
+    }
+
+    fun createNotificationRule(rule: NotificationRule) {
+        val (userEmail, category, operation, dimension) = rule
+
+        db.query { conn ->
+            conn.prepareStatement(
+                """
+                INSERT OR IGNORE INTO notification_rules (user, category, operation, dimension)
+                    values(?, ?, ?, ?)
+                """
+            ).use { stmt ->
+                stmt.setString(1, userEmail)
+                stmt.setInt(2, category.ordinal)
+                stmt.setInt(3, operation.ordinal)
+                stmt.setInt(4, dimension)
+            }
+        }
+    }
+
+    fun getNotificationRules(): List<NotificationRule> {
+        val rules = ArrayList<NotificationRule>()
+        db.query { conn ->
+            conn.prepareStatement("select user, category, operation, dimension from notification_rules").use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val categoryOrdinal = rs.getInt("category")
+                        val operationOrdinal = rs.getInt("operation")
+
+                        option {
+                            val category = getNotificationCategory(categoryOrdinal).bind()
+                            val operation = getNotificationOperation(operationOrdinal).bind()
+                            rules.add(
+                                NotificationRule(
+                                    user = rs.getString("user"),
+                                    category = category,
+                                    operation = operation,
+                                    dimension = rs.getInt("dimension")
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        return rules
     }
 }

@@ -1,5 +1,9 @@
 package com.iainschmitt.januaryplaygroundbackend.shared
 
+import arrow.core.Option
+import arrow.core.some
+import arrow.core.none
+
 data class TickerRecord(
     val ticker: Ticker,
     private val openColumn: Int
@@ -58,5 +62,34 @@ data class Quote(
     fun stronglyEquivalent(other: Quote) = ticker == other.ticker && bid == other.bid && ask == other.ask
 
     fun weaklyEquivalent(other: Quote) = midpoint() == other.midpoint()
+}
+
+enum class NotificationCategory {
+    CREDIT_BALANCE;
+}
+enum class NotificationOperation {
+    LESS_THAN,
+    GREATER_THAN
+}
+
+data class NotificationRule(
+    val user: String,
+    val category: NotificationCategory,
+    val operation: NotificationOperation,
+    val dimension: Int
+)
+fun getNotificationCategory(ordinal: Int): Option<NotificationCategory> {
+    return when (ordinal) {
+        0 -> NotificationCategory.CREDIT_BALANCE.some();
+        else -> none();
+    }
+}
+
+fun getNotificationOperation(ordinal: Int): Option<NotificationOperation> {
+    return when (ordinal) {
+        0 -> NotificationOperation.LESS_THAN.some();
+        1 -> NotificationOperation.GREATER_THAN.some();
+        else -> none();
+    }
 }
 

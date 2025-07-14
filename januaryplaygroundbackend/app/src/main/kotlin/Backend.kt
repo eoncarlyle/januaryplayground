@@ -48,7 +48,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     }
 
     private val authService = AuthService(db, secure, wsUserMap, logger)
-    private val marketService = ExchangeService(db, secure, wsUserMap, logger)
+    private val exchangeService = ExchangeService(db, secure, wsUserMap, logger)
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
@@ -108,8 +108,8 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         //Extra braces below responded in very strange way
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
-            if (marketService.validateTicker(ticker)) {
-                val partialQuote = marketService.getStatelessQuoteOutsideLock(ticker, readerLightswitch)
+            if (exchangeService.validateTicker(ticker)) {
+                val partialQuote = exchangeService.getStatelessQuoteOutsideLock(ticker, readerLightswitch)
                 if (partialQuote != null) {
                     val quote = partialQuote.getQuote(System.currentTimeMillis())
                     ctx.status(HttpStatus.OK)
@@ -131,9 +131,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private fun getUserLongPositions(ctx: Context) {
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
-            if (marketService.validateTicker(ticker)) {
+            if (exchangeService.validateTicker(ticker)) {
                 ctx.status(HttpStatus.OK)
-                ctx.json(marketService.getUserLongPositions(dto.email, dto.ticker, readerLightswitch))
+                ctx.json(exchangeService.getUserLongPositions(dto.email, dto.ticker, readerLightswitch))
             } else {
                 ctx.status(HttpStatus.NOT_FOUND)
                 ctx.json("message" to ticker.unknownMessage())
@@ -144,9 +144,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private fun getUserOrders(ctx: Context) {
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
-            if (marketService.validateTicker(ticker)) {
+            if (exchangeService.validateTicker(ticker)) {
                 ctx.status(HttpStatus.OK)
-                ctx.json(marketService.getUserOrders(dto.email, dto.ticker, readerLightswitch))
+                ctx.json(exchangeService.getUserOrders(dto.email, dto.ticker, readerLightswitch))
             } else {
                 ctx.status(HttpStatus.NOT_FOUND)
                 ctx.json("message" to ticker.unknownMessage())
@@ -156,7 +156,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
 
     private fun getUserBalance(ctx: Context) {
         parseCtxBody<BalanceRequestDto>(ctx).map { dto ->
-            val result = marketService.getUserBalance(dto.userEmail, readerLightswitch)
+            val result = exchangeService.getUserBalance(dto.userEmail, readerLightswitch)
             if (result != null) {
                 ctx.status(HttpStatus.OK)
                 ctx.json(BalanceResponse(result))
@@ -171,9 +171,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         parseCtxBody<MarketOrderRequest>(ctx).map { orderRequest ->
             logger.info(objectMapper.writeValueAsString(orderRequest))
             //logger.info("Starting state: {}", marketService.getState().toString())
-            if (marketService.validateTicker(orderRequest.ticker)) {
-                val initialStatelessQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
-                marketService.marketOrderRequest(orderRequest, writeSemaphore)
+            if (exchangeService.validateTicker(orderRequest.ticker)) {
+                val initialStatelessQuote = exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
+                exchangeService.marketOrderRequest(orderRequest, writeSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
@@ -183,7 +183,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                                 orderRequest,
                                 response,
                                 initialStatelessQuote,
-                                marketService.getStatelessQuoteInLock(orderRequest.ticker)
+                                exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
                             )
                         )
                     }
@@ -204,9 +204,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             logger.info(objectMapper.writeValueAsString(orderRequest))
             //logger.info("Starting state: {}", marketService.getState().toString())
             // Use optionals to unnest
-            if (marketService.validateTicker(orderRequest.ticker)) {
-                val initialStatelessQuote = marketService.getStatelessQuoteInLock(orderRequest.ticker)
-                marketService.limitOrderRequest(orderRequest, writeSemaphore)
+            if (exchangeService.validateTicker(orderRequest.ticker)) {
+                val initialStatelessQuote = exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
+                exchangeService.limitOrderRequest(orderRequest, writeSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
@@ -216,7 +216,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                                 orderRequest,
                                 response,
                                 initialStatelessQuote,
-                                marketService.getStatelessQuoteInLock(orderRequest.ticker)
+                                exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
                             )
                         )
                     }
@@ -231,11 +231,11 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
 
     private fun allOrderCancel(ctx: Context) {
         parseCtxBodyMiddleware<ExchangeRequestDto>(ctx) { cancelRequest ->
-            logger.info("Starting quote: {}", marketService.getState().toString())
+            logger.info("Starting quote: {}", exchangeService.getState().toString())
             // Use optionals to unnest
-            if (marketService.validateTicker(cancelRequest.ticker)) {
-                val initialStatelessQuote = marketService.getStatelessQuoteInLock(cancelRequest.ticker)
-                marketService.allOrderCancel(cancelRequest, writeSemaphore)
+            if (exchangeService.validateTicker(cancelRequest.ticker)) {
+                val initialStatelessQuote = exchangeService.getStatelessQuoteOutsideLock(cancelRequest.ticker, readerLightswitch)
+                exchangeService.allOrderCancel(cancelRequest, writeSemaphore)
                     .onRight { response ->
                         when (response) {
                             is AllOrderCancelResponse.FilledOrdersCancelled ->
@@ -244,13 +244,13 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                             else -> ctx.status(HttpStatus.NO_CONTENT)
                         }
                         ctx.json(response)
-                        logger.info("Final quote: {}", marketService.getState().toString())
+                        logger.info("Final quote: {}", exchangeService.getState().toString())
                         quoteQueue.put(
                             QuoteQueueMessage(
                                 cancelRequest,
                                 response,
                                 initialStatelessQuote,
-                                marketService.getStatelessQuoteInLock(cancelRequest.ticker)
+                                exchangeService.getStatelessQuoteOutsideLock(cancelRequest.ticker, readerLightswitch)
                             )
                         )
                     }
@@ -265,6 +265,13 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 ctx.json(mapOf("message" to cancelRequest.ticker.unknownMessage()))
                 ctx.status(HttpStatus.NOT_FOUND)
             }
+        }
+    }
+
+    private fun createNotificationRule(ctx: Context) {
+        parseCtxBodyMiddleware<NotificationRule>(ctx) { notificationRule ->
+            exchangeService.createNotificationRule(notificationRule)
+            ctx.status(HttpStatus.CREATED)
         }
     }
 
