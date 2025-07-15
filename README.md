@@ -35,6 +35,9 @@ The resulting requirements will be
 - [x] Liquidation endpoint callable by orchestrators
 - [ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out
 
+Subsequent things I could do
+- [ ] Caching quote, positions, orders, balance
+
 
 ### To Do
 - Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good

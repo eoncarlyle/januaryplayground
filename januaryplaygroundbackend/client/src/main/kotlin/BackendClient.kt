@@ -205,7 +205,7 @@ class BackendClient(
         return Either.catch {
             val response = client.post(httpBaseurl) {
                 url {
-                    appendPathSegments("exchange", "orders", "cancel_all")
+                    appendPathSegments("exchange", "orders", "cancel-all")
                 }
                 contentType(ContentType.Application.Json)
                 setBody(exchangeRequestDto)

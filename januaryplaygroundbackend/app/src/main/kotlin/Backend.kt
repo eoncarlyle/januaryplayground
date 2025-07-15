@@ -82,17 +82,20 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/exchange/orders") { getUserOrders(it) }
         this.javalinApp.post("/exchange/balance") { getUserBalance(it) }
 
-        // ## Modifying stat
+        // ## Modifying state
         this.javalinApp.post("/exchange/orders/market") { marketOrderRequest(it) }
         this.javalinApp.post("/exchange/orders/limit") { limitOrderRequest(it) }
-        this.javalinApp.post("/exchange/orders/cancel_all") { allOrderCancel(it) }
+        this.javalinApp.post("/exchange/orders/cancel-all") { allOrderCancel(it) }
+
+        // ## Modifying non-exchange state
+        this.javalinApp.put("/exchange/notification-rule") { createNotificationRule(it) }
 
         // # WebSockets
         this.javalinApp.ws("/ws") { webSocketConsumer(it) }
 
         this.javalinApp.start(7070)
         heartbeatThread()
-        orderQuoteConsumer()
+        websocketUpdateThread()
     }
 
     private fun exchangeAuthEvaluationMiddleware(ctx: Context) {
@@ -275,6 +278,17 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }
     }
 
+    private fun deleteNotificationRule(ctx: Context) {
+        parseCtxBodyMiddleware<NotificationRule>(ctx) { notificationRule ->
+            val deleted = exchangeService.deleteNotificationRule(notificationRule)
+            if (deleted) {
+                ctx.status(HttpStatus.CREATED)
+            } else {
+                ctx.status(HttpStatus.BAD_REQUEST)
+            }
+        }
+    }
+
     private fun webSocketConsumer(ws: WsConfig) {
         ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
         // The only expected inbound messages are for client authentication
@@ -313,35 +327,58 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         }.start()
     }
 
-    private fun orderQuoteConsumer() {
+    private fun websocketUpdateThread() {
         Thread {
             while (true) {
                 val (request, queueableResponse, initialQuote, finalQuote) = quoteQueue.take()
-                logger.info("---------OrderQuoteConsumer---------")
-                logger.info("Incoming Quote: $initialQuote")
-
-                if (initialQuote != null && finalQuote != null) {
-                    if (initialQuote.ticker != finalQuote.ticker) {
-                        logger.warn("Illegal ticker combination, must be fixed by better typing: ${initialQuote.ticker}, ${finalQuote.ticker}")
-                    } else if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
-                        val sentQuote = finalQuote.getQuote(queueableResponse.exchangeSequenceTimestamp)
-                        logger.info("Forcing request: $request")
-                        logger.info("Quote transition: [${sentQuote.exchangeSequenceTimestamp}] $initialQuote -> $finalQuote ")
-                        val liveSockets = wsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) { ctx ->
-                            ctx.send(QuoteMessage(sentQuote))
-                        }
-                        logger.info("Updated $liveSockets clients over websockets with new quote");
-                    }
-                } else {
-                    val serialisedRequest = objectMapper.writeValueAsString(request)
-                    if (initialQuote == null) {
-                        logger.warn("Failure to receive initial quote for $serialisedRequest")
-                    }
-                    if (finalQuote == null) {
-                        logger.warn("Failure to receive final quote for $serialisedRequest")
-                    }
-                }
+                orderQuoteConsumer(initialQuote, finalQuote, queueableResponse, request)
             }
         }.start()
+    }
+
+    private fun orderQuoteConsumer(
+        initialQuote: StatelessQuote?,
+        finalQuote: StatelessQuote?,
+        queueableResponse: Queueable,
+        request: Any
+    ) {
+        logger.info("---------OrderQuoteConsumer---------")
+        logger.info("Incoming Quote: $initialQuote")
+
+        if (initialQuote != null && finalQuote != null) {
+            if (initialQuote.ticker != finalQuote.ticker) {
+                logger.warn("Illegal ticker combination, must be fixed by better typing: ${initialQuote.ticker}, ${finalQuote.ticker}")
+            } else if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
+                val sentQuote = finalQuote.getQuote(queueableResponse.exchangeSequenceTimestamp)
+                logger.info("Forcing request: $request")
+                logger.info("Quote transition: [${sentQuote.exchangeSequenceTimestamp}] $initialQuote -> $finalQuote ")
+                val liveSockets = wsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) { ctx ->
+                    ctx.send(QuoteMessage(sentQuote))
+                }
+                logger.info("Updated $liveSockets clients over websockets with new quote");
+            }
+        } else {
+            val serialisedRequest = objectMapper.writeValueAsString(request)
+            if (initialQuote == null) {
+                logger.warn("Failure to receive initial quote for $serialisedRequest")
+            }
+            if (finalQuote == null) {
+                logger.warn("Failure to receive final quote for $serialisedRequest")
+            }
+        }
+    }
+
+    private fun notificationRuleEventProducer() {
+        val rulesInEffect = exchangeService.getNotificationRules().filter { rule ->
+            // This will need to change if other notification rules supported
+            if (rule.category === NotificationCategory.CREDIT_BALANCE) {
+                val balance = exchangeService.getUserBalance(rule.user, readerLightswitch)
+                    ?: return@filter false // Kotlin syntax note
+                when (rule.operation) {
+                    NotificationOperation.GREATER_THAN -> balance > rule.dimension
+                    NotificationOperation.LESS_THAN -> balance < rule.dimension
+                }
+            } else false
+        }.groupBy { rule -> rule.user }
     }
 }

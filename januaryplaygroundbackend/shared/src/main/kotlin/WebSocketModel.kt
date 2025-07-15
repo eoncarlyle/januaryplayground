@@ -38,6 +38,21 @@ class WsUserMap {
         }
     }
 
+    fun sendNotificationForEachLiveSocketUser(rulesInEffect:  Map<String, List<NotificationRule>>) {
+        synchronized(this) {
+            val aliveSockets = map.keys.filter { it.session.isOpen && map[it]?.authenticated ?: false }
+
+            aliveSockets.forEach() { ctx ->
+                val email = map[ctx]?.email
+                if (email != null && rulesInEffect.containsKey(email)) {
+                    rulesInEffect[email]?.forEach { rule ->
+                        ctx.send(rule)
+                    }
+                }
+            }
+        }
+    }
+
     fun set(ctx: WsContext, record: WsUserMapRecord) {
         synchronized(this) {
             map[ctx] = record

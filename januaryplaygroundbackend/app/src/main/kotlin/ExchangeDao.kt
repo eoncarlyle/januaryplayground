@@ -536,26 +536,8 @@ class ExchangeDao(
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
 
-    fun createNotificationRule(rule: NotificationRule) {
-        val (userEmail, category, operation, dimension) = rule
-
-        db.query { conn ->
-            conn.prepareStatement(
-                """
-                INSERT OR IGNORE INTO notification_rules (user, category, operation, dimension)
-                    values(?, ?, ?, ?)
-                """
-            ).use { stmt ->
-                stmt.setString(1, userEmail)
-                stmt.setInt(2, category.ordinal)
-                stmt.setInt(3, operation.ordinal)
-                stmt.setInt(4, dimension)
-            }
-        }
-    }
-
-    fun getNotificationRules(): List<NotificationRule> {
-        val rules = ArrayList<NotificationRule>()
+    fun getNotificationRules(): MutableSet<NotificationRule> {
+        val rules = HashSet<NotificationRule>()
         db.query { conn ->
             conn.prepareStatement("select user, category, operation, dimension from notification_rules").use { stmt ->
                 stmt.executeQuery().use { rs ->
@@ -581,4 +563,41 @@ class ExchangeDao(
         }
         return rules
     }
+
+    fun createNotificationRule(rule: NotificationRule) {
+        val (userEmail, category, operation, dimension) = rule
+
+        db.query { conn ->
+            conn.prepareStatement(
+                """
+                INSERT OR IGNORE INTO notification_rules (user, category, operation, dimension)
+                    values(?, ?, ?, ?)
+                """
+            ).use { stmt ->
+                stmt.setString(1, userEmail)
+                stmt.setInt(2, category.ordinal)
+                stmt.setInt(3, operation.ordinal)
+                stmt.setInt(4, dimension)
+            }
+        }
+    }
+
+    fun deleteNotificationRule(rule: NotificationRule) {
+        val (userEmail, category, operation, dimension) = rule
+
+        db.query { conn ->
+            conn.prepareStatement(
+        """
+            delete from notification_rules 
+            where user = ? and category = ? and operation = ? and dimension = ?
+            """
+            ).use { stmt ->
+                stmt.setString(1, userEmail)
+                stmt.setInt(2, category.ordinal)
+                stmt.setInt(3, operation.ordinal)
+                stmt.setInt(4, dimension)
+            }
+        }
+    }
+
 }
