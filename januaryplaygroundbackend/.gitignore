@@ -65,3 +65,10 @@ hs_err_pid*
 
 # Kotlin MPP
 kotlin-js-store/
+**/client/client.keystore.jks
+**/client/client.truststore.jks
+**/client/client-cert.pem
+**/client/client-cert-chain.pem
+**/client/client-key.pem
+**/client/keystore.password
+**/client-config.properties
