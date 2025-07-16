@@ -38,7 +38,7 @@ class WsUserMap {
         }
     }
 
-    fun sendNotificationForEachLiveSocketUser(rulesInEffect:  Map<String, List<NotificationRule>>) {
+    fun notifyLiveSocketsInEffect(rulesInEffect:  Map<String, List<NotificationRule>>): Int {
         synchronized(this) {
             val aliveSockets = map.keys.filter { it.session.isOpen && map[it]?.authenticated ?: false }
 
@@ -50,6 +50,8 @@ class WsUserMap {
                     }
                 }
             }
+
+            return aliveSockets.size
         }
     }
 

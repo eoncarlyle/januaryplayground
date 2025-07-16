@@ -332,6 +332,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             while (true) {
                 val (request, queueableResponse, initialQuote, finalQuote) = quoteQueue.take()
                 orderQuoteConsumer(initialQuote, finalQuote, queueableResponse, request)
+                notificationRuleEventProducer()
             }
         }.start()
     }
@@ -369,6 +370,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     }
 
     private fun notificationRuleEventProducer() {
+        logger.info("--------Notification Producer-------")
         val rulesInEffect = exchangeService.getNotificationRules().filter { rule ->
             // This will need to change if other notification rules supported
             if (rule.category === NotificationCategory.CREDIT_BALANCE) {
@@ -380,5 +382,8 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 }
             } else false
         }.groupBy { rule -> rule.user }
+
+        val liveSockets = wsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
+        logger.info("Updated $liveSockets clients over websockets with new quote");
     }
 }
