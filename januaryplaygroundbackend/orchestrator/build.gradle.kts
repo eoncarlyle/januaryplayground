@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm") version "2.0.21"
+    kotlin("plugin.serialization") version "1.9.10"
 }
 
 group = "com.iainschmitt.januaryplaygroundbackend"
@@ -11,7 +12,6 @@ repositories {
 
 dependencies {
     implementation("org.apache.kafka:kafka-clients:3.5.0")
-    implementation(kotlin("reflect"))
     testImplementation(kotlin("test"))
 }
 

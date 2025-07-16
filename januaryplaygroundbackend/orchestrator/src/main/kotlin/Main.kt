@@ -1,35 +1,9 @@
 import kotlin.system.exitProcess
 
-fun b() {
-    val sslConfig: KafkaSSLConfig = PropertiesDeserializer.deserializeFromResource("client-config.properties")
-
-    val producer = AppKafkaProducer(sslConfig)
-
-    Runtime.getRuntime().addShutdownHook(Thread {
-        println("Shutdown signal received, stopping producer...")
-        producer.cleanup()
-    })
-
-    try {
-        while (true) {
-            producer.sendSync("diagnostic", "time", System.currentTimeMillis().toString())
-            producer.flush()
-            Thread.sleep(1000)
-        }
-
-    } catch (e: Exception) {
-        println("Error sending messages: ${e.message}")
-        e.printStackTrace()
-    } finally {
-        producer.cleanup()
-    }
-}
-
 
 fun main() {
-    // Load the configuration
-    val config: KafkaSSLConfig = PropertiesDeserializer.deserializeFromResource("client-config.properties")
-    // Use with Kafka consumer/producer
+    val properties = SimplePropertiesLoader.loadFromResource("application.properties")
+    val config = properties.toKafkaSSLConfig()
 
     val consumer = AppKafkaConsumer(config, "test-consumer-group")
     val processor = SimpleMessageProcessor()
@@ -44,14 +18,13 @@ fun main() {
     })
 
     Thread {
-        b()
+        produceMessages(config)
     }.apply {
         isDaemon = true
         name = "producer-thread"
         start()
     }
 
-    // Consumer thread
     Thread {
         try {
             consumer.startConsuming(listOf("diagnostic")) { record ->
@@ -67,4 +40,26 @@ fun main() {
     }
 
     Thread.currentThread().join()
+}
+
+fun produceMessages(config: KafkaSSLConfig) {
+    val producer = AppKafkaProducer(config)
+
+    Runtime.getRuntime().addShutdownHook(Thread {
+        println("Shutdown signal received, stopping producer...")
+        producer.cleanup()
+    })
+
+    try {
+        while (true) {
+            producer.sendSync("diagnostic", "time", System.currentTimeMillis().toString())
+            producer.flush()
+            Thread.sleep(1000)
+        }
+    } catch (e: Exception) {
+        println("Error sending messages: ${e.message}")
+        e.printStackTrace()
+    } finally {
+        producer.cleanup()
+    }
 }

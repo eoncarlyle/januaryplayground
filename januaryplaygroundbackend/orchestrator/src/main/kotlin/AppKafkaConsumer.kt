@@ -8,7 +8,7 @@ import java.util.*
 import kotlin.system.exitProcess
 
 class AppKafkaConsumer(
-    private val sslConfig: KafkaSSLConfig,
+    sslConfig: KafkaSSLConfig,
     private val groupId: String = "default-consumer-group"
 ) {
     private val consumer: KafkaConsumer<String, String>
@@ -78,13 +78,6 @@ class AppKafkaConsumer(
         } catch (e: Exception) {
             println("Error closing consumer: ${e.message}")
         }
-    }
-}
-
-fun createSimpleLogger(): (ConsumerRecord<String, String>) -> Unit {
-    return { record ->
-        val timestamp = Date(record.timestamp())
-        println("[$timestamp] ${record.topic()}/${record.partition()}:${record.offset()} - ${record.value()}")
     }
 }
 

@@ -1,95 +1,46 @@
-import java.io.FileInputStream
 import java.util.*
-import kotlin.reflect.KClass
-import kotlin.reflect.full.declaredMemberProperties
-import kotlin.reflect.full.findAnnotation
-import kotlin.reflect.jvm.javaType
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class PropertyKey(val key: String)
 
 data class KafkaSSLConfig(
-    @PropertyKey("bootstrap.servers")
     val bootstrapServers: String = "",
-
-    @PropertyKey("security.protocol")
     val securityProtocol: String = "SSL",
-
-    @PropertyKey("ssl.keystore.type")
     val sslKeystoreType: String = "JKS",
-
-    @PropertyKey("ssl.keystore.location")
     val sslKeystoreLocation: String = "",
-
-    @PropertyKey("ssl.keystore.password")
     val sslKeystorePassword: String = "",
-
-    @PropertyKey("ssl.key.password")
     val sslKeyPassword: String = "",
-
-    @PropertyKey("ssl.truststore.type")
     val sslTruststoreType: String = "JKS",
-
-    @PropertyKey("ssl.truststore.location")
     val sslTruststoreLocation: String = "",
-
-    @PropertyKey("ssl.truststore.password")
     val sslTruststorePassword: String = "",
-
-    @PropertyKey("ssl.protocol")
     val sslProtocol: String = "TLSv1.2",
-
-    @PropertyKey("ssl.enabled.protocols")
     val sslEnabledProtocols: String = "TLSv1.2",
-
-    @PropertyKey("ssl.endpoint.identification.algorithm")
     val sslEndpointIdentificationAlgorithm: String = ""
 )
 
-object PropertiesDeserializer {
-    inline fun <reified T : Any> deserializeFromResource(resourcePath: String): T {
-        return deserializeFromResource(T::class, resourcePath)
+object SimplePropertiesLoader {
+    fun loadFromResource(resourcePath: String): Properties {
+        val props = Properties()
+        val classLoader = Thread.currentThread().contextClassLoader ?: ClassLoader.getSystemClassLoader()
+        val stream = classLoader.getResourceAsStream(resourcePath)
+            ?: throw IllegalArgumentException("Resource not found: $resourcePath")
+        props.load(stream)
+        return props
     }
+}
 
-    fun <T : Any> deserialize(clazz: KClass<T>, fileName: String): T {
-        val props = Properties().apply {
-            load(FileInputStream(fileName))
-        }
-        return deserialize(clazz, props)
-    }
-
-    fun <T : Any> deserializeFromResource(clazz: KClass<T>, resourcePath: String): T {
-        val props = Properties().apply {
-            val classLoader = Thread.currentThread().contextClassLoader ?: ClassLoader.getSystemClassLoader()
-            val stream = classLoader.getResourceAsStream(resourcePath)
-                ?: throw IllegalArgumentException("Resource not found: $resourcePath")
-            load(stream)
-        }
-        return deserialize(clazz, props)
-    }
-
-    private fun <T : Any> deserialize(clazz: KClass<T>, props: Properties): T {
-        val constructor = clazz.constructors.first()
-        val args = constructor.parameters.map { param ->
-            val property = clazz.declaredMemberProperties.find { it.name == param.name }
-            val annotation = property?.findAnnotation<PropertyKey>()
-            val key = annotation?.key ?: param.name
-
-            val value = props.getProperty(key)
-
-            when (param.type.javaType) {
-                String::class.java -> value ?: ""
-                Int::class.java -> value?.toIntOrNull() ?: 0
-                Long::class.java -> value?.toLongOrNull() ?: 0L
-                Boolean::class.java -> value?.toBooleanStrictOrNull() ?: false
-                Double::class.java -> value?.toDoubleOrNull() ?: 0.0
-                else -> throw IllegalArgumentException("Unsupported type: ${param.type}")
-            }
-        }.toTypedArray()
-
-        return constructor.call(*args)
-    }
+fun Properties.toKafkaSSLConfig(): KafkaSSLConfig {
+    return KafkaSSLConfig(
+        bootstrapServers = getProperty("bootstrap.servers") ?: "",
+        securityProtocol = getProperty("security.protocol") ?: "SSL",
+        sslKeystoreType = getProperty("ssl.keystore.type") ?: "JKS",
+        sslKeystoreLocation = getProperty("ssl.keystore.location") ?: "",
+        sslKeystorePassword = getProperty("ssl.keystore.password") ?: "",
+        sslKeyPassword = getProperty("ssl.key.password") ?: "",
+        sslTruststoreType = getProperty("ssl.truststore.type") ?: "JKS",
+        sslTruststoreLocation = getProperty("ssl.truststore.location") ?: "",
+        sslTruststorePassword = getProperty("ssl.truststore.password") ?: "",
+        sslProtocol = getProperty("ssl.protocol") ?: "TLSv1.2",
+        sslEnabledProtocols = getProperty("ssl.enabled.protocols") ?: "TLSv1.2",
+        sslEndpointIdentificationAlgorithm = getProperty("ssl.endpoint.identification.algorithm") ?: ""
+    )
 }
 
 fun KafkaSSLConfig.toProperties(): Properties {

@@ -28,7 +28,6 @@ class AppKafkaProducer(
         producer = KafkaProducer(props)
     }
 
-    // Send message synchronously (blocks until complete)
     fun sendSync(topic: String, key: String?, value: String): RecordMetadata {
         val record = ProducerRecord(topic, key, value)
         return try {
@@ -38,49 +37,6 @@ class AppKafkaProducer(
             metadata
         } catch (e: Exception) {
             throw e
-        }
-    }
-
-    // Send message with custom headers
-    fun sendWithHeaders(
-        topic: String,
-        key: String?,
-        value: String,
-        headers: Map<String, String>
-    ): Future<RecordMetadata> {
-        val record = ProducerRecord(topic, key, value)
-
-        // Add headers to the record
-        headers.forEach { (headerKey, headerValue) ->
-            record.headers().add(headerKey, headerValue.toByteArray())
-        }
-
-        return producer.send(record) { metadata, exception ->
-            if (exception != null) {
-                println("Failed to send message with headers: ${exception.message}")
-            } else {
-                println("Message with headers sent successfully:")
-                printSendResult(topic, key, value, metadata)
-                println("   Headers: $headers")
-            }
-        }
-    }
-
-    fun sendWithTimestamp(
-        topic: String,
-        key: String?,
-        value: String,
-        timestamp: Long
-    ): Future<RecordMetadata> {
-        val record = ProducerRecord(topic, null, timestamp, key, value)
-        return producer.send(record) { metadata, exception ->
-            if (exception != null) {
-                println("Failed to send timestamped message: ${exception.message}")
-            } else {
-                println("Timestamped message sent successfully:")
-                printSendResult(topic, key, value, metadata)
-                println("   Custom timestamp: ${Date(timestamp)}")
-            }
         }
     }
 
