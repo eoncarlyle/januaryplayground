@@ -18,6 +18,12 @@ inline fun <reified T> parseCtxBody(ctx: Context): Either<Pair<Int, String>, T> 
         .mapLeft { 400 to "Bad request: could not deserialize" }
 }
 
+enum class AccountType {
+    STANDARD,
+    ORCHESTRATOR,
+    ADMIN
+}
+
 inline fun <reified T> parseCtxBodyMiddleware(
     ctx: Context,
     f: (T) -> Unit

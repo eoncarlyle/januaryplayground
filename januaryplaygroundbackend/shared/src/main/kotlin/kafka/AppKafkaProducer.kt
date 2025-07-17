@@ -1,13 +1,14 @@
+package com.iainschmitt.januaryplaygroundbackend.shared.kafka
+
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.ProducerConfig
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.clients.producer.RecordMetadata
 import org.apache.kafka.common.serialization.StringSerializer
 import java.util.*
-import java.util.concurrent.Future
 
 class AppKafkaProducer(
-    private val sslConfig: KafkaSSLConfig
+    sslConfig: KafkaSSLConfig
 ) {
     private val producer: KafkaProducer<String, String>
 
@@ -53,15 +54,9 @@ class AppKafkaProducer(
 
     fun flush() {
         producer.flush()
-        println("Producer flushed - all pending messages sent")
     }
 
     fun cleanup() {
-        try {
-            producer.close()
-            println("Producer closed gracefully")
-        } catch (e: Exception) {
-            println("Error closing producer: ${e.message}")
-        }
+        producer.close()
     }
 }

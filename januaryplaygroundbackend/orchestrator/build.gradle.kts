@@ -13,6 +13,9 @@ repositories {
 dependencies {
     implementation("org.apache.kafka:kafka-clients:3.5.0")
     testImplementation(kotlin("test"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("io.arrow-kt:arrow-core:2.0.1")
+    implementation(project(":shared"))
 }
 
 tasks.test {

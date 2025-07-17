@@ -30,6 +30,8 @@ The resulting requirements will be
 - [ ] Budget event notification endpoint: simple at first, just under or over a budget limit
 - [x] Credit transfer endpoint
 - [ ] Client orchestrator service
+  - [ ] Backend Kafka producer on transfer
+  - [ ] Client consumer
 - [x] Adding an 'orchestrated_by' column in the database
 - [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
 - [x] Liquidation endpoint callable by orchestrators
@@ -37,6 +39,7 @@ The resulting requirements will be
 
 Subsequent things I could do
 - [ ] Caching quote, positions, orders, balance
+
 
 
 ### To Do
@@ -51,6 +54,13 @@ Subsequent things I could do
 - Observation frontend
 - Client order submission frontend
 
+
+### Reference
+
+Rollback command that I keep forgetting
+```shell
+$ sqlite3 backup-app.sqlite ".backup app.sqlite"
+```
 
 ## Previous Topic Notes
 

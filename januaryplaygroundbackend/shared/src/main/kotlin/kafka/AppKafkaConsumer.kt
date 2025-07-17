@@ -1,3 +1,5 @@
+package com.iainschmitt.januaryplaygroundbackend.shared.kafka
+
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.consumer.ConsumerRecords
@@ -5,7 +7,6 @@ import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.StringDeserializer
 import java.time.Duration
 import java.util.*
-import kotlin.system.exitProcess
 
 class AppKafkaConsumer(
     sslConfig: KafkaSSLConfig,
@@ -80,12 +81,3 @@ class AppKafkaConsumer(
         }
     }
 }
-
-class SimpleMessageProcessor {
-    fun processUserEvent(record: ConsumerRecord<String, String>) {
-        val timestamp = Date(record.timestamp())
-        println("[$timestamp] ${record.topic()}/${record.partition()}:${record.offset()} - ${record.value()}")
-    }
-}
-
-

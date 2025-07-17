@@ -1,4 +1,7 @@
+package com.iainschmitt.januaryplaygroundbackend.shared.kafka
+
 import java.util.*
+import arrow.core.Option
 
 data class KafkaSSLConfig(
     val bootstrapServers: String = "",
@@ -16,13 +19,14 @@ data class KafkaSSLConfig(
 )
 
 object SimplePropertiesLoader {
-    fun loadFromResource(resourcePath: String): Properties {
-        val props = Properties()
+    fun loadFromResource(resourcePath: String): Option<Properties> {
         val classLoader = Thread.currentThread().contextClassLoader ?: ClassLoader.getSystemClassLoader()
-        val stream = classLoader.getResourceAsStream(resourcePath)
-            ?: throw IllegalArgumentException("Resource not found: $resourcePath")
-        props.load(stream)
-        return props
+
+        return Option.fromNullable(classLoader.getResourceAsStream(resourcePath)).map { stream ->
+            val props = Properties()
+            props.load(stream)
+            props
+        }
     }
 }
 

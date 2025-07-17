@@ -237,14 +237,14 @@ class AuthService(
                                 stmt.executeUpdate()
                             }
                         }
-                    }.mapLeft { throwable -> 500 to "Internal server error" }.bind()
+                    }.mapLeft { _ -> 500 to "Internal server error" }.bind()
                     201 to "Update successful"
                 }
 
                 result.onLeft { error ->
                     ctx.status(error.first)
                     ctx.json("message" to error.second)
-                }.onRight { success -> ctx.status(201) }
+                }.onRight { ctx.status(201) }
             }
         } finally {
             writeSemaphore.release()
