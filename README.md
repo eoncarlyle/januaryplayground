@@ -28,14 +28,15 @@ The flow works something like this
 
 The resulting requirements will be
 - [ ] Budget event notification endpoint: simple at first, just under or over a budget limit
+  - [ ] Market maker event notificaiton handling, including dismisal
 - [x] Credit transfer endpoint
 - [ ] Client orchestrator service
-  - [ ] Backend Kafka producer on transfer
-  - [ ] Client consumer
+  - [ ] Backend: emit on transfer to orchestrator
+  - [ ] Orchestrator: consume events
 - [x] Adding an 'orchestrated_by' column in the database
 - [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
 - [x] Liquidation endpoint callable by orchestrators
-- [ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out
+- [ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning
 
 Subsequent things I could do
 - [ ] Caching quote, positions, orders, balance
