@@ -24,6 +24,9 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
     private val wsUserMap = WsUserMap()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
+
+    // This is gross and must be narrowed at some point
+    private val emittedEventQueue = LinkedBlockingQueue<Any>()
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(writeSemaphore)
@@ -70,8 +73,18 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
         this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
         this.javalinApp.post("/auth/orchestrator/signup") { ctx -> authService.signUpOrchestrated(ctx, writeSemaphore) }
-        this.javalinApp.post("/auth/orchestrator/liquidate") { ctx -> authService.liquidateOrchestratedUser(ctx, writeSemaphore) }
-        this.javalinApp.post("/auth/credit-transfer") { ctx -> authService.transferCredits(ctx, writeSemaphore) }
+        this.javalinApp.post("/auth/orchestrator/liquidate") { ctx ->
+            authService.liquidateOrchestratedUser(
+                ctx,
+                writeSemaphore
+            )
+        }
+        this.javalinApp.post("/auth/credit-transfer") { ctx ->
+            authService.transferCredits(
+                ctx,
+                writeSemaphore
+            ) { dto -> emittedEventQueue.put(dto) }
+        }
 
         // # Exchange HTTP
         this.javalinApp.beforeMatched("/exchange") { exchangeAuthEvaluationMiddleware(it) }
@@ -89,6 +102,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
 
         // ## Modifying non-exchange state
         this.javalinApp.put("/exchange/notification-rule") { createNotificationRule(it) }
+        this.javalinApp.delete("/exchange/notification-rule") { deleteNotificationRule(it) }
 
         // # WebSockets
         this.javalinApp.ws("/ws") { webSocketConsumer(it) }
@@ -175,7 +189,8 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             logger.info(objectMapper.writeValueAsString(orderRequest))
             //logger.info("Starting state: {}", marketService.getState().toString())
             if (exchangeService.validateTicker(orderRequest.ticker)) {
-                val initialStatelessQuote = exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
+                val initialStatelessQuote =
+                    exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
                 exchangeService.marketOrderRequest(orderRequest, writeSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
@@ -208,7 +223,8 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             //logger.info("Starting state: {}", marketService.getState().toString())
             // Use optionals to unnest
             if (exchangeService.validateTicker(orderRequest.ticker)) {
-                val initialStatelessQuote = exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
+                val initialStatelessQuote =
+                    exchangeService.getStatelessQuoteOutsideLock(orderRequest.ticker, readerLightswitch)
                 exchangeService.limitOrderRequest(orderRequest, writeSemaphore)
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
@@ -237,7 +253,8 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
             logger.info("Starting quote: {}", exchangeService.getState().toString())
             // Use optionals to unnest
             if (exchangeService.validateTicker(cancelRequest.ticker)) {
-                val initialStatelessQuote = exchangeService.getStatelessQuoteOutsideLock(cancelRequest.ticker, readerLightswitch)
+                val initialStatelessQuote =
+                    exchangeService.getStatelessQuoteOutsideLock(cancelRequest.ticker, readerLightswitch)
                 exchangeService.allOrderCancel(cancelRequest, writeSemaphore)
                     .onRight { response ->
                         when (response) {
@@ -282,7 +299,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         parseCtxBodyMiddleware<NotificationRule>(ctx) { notificationRule ->
             val deleted = exchangeService.deleteNotificationRule(notificationRule)
             if (deleted) {
-                ctx.status(HttpStatus.CREATED)
+                ctx.status(HttpStatus.NO_CONTENT)
             } else {
                 ctx.status(HttpStatus.BAD_REQUEST)
             }
@@ -335,6 +352,15 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
                 notificationRuleEventProducer()
             }
         }.start()
+    }
+
+    private fun kafkaProducerThread() {
+        Thread {
+            while (true) {
+                val notificationRule = emittedEventQueue.take()
+                //TODO event emitting
+            }
+        }
     }
 
     private fun orderQuoteConsumer(

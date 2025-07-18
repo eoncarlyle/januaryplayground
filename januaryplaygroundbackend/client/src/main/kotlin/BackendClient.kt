@@ -17,8 +17,7 @@ import arrow.core.raise.either
 import com.fasterxml.jackson.core.type.TypeReference
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.ktor.client.call.body
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
+import io.ktor.client.request.*
 import io.ktor.http.ContentType
 import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
@@ -27,6 +26,12 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 typealias ClientFailure = Pair<Int, String>
+
+private enum class ClientSupportedMethods {
+    POST,
+    PUT,
+    DELETE;
+}
 
 data class StartingState(
     val quote: Quote,
@@ -110,18 +115,35 @@ class BackendClient(
         return response.status == HttpStatusCode.OK
     }
 
-    private suspend inline fun <reified T, reified R> post(
+    private suspend inline fun <reified T, reified R> postRequest(
         request: T,
         expectedCode: HttpStatusCode,
         vararg components: String
+    ): Either<ClientFailure, R> = sendRequest(ClientSupportedMethods.POST, request, expectedCode, components)
+
+    private suspend inline fun <reified T, reified R> putRequest(
+        request: T,
+        expectedCode: HttpStatusCode,
+        vararg components: String
+    ): Either<ClientFailure, R> = sendRequest(ClientSupportedMethods.PUT, request, expectedCode, components)
+
+    private suspend inline fun <reified T, reified R> deleteRequest(
+        request: T,
+        expectedCode: HttpStatusCode,
+        vararg components: String
+    ): Either<ClientFailure, R> = sendRequest(ClientSupportedMethods.DELETE, request, expectedCode, components)
+
+    private suspend inline fun <reified T, reified R> sendRequest(
+        method: ClientSupportedMethods,
+        request: T,
+        expectedCode: HttpStatusCode,
+        components: Array<out String>
     ): Either<ClientFailure, R> {
         return Either.catch {
-            val response = client.post(httpBaseurl) {
-                url {
-                    appendPathSegments(*components)
-                }
-                contentType(ContentType.Application.Json)
-                setBody(request)
+            val response = when (method) {
+                ClientSupportedMethods.POST -> client.post(httpBaseurl) { configureRequest(request, components) }
+                ClientSupportedMethods.PUT -> client.put(httpBaseurl) { configureRequest(request, components) }
+                ClientSupportedMethods.DELETE -> client.delete(httpBaseurl) { configureRequest(request, components) }
             }
             return when (response.status) {
                 expectedCode -> {
@@ -132,12 +154,15 @@ class BackendClient(
                         return@mapLeft ClientFailure(-1, "Could not deserialise")
                     }
                 }
-
                 else -> ClientFailure(response.status.value, response.body()).left()
             }
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
-
+    private inline fun <reified T> HttpRequestBuilder.configureRequest(request: T, components: Array<out String>) {
+        url { appendPathSegments(*components) }
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }
     suspend fun <T, R> retry(
         argument: T,
         request: suspend (T) -> Either<ClientFailure, R>,
@@ -160,11 +185,16 @@ class BackendClient(
 
 
     suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> {
-        return post<CredentialsDto, Map<String, String>>(credentialsDto, HttpStatusCode.OK, "auth", "signup")
+        return postRequest<CredentialsDto, Map<String, String>>(
+            credentialsDto,
+            HttpStatusCode.OK,
+            "auth",
+            "signup"
+        )
     }
 
     suspend fun getUserLongPositions(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<PositionRecord>> {
-        return post<ExchangeRequestDto, List<PositionRecord>>(
+        return postRequest<ExchangeRequestDto, List<PositionRecord>>(
             exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
@@ -173,15 +203,16 @@ class BackendClient(
     }
 
     suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookEntry>> {
-        return post<ExchangeRequestDto, List<OrderBookEntry>>(
+        return postRequest<ExchangeRequestDto, List<OrderBookEntry>>(
             exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "orders"
         )
     }
+
     suspend fun getUserBalance(userEmail: String): Either<ClientFailure, BalanceResponse> {
-        return post<BalanceRequestDto, BalanceResponse>(
+        return postRequest<BalanceRequestDto, BalanceResponse>(
             BalanceRequestDto(userEmail),
             HttpStatusCode.OK,
             "exchange",
@@ -190,15 +221,55 @@ class BackendClient(
     }
 
     suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> {
-        return post<ExchangeRequestDto, Quote>(exchangeRequestDto, HttpStatusCode.OK, "exchange", "quote")
+        return postRequest<ExchangeRequestDto, Quote>(
+            exchangeRequestDto,
+            HttpStatusCode.OK,
+            "exchange",
+            "quote"
+        )
     }
 
     suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderRequest): Either<ClientFailure, MarketOrderResponse> {
-        return post(marketOrderResponse, HttpStatusCode.Created, "exchange", "orders", "market")
+        return postRequest(
+            marketOrderResponse,
+            HttpStatusCode.Created,
+            "exchange",
+            "orders",
+            "market"
+        )
     }
 
     suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
-        return post(limitOrderRequest, HttpStatusCode.Created, "exchange", "orders", "limit")
+        return postRequest(
+            limitOrderRequest,
+            HttpStatusCode.Created,
+            "exchange",
+            "orders",
+            "limit"
+        )
+    }
+
+    // Not totally sure if the string deserialisaiton will work
+    suspend fun postCreditTransfer(creditTransferDto: CreditTransferDto): Either<ClientFailure, String> {
+        return postRequest(creditTransferDto, HttpStatusCode.Created, "auth", "credit-transfer")
+    }
+
+    suspend fun putNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> {
+        return putRequest(
+            notificationRule,
+            HttpStatusCode.Created,
+            "exchange",
+            "notification-rule"
+        )
+    }
+
+    suspend fun deleteNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> {
+        return deleteRequest(
+            notificationRule,
+            HttpStatusCode.Created,
+            "exchange",
+            "notification-rule"
+        )
     }
 
     suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
@@ -210,7 +281,6 @@ class BackendClient(
                 contentType(ContentType.Application.Json)
                 setBody(exchangeRequestDto)
             }
-            val rawBody = response.body() as String
             return when (response.status) {
                 HttpStatusCode.Accepted -> {
                     Either.catch {
@@ -229,10 +299,12 @@ class BackendClient(
                         return@mapLeft ClientFailure(-1, "Could not deserialise")
                     }
                 }
+
                 else -> Left(ClientFailure(response.status.value, response.body<String>()))
             }
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
+
 
     suspend fun getStartingState(
         exchangeRequestDto: ExchangeRequestDto
@@ -253,6 +325,7 @@ class BackendClient(
         backoffFactor: Double = 2.0,
         onOpen: () -> Unit = {},
         onQuote: suspend (Quote) -> Unit = {},
+        onNotification: suspend (NotificationRule) -> Unit = {},
         onClose: (Int, String?) -> Unit = { _, _ -> },
         onError: (Throwable) -> Unit = {}
     ) = coroutineScope {
@@ -262,7 +335,7 @@ class BackendClient(
         while (isActive) {
             try {
                 temporarySession(email).onRight { temporaryToken ->
-                    authenticateListener(temporaryToken, email, tickers, onOpen, onQuote, onError)
+                    authenticateListener(temporaryToken, email, tickers, onOpen, onQuote, onNotification, onError)
                 }
                 return@coroutineScope
             } catch (e: Exception) {
@@ -283,6 +356,7 @@ class BackendClient(
         tickers: List<Ticker>,
         onOpen: () -> Unit,
         onQuote: suspend (Quote) -> Unit,
+        onNotification: suspend (NotificationRule) -> Unit,
         onError: (Throwable) -> Unit
     ) {
         client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = port) {
@@ -301,7 +375,7 @@ class BackendClient(
                 )
             )
 
-            websocketListener(onQuote, onError)
+            websocketListener(onQuote, onNotification, onError)
 
             while (isActive) {
                 delay(5000.milliseconds)
@@ -317,7 +391,8 @@ class BackendClient(
 
     private fun DefaultClientWebSocketSession.websocketListener(
         onQuote: suspend (Quote) -> Unit,
-        onError: (Throwable) -> Unit
+        onNotification: suspend (NotificationRule) -> Unit,
+        onError: (Throwable) -> Unit,
     ) {
         launch {
             try {
@@ -333,11 +408,13 @@ class BackendClient(
                                     is ServerLifecycleMessage -> logger.info(
                                         objectMapper.writeValueAsString(message)
                                     )
+
                                     is QuoteMessage -> onQuote(message.quote)
                                     is ServerTimeMessage -> logger.debug(
                                         objectMapper.writeValueAsString(message)
                                     )
 
+                                    is NotificationMessage -> onNotification(message.notificationRule)
                                     else -> {
                                         logger.warn(
                                             "Client received something unexpected ${

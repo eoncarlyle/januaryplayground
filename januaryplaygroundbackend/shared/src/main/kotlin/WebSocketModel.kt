@@ -90,6 +90,7 @@ enum class WebSocketLifecycleOperation {
     JsonSubTypes.Type(value = ServerLifecycleMessage::class, name = "serverLifecycle"),
     JsonSubTypes.Type(value = QuoteMessage::class, name = "outgoingQuote"),
     JsonSubTypes.Type(value = ServerTimeMessage::class, name = "outgoingServerTime"),
+    JsonSubTypes.Type(value = NotificationMessage::class, name = "outgoingNotification")
 )
 interface WebSocketMessage {
     val type: String // Needed for deserialisation
@@ -139,4 +140,10 @@ data class QuoteMessage(
     val quote: Quote
 ) : WebSocketMessage {
     override val type: String = "outgoingQuote"
+}
+
+data class NotificationMessage(
+    val notificationRule: NotificationRule
+) : WebSocketMessage {
+    override val type: String = "outgoingNotification"
 }

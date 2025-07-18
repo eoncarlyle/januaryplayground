@@ -10,6 +10,7 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.log
 
 class MarketMaker(
     private val email: String,
@@ -27,6 +28,15 @@ class MarketMaker(
     private val marketSize = 3
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
 
+    private val orchestratorEmail = "orchestrator@iainschmitt.com"
+    private val orchestratorTransferAmount = 150
+    private val orchestratorCreditSendRule = NotificationRule(
+        orchestratorEmail,
+        NotificationCategory.CREDIT_BALANCE,
+        NotificationOperation.GREATER_THAN,
+        700
+    )
+
     private val backendClient = BackendClient(logger)
 
     fun main(): Unit = runBlocking {
@@ -43,7 +53,8 @@ class MarketMaker(
                             email = email,
                             tickers = listOf(ticker),
                             onOpen = { logger.info("WebSocket connection opened") },
-                            onQuote = { quote -> onQuote(quote) },
+                            onQuote = { onQuote(it) },
+                            onNotification = { onNotification(it) },
                             onClose = { code, reason -> logger.error("Connection closed: $code, $reason") }
                         )
                     }
@@ -98,6 +109,16 @@ class MarketMaker(
                 )
             }
         }
+    }
+
+    private suspend fun onNotification(notificationRule: NotificationRule) {
+        either {
+            if (notificationRule != orchestratorCreditSendRule) raise(ClientFailure(-1, "Invalid notification rule: $notificationRule"))
+            backendClient.deleteNotificationRule(notificationRule).bind()
+            backendClient.postCreditTransfer(CreditTransferDto(orchestratorEmail, orchestratorTransferAmount)).bind()
+            backendClient.putNotificationRule(notificationRule).bind()
+            logger.info("Credit exceed notification and transfer to $orchestratorEmail")
+        }.mapLeft { error -> logger.error(error.toString()) }
     }
 
     private suspend fun cancelAndResubmit(incomingQuote: Quote, cancelErrorMsg: String, submitErrorMsg: String) =
@@ -209,6 +230,7 @@ class MarketMaker(
                         backendClient.postAllOrderCancel(exchangeRequestDto).bind()
                         val secondQuote = calculateNextQuote(firstQuote, true).bind()
                         initialLimitOrderSubmission(secondQuote).bind()
+                        backendClient.putNotificationRule(orchestratorCreditSendRule).bind()
                         secondQuote
                     }.mapLeft { failure ->
                         logger.error("Client failure: ${failure.first}/${failure.second}")

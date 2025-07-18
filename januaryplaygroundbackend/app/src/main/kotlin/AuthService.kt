@@ -211,7 +211,7 @@ class AuthService(
         }
     }
 
-    fun transferCredits(ctx: Context, writeSemaphore: Semaphore) {
+    fun transferCredits(ctx: Context, writeSemaphore: Semaphore, onSuccess: (CreditTransferDto) -> Unit) {
         writeSemaphore.acquire()
         try {
             parseCtxBodyMiddleware<CreditTransferDto>(ctx) { dto ->
@@ -239,6 +239,7 @@ class AuthService(
                         }
                     }.mapLeft { _ -> 500 to "Internal server error" }.bind()
                     201 to "Update successful"
+                    onSuccess(dto)
                 }
 
                 result.onLeft { error ->
@@ -375,11 +376,11 @@ class AuthService(
         }
     }
 
-    private fun isOrchestratedBy(targetUserEmail: String, orchestatorEmail: String): Boolean {
+    private fun isOrchestratedBy(targetUserEmail: String, orchestratorEmail: String): Boolean {
         return db.query { conn ->
             conn.prepareStatement("select email from user where email = ? and orchestrated_by = ?").use { stmt ->
                 stmt.setString(1, targetUserEmail)
-                stmt.setString(2, orchestatorEmail)
+                stmt.setString(2, orchestratorEmail)
                 stmt.executeQuery().use { rs -> rs.next() }
             }
         }
