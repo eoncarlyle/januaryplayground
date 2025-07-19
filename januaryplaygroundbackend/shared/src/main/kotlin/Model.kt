@@ -4,6 +4,7 @@ import arrow.core.Either
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonIgnore
 import io.javalin.http.Context
+import kotlinx.serialization.Serializable
 
 class CredentialsDto(val email: String, val password: String)
 
@@ -11,6 +12,8 @@ class OrchestratedCredentialsDto(val userEmail: String, val userPassword: String
 
 class LiquidateOrchestratedUserDto(val targetUserEmail: String)
 
+
+@Serializable
 class CreditTransferDto(val targetUserEmail: String, val creditAmount: Int)
 
 inline fun <reified T> parseCtxBody(ctx: Context): Either<Pair<Int, String>, T> {

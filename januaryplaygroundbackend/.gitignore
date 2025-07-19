@@ -72,3 +72,4 @@ kotlin-js-store/
 **/client/client-key.pem
 **/client/keystore.password
 **/client-config.properties
+**/application.properties

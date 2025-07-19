@@ -7,7 +7,7 @@
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
-
+    kotlin("plugin.serialization") version "1.9.0"
     application
 }
 
@@ -33,6 +33,7 @@ dependencies {
     implementation("io.arrow-kt:arrow-core:2.0.1")
     implementation("io.arrow-kt:arrow-fx-coroutines:2.0.1")
     implementation("io.github.reactivecircus.cache4k:cache4k:0.14.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 }
 
 java {

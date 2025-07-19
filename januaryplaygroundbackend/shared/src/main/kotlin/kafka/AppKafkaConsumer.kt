@@ -1,5 +1,10 @@
 package com.iainschmitt.januaryplaygroundbackend.shared.kafka
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.consumer.ConsumerRecords
@@ -8,6 +13,14 @@ import org.apache.kafka.common.serialization.StringDeserializer
 import java.time.Duration
 import java.util.*
 
+inline fun <reified T> String.deserializeEither(): Either<String, T> =
+    try {
+        Json.decodeFromString<T>(this).right()
+    } catch (e: SerializationException) {
+        (e.message ?: "Unknown serialization error").left()
+    } catch (e: Exception) {
+        (e.message ?: "Unknown error").left()
+    }
 class AppKafkaConsumer(
     sslConfig: KafkaSSLConfig,
     private val groupId: String = "default-consumer-group"
@@ -43,41 +56,18 @@ class AppKafkaConsumer(
                 for (record in records) {
                     try {
                         messageProcessor(record)
-                        printMessageDetails(record)
                     } catch (e: Exception) {
-                        println("Error processing message: ${e.message}")
-                        println("   Topic: ${record.topic()}, Partition: ${record.partition()}, Offset: ${record.offset()}")
+                        throw e
+                    } finally {
+                        consumer.close()
                     }
                 }
-
                 consumer.commitSync()
-                println("Committed offsets")
             }
         } catch (e: Exception) {
-            println("Consumer error: ${e.message}")
-            e.printStackTrace()
+            throw(e)
         } finally {
-            cleanup()
-        }
-    }
-
-    private fun printMessageDetails(record: ConsumerRecord<String, String>) {
-        println("┌─────────────────────────────────────────────")
-        println("│ Topic: ${record.topic()}")
-        println("│ Partition: ${record.partition()}")
-        println("│ Offset: ${record.offset()}")
-        println("│ Timestamp: ${Date(record.timestamp())}")
-        println("│ Key: ${record.key() ?: "null"}")
-        println("│ Value: ${record.value()}")
-        println("└─────────────────────────────────────────────")
-    }
-
-    fun cleanup() {
-        try {
             consumer.close()
-            println("Consumer closed gracefully")
-        } catch (e: Exception) {
-            println("Error closing consumer: ${e.message}")
         }
     }
 }

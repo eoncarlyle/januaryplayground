@@ -1,17 +1,40 @@
+import arrow.core.Either
+import arrow.core.Some
+import arrow.core.constant
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.SimplePropertiesLoader
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.toKafkaSSLConfig
+import kotlin.system.exitProcess
+
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        throw IllegalArgumentException("Empty args")
+        println("Empty args")
+        exitProcess(1)
     }
+
     val db = DatabaseHelper(args[0])
 
     val secure =
         when (args[1]) {
             "insecure" -> false
             "secure" -> true
-            else -> throw IllegalArgumentException("Invalid `cookieSecure`")
+            else -> {
+                println("Invalid `cookieSecure`")
+                exitProcess(1)
+            }
         }
 
-    val app = Backend(db, secure)
+    val maybeConfig = SimplePropertiesLoader.loadFromResource("application.properties")
+
+    val config =
+        when (maybeConfig) {
+            is Some -> maybeConfig.value.toKafkaSSLConfig()
+            else -> {
+                println("Kafk configuration must be provided")
+                exitProcess(1)
+            }
+        }
+
+    val app = Backend(db, config, secure)
     app.run()
 }
 

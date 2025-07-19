@@ -5,7 +5,6 @@ import org.apache.kafka.clients.producer.ProducerConfig
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.clients.producer.RecordMetadata
 import org.apache.kafka.common.serialization.StringSerializer
-import java.util.*
 
 class AppKafkaProducer(
     sslConfig: KafkaSSLConfig
@@ -32,31 +31,11 @@ class AppKafkaProducer(
     fun sendSync(topic: String, key: String?, value: String): RecordMetadata {
         val record = ProducerRecord(topic, key, value)
         return try {
-            val metadata = producer.send(record).get()
-            println("Message sent successfully:")
-            printSendResult(topic, key, value, metadata)
-            metadata
+            producer.send(record).get()
         } catch (e: Exception) {
             throw e
+        } finally {
+            producer.close()
         }
-    }
-
-    private fun printSendResult(topic: String, key: String?, value: String, metadata: RecordMetadata) {
-        println("┌─────────────────────────────────────────────")
-        println("│ Topic: ${metadata.topic()}")
-        println("│ Partition: ${metadata.partition()}")
-        println("│ Offset: ${metadata.offset()}")
-        println("│ Timestamp: ${Date(metadata.timestamp())}")
-        println("│ Key: ${key ?: "null"}")
-        println("│ Value: ${value.take(100)}${if (value.length > 100) "..." else ""}")
-        println("└─────────────────────────────────────────────")
-    }
-
-    fun flush() {
-        producer.flush()
-    }
-
-    fun cleanup() {
-        producer.close()
     }
 }

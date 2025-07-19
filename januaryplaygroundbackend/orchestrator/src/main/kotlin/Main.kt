@@ -4,7 +4,6 @@ import kotlinx.coroutines.*
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import java.util.*
 import kotlin.system.exitProcess
-import kotlin.time.Duration.Companion.microseconds
 import kotlin.time.Duration.Companion.seconds
 
 class SimpleMessageProcessor {
@@ -20,43 +19,14 @@ suspend fun main() {
         val config = properties.toKafkaSSLConfig()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-        val producerJob = scope.launch {
-            produceMessages(config)
-        }
+        val orchestrator = Orchestrator(config)
+
         val consumerJob = scope.launch {
-            consumeMessages(config)
+            orchestrator.main()
         }
-        joinAll(producerJob, consumerJob)
-    }.onNone { exitProcess(1) }
-}
-
-fun consumeMessages(config: KafkaSSLConfig) {
-    val consumer = AppKafkaConsumer(config, "test-consumer-group")
-    val processor = SimpleMessageProcessor()
-
-    try {
-        consumer.startConsuming(listOf("diagnostic")) { record ->
-            processor.processUserEvent(record)
-        }
-    } catch (e: Exception) {
-        println("Consumer error: ${e.message}")
-    } finally {
-        consumer.cleanup()
-    }
-}
-
-suspend fun produceMessages(config: KafkaSSLConfig) {
-    val producer = AppKafkaProducer(config)
-
-    try {
-        while (true) {
-            producer.sendSync("diagnostic", "time", System.currentTimeMillis().toString())
-            producer.flush()
-        }
-    } catch (e: Exception) {
-        println("Error sending messages: ${e.message}")
-        e.printStackTrace()
-    } finally {
-        producer.cleanup()
+        joinAll(consumerJob)
+    }.onNone {
+         println("Error: no Kafka properties specified")
+        exitProcess(1)
     }
 }

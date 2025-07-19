@@ -27,16 +27,21 @@ The flow works something like this
 7) The orchestartor should have the power to liquidate nosie traders that it creates
 
 The resulting requirements will be
-- [ ] Budget event notification endpoint: simple at first, just under or over a budget limit
-  - [ ] Market maker event notificaiton handling, including dismisal
+- [x] Budget event notification endpoint: simple at first, just under or over a budget limit
+  - [x] Market maker event notificaiton handling, including dismisal
 - [x] Credit transfer endpoint
-- [ ] Client orchestrator service
-  - [ ] Backend: emit on transfer to orchestrator
-  - [ ] Orchestrator: consume events
+- [x] Client orchestrator service
+  - [x] Backend: emit on transfer to orchestrator
+  - [x] Orchestrator
+    - [x] Consume events
+    - [ ] Liquidate all orchestrated accounts on startup
+    - [ ] Sign up noise trader, start noise trader
+    - [ ] Liquidate when NoiseTrader `main` returns
+    - [ ] Provide callback to remove the noise trader from the set of known live `OrchestratedNoiseTraders`
 - [x] Adding an 'orchestrated_by' column in the database
 - [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
 - [x] Liquidation endpoint callable by orchestrators
-- [ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning
+- ~[ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning~
 
 Subsequent things I could do
 - [ ] Caching quote, positions, orders, balance
@@ -61,6 +66,20 @@ Subsequent things I could do
 Rollback command that I keep forgetting
 ```shell
 $ sqlite3 backup-app.sqlite ".backup app.sqlite"
+```
+
+If needed, Kafka consumer deserialisation, where the value of `type` is the descriminator value
+```kotlin
+@Serializable
+sealed class Event {
+    @Serializable
+    @SerialName("my_first_descriminator_value")
+    data class FirstSubclass(val a: String, val b: Boolean) : Event()
+
+    @Serializable
+    @SerialName("my_second_descriminator_value")
+    data class SecondSubclass(val a: String, val b: Boolean) : Event()
+}
 ```
 
 ## Previous Topic Notes

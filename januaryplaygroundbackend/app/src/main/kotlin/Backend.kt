@@ -2,6 +2,8 @@ import arrow.core.Either
 import arrow.core.getOrElse
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaProducer
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.KafkaSSLConfig
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.HttpStatus
@@ -12,6 +14,8 @@ import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
 
 private data class QuoteQueueMessage<T : Queueable>(
     val request: Any,
@@ -20,16 +24,17 @@ private data class QuoteQueueMessage<T : Queueable>(
     val finalStatelessQuote: StatelessQuote?
 )
 
-class Backend(db: DatabaseHelper, secure: Boolean) {
+class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) {
     private val wsUserMap = WsUserMap()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
 
     // This is gross and must be narrowed at some point
-    private val emittedEventQueue = LinkedBlockingQueue<Any>()
+    private val emittedEventQueue = LinkedBlockingQueue<CreditTransferDto>()
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(writeSemaphore)
+    private val producer = AppKafkaProducer(kafkaConfig)
 
     private val javalinApp = Javalin.create { config ->
         config.bundledPlugins.enableCors { cors ->
@@ -110,6 +115,7 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         this.javalinApp.start(7070)
         heartbeatThread()
         websocketUpdateThread()
+        kafkaProducerThread()
     }
 
     private fun exchangeAuthEvaluationMiddleware(ctx: Context) {
@@ -358,7 +364,12 @@ class Backend(db: DatabaseHelper, secure: Boolean) {
         Thread {
             while (true) {
                 val notificationRule = emittedEventQueue.take()
-                //TODO event emitting
+                try {
+                    producer.sendSync("orchestrator", "default", Json.encodeToString(notificationRule))
+                } catch (e: Exception) {
+                    logger.error(e.stackTrace.toString())
+                    throw e
+                }
             }
         }
     }
