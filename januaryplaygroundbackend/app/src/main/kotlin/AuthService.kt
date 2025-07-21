@@ -167,7 +167,7 @@ class AuthService(
         }
     }
 
-    fun liquidateOrchestratedUser(ctx: Context, writeSemaphore: Semaphore) {
+    fun liquidateSingleOrchestratedUser(ctx: Context, writeSemaphore: Semaphore) {
         writeSemaphore.acquire()
         try {
             val result = either {
@@ -180,26 +180,7 @@ class AuthService(
 
                 val targetUserBalance = getBalance(dto.targetUserEmail).getOrElse { 0 }
 
-                Either.catch {
-                    db.query { conn ->
-                        conn.prepareStatement(
-                            "update user set balance = balance - ? where email = ?"
-                        ).use { stmt ->
-                            stmt.setInt(1, targetUserBalance)
-                            stmt.setString(2, dto.targetUserEmail)
-                            stmt.executeUpdate()
-                        }
-                    }
-                    db.query { conn ->
-                        conn.prepareStatement(
-                            "update user set balance = balance + ? where email = ?"
-                        ).use { stmt ->
-                            stmt.setInt(1, targetUserBalance)
-                            stmt.setString(2, auth.first)
-                            stmt.executeUpdate()
-                        }
-                    }
-                }.mapLeft { throwable -> 500 to "Internal server error" }.bind()
+                liquidateSingleOrchestratedUser(targetUserBalance, dto, auth).bind()
                 201 to "Update successful"
             }
             result.onLeft { error ->
@@ -209,6 +190,93 @@ class AuthService(
         } finally {
             writeSemaphore.release()
         }
+    }
+
+    private fun liquidateSingleOrchestratedUser(
+        targetUserBalance: Int,
+        dto: LiquidateOrchestratedUserDto,
+        auth: Pair<String, Long>
+    ): Either<Pair<Int, String>, Int> {
+        return Either.catch {
+            db.query { conn ->
+                conn.prepareStatement(
+                    "update user set balance = balance - ? where email = ?"
+                ).use { stmt ->
+                    stmt.setInt(1, targetUserBalance)
+                    stmt.setString(2, dto.targetUserEmail)
+                    stmt.executeUpdate()
+                }
+            }
+            db.query { conn ->
+                conn.prepareStatement(
+                    "update user set balance = balance + ? where email = ?"
+                ).use { stmt ->
+                    stmt.setInt(1, targetUserBalance)
+                    stmt.setString(2, auth.first)
+                    stmt.executeUpdate()
+                }
+            }
+        }.mapLeft { 500 to "Internal server error" }
+    }
+
+    fun liquidateAllOrchestratedUsers(ctx: Context, writeSemaphore: Semaphore) {
+        writeSemaphore.acquire()
+        try {
+            either {
+                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
+                ensure(isAdmin(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
+
+                val orchestratedUsers = getOrchestratedUsers(auth.first).bind()
+                if (orchestratedUsers.isNotEmpty()) {
+                    // Should probably return something different if no results but leaving this for now
+                    Either.catch {
+                        val totalBalance = orchestratedUsers.sumOf { it.second }
+
+                        db.query { conn ->
+                            conn.prepareStatement("update user set balance = 0 where orchestrated_by = ?").use { stmt ->
+                                stmt.setString(1, auth.first)
+                                stmt.executeUpdate()
+                            }
+                        }
+                        db.query { conn ->
+                            conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
+                                stmt.setInt(1, totalBalance)
+                                stmt.setString(2, auth.first)
+                                stmt.executeUpdate()
+                            }
+                        }
+
+                        totalBalance
+                    }.mapLeft { 500 to "Internal server error" }.bind()
+                }
+                201 to "Update successful"
+            }.fold(
+                { error ->
+                    ctx.status(error.first)
+                    ctx.json("message" to error.second)
+                },
+                {ctx.status(201)}
+            )
+        } finally {
+            writeSemaphore.release()
+        }
+    }
+
+    private fun getOrchestratedUsers(orchestratorEmail: String): Either<Pair<Int, String>, List<Pair<String, Int>>> {
+        return Either.catch {
+            db.query { conn ->
+                conn.prepareStatement("select email, balance from user where orchestrated_by = ?").use { stmt ->
+                    stmt.setString(1, orchestratorEmail)
+                    stmt.executeQuery().use { rs ->
+                        val users = mutableListOf<Pair<String, Int>>()
+                        while (rs.next()) {
+                            users.add(rs.getString("email") to rs.getInt("balance"))
+                        }
+                        users
+                    }
+                }
+            }
+        }.mapLeft { 500 to "Internal server error" }
     }
 
     fun transferCredits(ctx: Context, writeSemaphore: Semaphore, onSuccess: (CreditTransferDto) -> Unit) {
@@ -242,10 +310,13 @@ class AuthService(
                     onSuccess(dto)
                 }
 
-                result.onLeft { error ->
-                    ctx.status(error.first)
-                    ctx.json("message" to error.second)
-                }.onRight { ctx.status(201) }
+                result.fold(
+                    { error ->
+                        ctx.status(error.first)
+                        ctx.json("message" to error.second)
+                    },
+                    { ctx.status(201) }
+                )
             }
         } finally {
             writeSemaphore.release()

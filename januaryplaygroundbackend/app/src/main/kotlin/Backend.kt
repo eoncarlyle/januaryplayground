@@ -72,26 +72,12 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         // # Auth HTTP
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
-        this.javalinApp.post("/auth/signup") { ctx -> authService.signUp(ctx) }
-        this.javalinApp.post("/auth/login") { ctx -> authService.logIn(ctx) }
-        this.javalinApp.post("/auth/evaluate") { ctx -> authService.evaluateAuthHandler(ctx) }
-        this.javalinApp.post("/auth/logout") { ctx -> authService.logOut(ctx) }
-        this.javalinApp.post("/auth/sessions/temporary") { ctx -> authService.temporarySession(ctx) }
+        this.javalinApp.post("/auth/signup") { authService.signUp(it) }
+        this.javalinApp.post("/auth/login") { authService.logIn(it) }
+        this.javalinApp.post("/auth/evaluate") { authService.evaluateAuthHandler(it) }
+        this.javalinApp.post("/auth/logout") { authService.logOut(it) }
+        this.javalinApp.post("/auth/sessions/temporary") { authService.temporarySession(it) }
         this.javalinApp.post("/auth/orchestrator/signup") { ctx -> authService.signUpOrchestrated(ctx, writeSemaphore) }
-        this.javalinApp.post("/auth/orchestrator/liquidate") { ctx ->
-            authService.liquidateOrchestratedUser(
-                ctx,
-                writeSemaphore
-            )
-        }
-        this.javalinApp.post("/auth/credit-transfer") { ctx ->
-            authService.transferCredits(
-                ctx,
-                writeSemaphore
-            ) { dto -> emittedEventQueue.put(dto) }
-        }
-
-        // # Exchange HTTP
         this.javalinApp.beforeMatched("/exchange") { exchangeAuthEvaluationMiddleware(it) }
 
         // ## Querying state
@@ -104,6 +90,26 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         this.javalinApp.post("/exchange/orders/market") { marketOrderRequest(it) }
         this.javalinApp.post("/exchange/orders/limit") { limitOrderRequest(it) }
         this.javalinApp.post("/exchange/orders/cancel-all") { allOrderCancel(it) }
+        this.javalinApp.post("/auth/credit-transfer") { ctx ->
+            authService.transferCredits(
+                ctx,
+                writeSemaphore
+            ) { dto -> emittedEventQueue.put(dto) }
+        }
+        this.javalinApp.post("/auth/orchestrator/liquidate") { ctx ->
+            authService.liquidateSingleOrchestratedUser(
+                ctx,
+                writeSemaphore
+            )
+        }
+        this.javalinApp.post("/auth/orchestrator/liquidate-all") { ctx ->
+            authService.liquidateAllOrchestratedUsers(
+                ctx,
+                writeSemaphore
+            )
+        }
+
+        // # Exchange HTTP
 
         // ## Modifying non-exchange state
         this.javalinApp.put("/exchange/notification-rule") { createNotificationRule(it) }
