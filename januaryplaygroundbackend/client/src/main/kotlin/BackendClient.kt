@@ -264,6 +264,22 @@ class BackendClient(
             "notification-rule"
         )
 
+    suspend fun postOrchestratorLiquidateSingle(liquidateOrchestratedUserDto: LiquidateOrchestratedUserDto): Either<ClientFailure, Unit> {
+        return Either.catch {
+            val response = client.post(httpBaseurl) {
+                url {
+                    appendPathSegments("auth", "orchestrator", "liquidate")
+                }
+                contentType(ContentType.Application.Json)
+                setBody(liquidateOrchestratedUserDto)
+            }
+            return when (response.status) {
+                HttpStatusCode.NoContent -> Unit.right()
+                else -> ClientFailure(response.status.value, response.body<String>()).left()
+            }
+        }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
+    }
+
     suspend fun postOrchestratorLiquidateAll(): Either<ClientFailure, Unit> {
         return Either.catch {
             val response = client.post(httpBaseurl) {

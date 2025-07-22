@@ -186,7 +186,7 @@ class AuthService(
             result.onLeft { error ->
                 ctx.status(error.first)
                 ctx.json("message" to error.second)
-            }.onRight { success -> ctx.status(201) }
+            }.onRight { success -> ctx.status(204) }
         } finally {
             writeSemaphore.release()
         }
