@@ -255,7 +255,7 @@ class AuthService(
                     ctx.status(error.first)
                     ctx.json("message" to error.second)
                 },
-                {ctx.status(201)}
+                {ctx.status(204)}
             )
         } finally {
             writeSemaphore.release()

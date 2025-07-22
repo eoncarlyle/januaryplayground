@@ -42,8 +42,8 @@ class MarketMaker(
     fun main(): Unit = runBlocking {
         Either.catch {
             backendClient.login(email, password)
-                .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
-                .flatMap { state -> mutex.withLock { handleStartingStateInMutex(state) } }
+                .flatMap { backendClient.getStartingState(exchangeRequestDto) }
+                .flatMap { mutex.withLock { handleStartingStateInMutex(it) } }
                 .onRight { quote ->
                     mutex.withLock {
                         trackingQuote = quote

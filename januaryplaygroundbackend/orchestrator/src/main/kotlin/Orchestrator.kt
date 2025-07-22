@@ -1,3 +1,5 @@
+import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.CredentialsDto
 import com.iainschmitt.januaryplaygroundbackend.shared.CreditTransferDto
@@ -6,6 +8,7 @@ import com.iainschmitt.januaryplaygroundbackend.shared.TradeType
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaConsumer
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.KafkaSSLConfig
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.deserializeEither
+import kotlinx.coroutines.runBlocking
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -18,9 +21,15 @@ private class OrchestratedNoiseTrader(
     private var tradeTypeState: TradeType = TradeType.BUY
 ) {
     private val trader = NoiseTrader(email, password, ticker, logger, tradeTypeState)
+    private val backendClient = BackendClient(logger)
 
-    fun main() {
-        trader.main()
+    fun main() = runBlocking {
+        Either.catch {
+            backendClient.login(email, password)
+                .flatMap { backendClient.postOrchestratorLiquidateAll() }
+        }
+        backendClient.login(email, password)
+
     }
 }
 
