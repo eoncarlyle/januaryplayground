@@ -2,29 +2,34 @@ import arrow.core.raise.option
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.*
 import kotlinx.coroutines.*
 import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.slf4j.LoggerFactory
+import ch.qos.logback.classic.LoggerContext
 import java.util.*
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
-class SimpleMessageProcessor {
-    fun processUserEvent(record: ConsumerRecord<String, String>) {
-        val timestamp = Date(record.timestamp())
-        println("[$timestamp] ${record.topic()}/${record.partition()}:${record.offset()} - ${record.value()}")
-    }
-}
-
-suspend fun main() {
+suspend fun main(args: Array<String>) {
     option {
+        val logger = (LoggerFactory.getILoggerFactory() as LoggerContext).getLogger("MainKt")
+        logger.level = ch.qos.logback.classic.Level.INFO
+
         val properties = SimplePropertiesLoader.loadFromResource("application.properties").bind()
         val config = properties.toKafkaSSLConfig()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-        val orchestrator = Orchestrator(config)
+        if (args.size != 3) {
+            logger.error("Illegal arguments {}", args)
+            exitProcess(1)
+        } else {
+            val email = args[0]
+            val password = args[1]
+            val ticker = args[2]
 
-        val consumerJob = scope.launch {
-            orchestrator.main()
+            val consumerJob = scope.launch {
+                Orchestrator(email, password, ticker, config, logger).main()
+            }
+            joinAll(consumerJob)
         }
-        joinAll(consumerJob)
     }.onNone {
          println("Error: no Kafka properties specified")
         exitProcess(1)
