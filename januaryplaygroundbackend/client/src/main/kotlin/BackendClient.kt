@@ -256,6 +256,9 @@ class BackendClient(
         "notification-rule"
     )
 
+    suspend fun postSignUpOrchestrated(orchestratedCredentialsDto: OrchestratedCredentialsDto): Either<ClientFailure, String> =
+        postRequest(orchestratedCredentialsDto, HttpStatusCode.Created, "auth", "orchestrator", "signup")
+
     suspend fun deleteNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> =
         deleteRequest(
             notificationRule,
