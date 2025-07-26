@@ -141,7 +141,7 @@ class NoiseTrader(
                         .flatMap { balanceResponse ->
                             // Conservative static analysis
                             if ((trackingQuote != null) &&
-                                            (trackingQuote!!.ask > balanceResponse.balance)
+                                            ((trackingQuote!!.ask * transactionSize) > balanceResponse.balance)
                             ) {
                                 ClientFailure(1, "Balance flapping").left()
                             } else balanceResponse.right()
@@ -155,7 +155,7 @@ class NoiseTrader(
                 }
         // logger.info("Flap evals: ${balanceFlap.isLeft()} balance/${balanceFlap.isRight()}
         // positions")
-        return balanceFlap.isLeft() && positionsFlap.isRight()
+        return balanceFlap.isLeft() && positionsFlap.isLeft()
     }
 
     private suspend fun handleStartingState(state: StartingState): Either<ClientFailure, Quote> {

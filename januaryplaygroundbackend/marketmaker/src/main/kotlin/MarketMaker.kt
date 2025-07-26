@@ -10,10 +10,9 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.math.log
 
 class MarketMaker(
-    private val email: String,
+    private val marketMakerEmail: String,
     private val password: String,
     private val ticker: Ticker,
     private val logger: Logger,
@@ -26,22 +25,22 @@ class MarketMaker(
     private var spread: Int = initialSpread
     private val fallbackQuote = Quote(ticker, 30, 35, System.currentTimeMillis())
     private val marketSize = 3
-    private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
+    private val exchangeRequestDto = ExchangeRequestDto(marketMakerEmail, ticker)
 
     private val orchestratorEmail = "orchestrator@iainschmitt.com"
     private val orchestratorTransferAmount = 150
     private val orchestratorCreditSendRule = NotificationRule(
-        orchestratorEmail,
+        marketMakerEmail,
         NotificationCategory.CREDIT_BALANCE,
         NotificationOperation.GREATER_THAN,
-        700
+        500 //Change back to 700 after testing
     )
 
     private val backendClient = BackendClient(logger)
 
     fun main(): Unit = runBlocking {
         Either.catch {
-            backendClient.login(email, password)
+            backendClient.login(marketMakerEmail, password)
                 .flatMap { backendClient.getStartingState(exchangeRequestDto) }
                 .flatMap { mutex.withLock { handleStartingStateInMutex(it) } }
                 .onRight { quote ->
@@ -50,7 +49,7 @@ class MarketMaker(
                     }
                     launch {
                         backendClient.connectWebSocket(
-                            email = email,
+                            email = marketMakerEmail,
                             tickers = listOf(ticker),
                             onOpen = { logger.info("WebSocket connection opened") },
                             onQuote = { onQuote(it) },
@@ -112,10 +111,11 @@ class MarketMaker(
     }
 
     private suspend fun onNotification(notificationRule: NotificationRule) {
+        logger.info("Notification sent to market maker")
         either {
             if (notificationRule != orchestratorCreditSendRule) raise(ClientFailure(-1, "Invalid notification rule: $notificationRule"))
             backendClient.deleteNotificationRule(notificationRule).bind()
-            backendClient.postCreditTransfer(CreditTransferDto(orchestratorEmail, orchestratorTransferAmount)).bind()
+            backendClient.postCreditTransfer(CreditTransferDto(marketMakerEmail, orchestratorEmail, orchestratorTransferAmount)).bind()
             backendClient.putNotificationRule(notificationRule).bind()
             logger.info("Credit exceed notification and transfer to $orchestratorEmail")
         }.mapLeft { error -> logger.error(error.toString()) }
@@ -145,7 +145,7 @@ class MarketMaker(
 
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
-                    email = email,
+                    email = marketMakerEmail,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.BUY,
@@ -155,7 +155,7 @@ class MarketMaker(
 
             val sellLimitOrder = backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
-                    email = email,
+                    email = marketMakerEmail,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,
@@ -172,7 +172,7 @@ class MarketMaker(
     ): Either<ClientFailure, LimitOrderResponse> {
         return backendClient.postLimitOrderRequest(
             LimitOrderRequest(
-                email = email,
+                email = marketMakerEmail,
                 ticker = ticker,
                 size = marketSize,
                 tradeType = TradeType.BUY,
@@ -181,7 +181,7 @@ class MarketMaker(
         ).flatMap { _ ->
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
-                    email = email,
+                    email = marketMakerEmail,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,

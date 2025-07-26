@@ -54,13 +54,7 @@ class AppKafkaConsumer(
                 }
 
                 for (record in records) {
-                    try {
-                        messageProcessor(record)
-                    } catch (e: Exception) {
-                        throw e
-                    } finally {
-                        consumer.close()
-                    }
+                    messageProcessor(record)
                 }
                 consumer.commitSync()
             }

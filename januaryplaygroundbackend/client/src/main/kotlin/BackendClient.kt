@@ -262,7 +262,7 @@ class BackendClient(
     suspend fun deleteNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> =
         deleteRequest(
             notificationRule,
-            HttpStatusCode.Created,
+            HttpStatusCode.NoContent,
             "exchange",
             "notification-rule"
         )
@@ -283,12 +283,14 @@ class BackendClient(
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
-    suspend fun postOrchestratorLiquidateAll(): Either<ClientFailure, Unit> {
+    suspend fun postOrchestratorLiquidateAll(liquidateAllOrchestratedUsersDto: LiquidateAllOrchestratedUsersDto): Either<ClientFailure, Unit> {
         return Either.catch {
             val response = client.post(httpBaseurl) {
                 url {
                     appendPathSegments("auth", "orchestrator", "liquidate-all")
                 }
+                contentType(ContentType.Application.Json)
+                setBody(liquidateAllOrchestratedUsersDto)
             }
             return when (response.status) {
                 HttpStatusCode.NoContent -> Unit.right()

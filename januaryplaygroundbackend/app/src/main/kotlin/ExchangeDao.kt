@@ -578,6 +578,8 @@ class ExchangeDao(
                 stmt.setInt(2, category.ordinal)
                 stmt.setInt(3, operation.ordinal)
                 stmt.setInt(4, dimension)
+
+                stmt.executeUpdate()
             }
         }
     }

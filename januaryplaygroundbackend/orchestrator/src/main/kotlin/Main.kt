@@ -10,15 +10,13 @@ import kotlin.time.Duration.Companion.seconds
 
 suspend fun main(args: Array<String>) {
     option {
-        val logger = (LoggerFactory.getILoggerFactory() as LoggerContext).getLogger("MainKt")
-        logger.level = ch.qos.logback.classic.Level.INFO
 
         val properties = SimplePropertiesLoader.loadFromResource("application.properties").bind()
         val config = properties.toKafkaSSLConfig()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
         if (args.size != 3) {
-            logger.error("Illegal arguments {}", args)
+            println("Illegal arguments $args" )
             exitProcess(1)
         } else {
             val email = args[0]
@@ -26,7 +24,7 @@ suspend fun main(args: Array<String>) {
             val ticker = args[2]
 
             val consumerJob = scope.launch {
-                Orchestrator(email, password, ticker, config, logger).main()
+                Orchestrator(email, password, ticker, config).main()
             }
             joinAll(consumerJob)
         }

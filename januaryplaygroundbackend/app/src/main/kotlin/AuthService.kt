@@ -131,8 +131,8 @@ class AuthService(
         try {
             val result = either {
                 val dto = parseCtxBody<OrchestratedCredentialsDto>(ctx).bind()
-                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
-                ensure(isAdmin(auth.first)) { 403 to "Must be admin to create orchestrated user" }
+                val auth = evaluateAuth(ctx, "orchestratorEmail").getOrElse { raise(404 to "User authentication failed") }
+                ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to create orchestrated user" }
                 ensure(hasAtLeastAsManyCredits(auth.first, dto.initialCreditBalance)) { 403 to "Insufficient Funds" }
 
                 val passwordHash = BCrypt.hashpw(dto.userPassword, BCrypt.gensalt())
@@ -147,11 +147,12 @@ class AuthService(
                             stmt.executeUpdate()
                         }
                         conn.prepareStatement(
-                            "insert into user (email, password_hash, orchestrated_by) values (?, ?, ?)"
+                            "insert into user (email, password_hash, balance, orchestrated_by) values (?, ?, ?, ?)"
                         ).use { stmt ->
                             stmt.setString(1, dto.userEmail)
                             stmt.setString(2, passwordHash)
-                            stmt.setString(3, auth.first)
+                            stmt.setInt(3, dto.initialCreditBalance)
+                            stmt.setString(4, auth.first)
                             stmt.executeUpdate()
                         }
                     }
@@ -172,8 +173,8 @@ class AuthService(
         try {
             val result = either {
                 val dto = parseCtxBody<LiquidateOrchestratedUserDto>(ctx).bind()
-                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
-                ensure(isAdmin(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
+                val auth = evaluateAuth(ctx, "orchestratorEmail").getOrElse { raise(404 to "User authentication failed") }
+                ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
                 ensure(isOrchestratedBy(dto.targetUserEmail, auth.first)) {
                     403 to "Target account not orchestrated by user"
                 }
@@ -223,8 +224,8 @@ class AuthService(
         writeSemaphore.acquire()
         try {
             either {
-                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
-                ensure(isAdmin(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
+                val auth = evaluateAuth(ctx, "orchestratorEmail").getOrElse { raise(404 to "User authentication failed") }
+                ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
 
                 val orchestratedUsers = getOrchestratedUsers(auth.first).bind()
                 if (orchestratedUsers.isNotEmpty()) {
@@ -284,7 +285,7 @@ class AuthService(
         try {
             parseCtxBodyMiddleware<CreditTransferDto>(ctx) { dto ->
                 val result = either {
-                    val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
+                    val auth = evaluateAuth(ctx, "sendingUserEmail").getOrElse { raise(404 to "User authentication failed") }
                     ensure(hasAtLeastAsManyCredits(auth.first, dto.creditAmount)) { 403 to "Insufficient Funds" }
                     ensure(emailPresent(dto.targetUserEmail)) { 400 to "Target user does not exist" }
 
@@ -410,9 +411,10 @@ class AuthService(
         }
     }
 
-    fun evaluateAuth(ctx: Context): Option<Pair<String, Long>> {
+    // TODO While different DTOs need to send the current user email on different keys, this should accept some common interface
+    fun evaluateAuth(ctx: Context, emailKey: String = "email"): Option<Pair<String, Long>> {
         return option {
-            val email = Option.fromNullable(ctx.bodyAsClass<Map<String, Any>>()["email"])
+            val email = Option.fromNullable(ctx.bodyAsClass<Map<String, Any>>()[emailKey])
                 .map { it.toString() }.bind()
             val token = Option.fromNullable(ctx.cookie(session)).bind()
             val maybePair =
@@ -438,9 +440,9 @@ class AuthService(
         }
     }
 
-    private fun isAdmin(email: String): Boolean {
+    private fun isOrchestrator(email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select email from user where email = ? and is_admin = 1").use { stmt ->
+            conn.prepareStatement("select email from user where email = ? and type = ${AccountType.ORCHESTRATOR.ordinal}").use { stmt ->
                 stmt.setString(1, email)
                 stmt.executeQuery().use { rs -> rs.next() }
             }

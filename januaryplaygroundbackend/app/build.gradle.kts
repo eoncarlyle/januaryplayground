@@ -34,6 +34,7 @@ dependencies {
     implementation("io.arrow-kt:arrow-fx-coroutines:2.0.1")
     implementation("io.github.reactivecircus.cache4k:cache4k:0.14.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+    implementation("org.apache.kafka:kafka-clients:3.5.0")
 }
 
 java {

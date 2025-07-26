@@ -29,13 +29,6 @@ class AppKafkaProducer(
     }
 
     fun sendSync(topic: String, key: String?, value: String): RecordMetadata {
-        val record = ProducerRecord(topic, key, value)
-        return try {
-            producer.send(record).get()
-        } catch (e: Exception) {
-            throw e
-        } finally {
-            producer.close()
-        }
+        return producer.send(ProducerRecord(topic, key, value)).get()
     }
 }

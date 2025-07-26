@@ -46,7 +46,7 @@ class WsUserMap {
                 val email = map[ctx]?.email
                 if (email != null && rulesInEffect.containsKey(email)) {
                     rulesInEffect[email]?.forEach { rule ->
-                        ctx.send(rule)
+                        ctx.send(NotificationMessage(rule))
                     }
                 }
             }

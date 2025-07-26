@@ -8,13 +8,15 @@ import kotlinx.serialization.Serializable
 
 class CredentialsDto(val email: String, val password: String)
 
-class OrchestratedCredentialsDto(val userEmail: String, val userPassword: String, val initialCreditBalance: Int)
+class OrchestratedCredentialsDto(val orchestratorEmail: String, val userEmail: String, val userPassword: String, val initialCreditBalance: Int)
 
-class LiquidateOrchestratedUserDto(val targetUserEmail: String)
+class LiquidateOrchestratedUserDto(val orchestratorEmail: String, val targetUserEmail: String)
+
+class LiquidateAllOrchestratedUsersDto(val orchestratorEmail: String)
 
 
 @Serializable
-class CreditTransferDto(val targetUserEmail: String, val creditAmount: Int)
+class CreditTransferDto(val sendingUserEmail: String, val targetUserEmail: String, val creditAmount: Int)
 
 inline fun <reified T> parseCtxBody(ctx: Context): Either<Pair<Int, String>, T> {
     return Either.catch { ctx.bodyAsClass(T::class.java) }

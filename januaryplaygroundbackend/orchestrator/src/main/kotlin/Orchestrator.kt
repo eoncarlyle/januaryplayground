@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.security.SecureRandom
 
 private class OrchestratedNoiseTrader(
@@ -28,19 +29,20 @@ private class OrchestratedNoiseTrader(
 }
 
 class Orchestrator(
-    private val email: String,
+    private val orchestratorEmail: String,
     private val password: String,
     private val ticker: Ticker,
     kafkaConfig: KafkaSSLConfig, //Note: for Kotlin explainer to group, talk about not having the `val` here
-    private val logger: Logger
 ) {
+    private val logger by lazy { LoggerFactory.getLogger(this::class.java) }
+
     private val consumer = AppKafkaConsumer(kafkaConfig, "test-consumer-group")
     private val backendClient = BackendClient(logger)
 
     fun main() = runBlocking {
         either {
-            backendClient.login(email, password).bind()
-            backendClient.postOrchestratorLiquidateAll().bind()
+            backendClient.login(orchestratorEmail, password).bind()
+            backendClient.postOrchestratorLiquidateAll(LiquidateAllOrchestratedUsersDto(orchestratorEmail)).bind()
         }
 
         consumer.startConsuming(listOf("orchestrator")) { messageProcessor(it) }
@@ -63,12 +65,13 @@ class Orchestrator(
     private suspend fun messageProcessor(record: ConsumerRecord<String, String>) = coroutineScope {
         either {
             val dto = record.value().deserializeEither<CreditTransferDto>().bind()
-            if (dto.targetUserEmail == email) {
-                val noiseTraderEmail = "${email}_${System.currentTimeMillis()}@iainschmitt.com"
+            if (dto.targetUserEmail == orchestratorEmail) {
+                val noiseTraderEmail = "${orchestratorEmail}_${System.currentTimeMillis()}@iainschmitt.com"
                 val noiseTraderPassword = generateSecurePassword()
 
                 backendClient.postSignUpOrchestrated(
                     OrchestratedCredentialsDto(
+                        orchestratorEmail,
                         noiseTraderEmail,
                         noiseTraderPassword,
                         dto.creditAmount
@@ -76,7 +79,7 @@ class Orchestrator(
                 ).bind()
 
                 launch {
-                    OrchestratedNoiseTrader(noiseTraderEmail, noiseTraderPassword, ticker, logger).main { backendClient.postOrchestratorLiquidateSingle(LiquidateOrchestratedUserDto(noiseTraderPassword)) }
+                    OrchestratedNoiseTrader(noiseTraderEmail, noiseTraderPassword, ticker, logger).main { backendClient.postOrchestratorLiquidateSingle(LiquidateOrchestratedUserDto(orchestratorEmail, noiseTraderEmail)) }
                 }
 
             } else {

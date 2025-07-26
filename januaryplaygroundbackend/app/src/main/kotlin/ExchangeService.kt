@@ -214,6 +214,7 @@ class ExchangeService(
         userLongPositions: Int
     ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
         if (order.isBuy()) {
+            //TODO This is not handling partial orders correctly: the buyer needs toe be able to afford the difference between size and finalsize
             return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= userBalance) proposedOrders.right()
             else Pair(
                 OrderFailureCode.INSUFFICIENT_BALANCE,

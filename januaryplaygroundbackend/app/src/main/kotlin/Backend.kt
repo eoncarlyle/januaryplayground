@@ -370,6 +370,8 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         Thread {
             while (true) {
                 val notificationRule = emittedEventQueue.take()
+                logger.info("--------Kafka Producer-------")
+
                 try {
                     producer.sendSync("orchestrator", "default", Json.encodeToString(notificationRule))
                 } catch (e: Exception) {
@@ -377,7 +379,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                     throw e
                 }
             }
-        }
+        }.start()
     }
 
     private fun orderQuoteConsumer(
@@ -426,7 +428,11 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
             } else false
         }.groupBy { rule -> rule.user }
 
-        val liveSockets = wsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
-        logger.info("Updated $liveSockets clients over websockets with new quote");
+        if (rulesInEffect.isNotEmpty()) {
+            val liveSockets = wsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
+            logger.info("Updated $liveSockets clients over websockets with notification");
+        } else {
+            logger.info("No rules in effect")
+        }
     }
 }
