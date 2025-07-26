@@ -212,22 +212,21 @@ class ExchangeService(
         proposedOrders: ArrayList<OrderBookEntry>,
         userBalance: Int,
         userLongPositions: Int
-    ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
+    ): Either<OrderFailure, ArrayList<OrderBookEntry>> =
         if (order.isBuy()) {
             //TODO This is not handling partial orders correctly: the buyer needs toe be able to afford the difference between size and finalsize
-            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= userBalance) proposedOrders.right()
+            if (proposedOrders.sumOf { op -> (op.price - op.finalSize) * op.size } <= userBalance) proposedOrders.right()
             else Pair(
                 OrderFailureCode.INSUFFICIENT_BALANCE,
                 "Insufficient balance for order"
             ).left()
         } else {
-            return if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) proposedOrders.right()
+            if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) proposedOrders.right()
             else Pair(
                 OrderFailureCode.INSUFFICIENT_SHARES,
                 "Insufficient shares for order"
             ).left()
         }
-    }
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun allOrderCancel(

@@ -19,6 +19,7 @@ private class OrchestratedNoiseTrader(
     private val logger: Logger,
     private var tradeTypeState: TradeType = TradeType.BUY
 ) {
+    // Thing about how the logger could be differentiated
     private val noiseTrader = NoiseTrader(email, password, ticker, logger, tradeTypeState)
 
     fun main(onExit: suspend () -> Unit) = runBlocking {
@@ -64,8 +65,10 @@ class Orchestrator(
     // 'Unresolved reference. None of the following candidates is applicable because of receiver type mismatch:'
     private suspend fun messageProcessor(record: ConsumerRecord<String, String>) = coroutineScope {
         either {
+            logger.info("--------Message Producer-------")
             val dto = record.value().deserializeEither<CreditTransferDto>().bind()
             if (dto.targetUserEmail == orchestratorEmail) {
+                logger.info("Inbound credit transfer for this orchestrator")
                 val noiseTraderEmail = "${orchestratorEmail}_${System.currentTimeMillis()}@iainschmitt.com"
                 val noiseTraderPassword = generateSecurePassword()
 

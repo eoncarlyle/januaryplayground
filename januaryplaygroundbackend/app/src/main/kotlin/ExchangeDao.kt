@@ -243,7 +243,7 @@ class ExchangeDao(
                 }
 
                 conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, partialOrder.size * partialOrder.price * order.sign())
+                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * partialOrder.price * order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.executeUpdate()
                 }
@@ -259,7 +259,7 @@ class ExchangeDao(
                         );
                     """
                 ).use { stmt ->
-                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * order.sign())
+                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize )* order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.setString(3, order.ticker)
                     stmt.setInt(4, PositionType.LONG.ordinal)
@@ -269,7 +269,7 @@ class ExchangeDao(
             }
             // Addressing orderer
             conn.prepareStatement("update user set balance = balance - ? where email = ?").use { stmt ->
-                stmt.setInt(1, marketOrderProposal.sumOf { entry -> entry.size * entry.price } * order.sign())
+                stmt.setInt(1, marketOrderProposal.sumOf { entry -> (entry.size - entry.finalSize)* entry.price } * order.sign())
                 stmt.setString(2, order.email)
                 stmt.executeUpdate()
             }
