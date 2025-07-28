@@ -42,7 +42,7 @@ class AppKafkaConsumer(
         consumer = KafkaConsumer(props)
     }
 
-    suspend fun startConsuming(topics: List<String>, messageProcessor: suspend (ConsumerRecord<String, String>) -> Unit) {
+    fun startConsuming(topics: List<String>, messageProcessor: (ConsumerRecord<String, String>) -> Unit) {
         try {
             consumer.subscribe(topics)
 

@@ -373,7 +373,9 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                 logger.info("--------Kafka Producer-------")
 
                 try {
-                    producer.sendSync("orchestrator", "default", Json.encodeToString(notificationRule))
+                    val event = Json.encodeToString(notificationRule)
+                    logger.info(event)
+                    producer.sendSync("orchestrator", "default", event)
                 } catch (e: Exception) {
                     logger.error(e.stackTrace.toString())
                     throw e

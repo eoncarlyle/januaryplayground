@@ -319,33 +319,33 @@ class ExchangeService(
     }
 
     fun getNotificationRules(): Set<NotificationRule> {
-        val maybeRules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
-        if (maybeRules != null) {
-            return maybeRules
-        } else {
-            val rules = exchangeDao.getNotificationRules()
-            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
+        //val maybeRules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
+        //if (maybeRules != null) {
+        //    return maybeRules
+        //} else {
+           val rules = exchangeDao.getNotificationRules()
+            //cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
             return rules
-        }
+        //}
     }
 
     fun createNotificationRule(rule: NotificationRule) {
-        val rules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
-        if (rules?.contains(rule) == false) {
+        //val rules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
+        //if (rules?.contains(rule) == false) {
             exchangeDao.createNotificationRule(rule)
-            rules.add(rule)
-            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
-        }
+        //    rules.add(rule)
+        //    cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
+        //}
     }
 
     fun deleteNotificationRule(rule: NotificationRule): Boolean {
-        val rules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
-        return if (rules?.contains(rule) == true) {
+        //val rules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
+        //return if (rules?.contains(rule) == true) {
             exchangeDao.deleteNotificationRule(rule)
-            rules.remove(rule)
-            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
-            true
-        } else false
+         //   rules.remove(rule)
+          //  cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
+            return true
+        //} else false
     }
 
     private fun validatePendingOrder(pendingOrderId: Int, email: String): Option<SingleOrderCancelFailureCode> {

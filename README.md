@@ -34,14 +34,19 @@ The resulting requirements will be
   - [x] Backend: emit on transfer to orchestrator
   - [x] Orchestrator
     - [x] Consume events
-    - [ ] Liquidate all orchestrated accounts on startup
-    - [ ] Sign up noise trader, start noise trader
-    - [ ] Liquidate when NoiseTrader `main` returns
-    - [ ] Provide callback to remove the noise trader from the set of known live `OrchestratedNoiseTraders`
+    - [x] Liquidate all orchestrated accounts on startup
+    - [x] Sign up noise trader, start noise trader
+    - [x] Liquidate when NoiseTrader `main` returns
+    - [x] Provide callback to remove the noise trader from the set of known live `OrchestratedNoiseTraders`
 - [x] Adding an 'orchestrated_by' column in the database
 - [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
 - [x] Liquidation endpoint callable by orchestrators
 - ~[ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning~
+Current bugs
+- [ ] Backend notification cache broken
+- [ ] Orchestrator doesn't use stranded funds on startup
+- [ ] Somehow poss
+
 
 Subsequent things I could do
 - [ ] Caching quote, positions, orders, balance
@@ -128,6 +133,9 @@ sealed class Event {
     - Admin action
 
 ### Feedback Log
+
+#### `00f3ae4`
+The corotunine usage wasn't really working
 
 #### `29c9d78`
 
