@@ -6,6 +6,8 @@ import io.github.reactivecircus.cache4k.Cache
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
+import kotlin.math.log
+import kotlin.system.exitProcess
 
 class ExchangeService(
     db: DatabaseHelper,
@@ -32,7 +34,14 @@ class ExchangeService(
                         userLongPositionCount,
                         getSortedMatchingOrderBook(validOrder)
                     )
-                return fillOrder(validOrder, marketOrderProposal)
+                val filledOrder = fillOrder(validOrder, marketOrderProposal)
+
+                if (exchangeDao.userAudit().any { pair -> pair.second < 0 }) {
+                    logger.error(exchangeDao.userAudit().toString())
+                    exitProcess(0)
+                }
+
+                return filledOrder
             }
         } finally {
             writeSemaphore.release()
@@ -214,7 +223,7 @@ class ExchangeService(
         userLongPositions: Int
     ): Either<OrderFailure, ArrayList<OrderBookEntry>> =
         if (order.isBuy()) {
-            if (proposedOrders.sumOf { op -> (op.size - op.finalSize) * op.size } <= userBalance) proposedOrders.right()
+            if (proposedOrders.sumOf { op -> (op.size - op.finalSize) * op.price } <= userBalance) proposedOrders.right()
             else Pair(
                 OrderFailureCode.INSUFFICIENT_BALANCE,
                 "Insufficient balance for order"

@@ -259,7 +259,7 @@ class ExchangeDao(
                         );
                     """
                 ).use { stmt ->
-                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize )* order.sign())
+                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.setString(3, order.ticker)
                     stmt.setInt(4, PositionType.LONG.ordinal)
@@ -269,7 +269,9 @@ class ExchangeDao(
             }
             // Addressing orderer
             conn.prepareStatement("update user set balance = balance - ? where email = ?").use { stmt ->
-                stmt.setInt(1, marketOrderProposal.sumOf { entry -> (entry.size - entry.finalSize)* entry.price } * order.sign())
+                stmt.setInt(
+                    1,
+                    marketOrderProposal.sumOf { entry -> (entry.size - entry.finalSize) * entry.price } * order.sign())
                 stmt.setString(2, order.email)
                 stmt.executeUpdate()
             }
@@ -536,6 +538,20 @@ class ExchangeDao(
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
 
+    fun userAudit(): List<Pair<String, Int>> {
+        val results = ArrayList<Pair<String, Int>>()
+        db.query { conn ->
+            conn.prepareStatement("select email, balance from user").use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        results.add(Pair(rs.getString("email"), rs.getInt("balance")))
+                    }
+                }
+            }
+        }
+        return results
+    }
+
     fun getNotificationRules(): MutableSet<NotificationRule> {
         val rules = HashSet<NotificationRule>()
         db.query { conn ->
@@ -589,7 +605,7 @@ class ExchangeDao(
 
         db.query { conn ->
             conn.prepareStatement(
-        """
+                """
             delete from notification_rules 
             where user = ? and category = ? and operation = ? and dimension = ?
             """
@@ -601,5 +617,4 @@ class ExchangeDao(
             }
         }
     }
-
 }

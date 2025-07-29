@@ -45,12 +45,40 @@ The resulting requirements will be
 Current bugs
 - [ ] Backend notification cache broken
 - [ ] Orchestrator doesn't use stranded funds on startup
-- [ ] Somehow poss
+  - Get balance on startup and seed `balance % 150` acounts
+  - Use blocking queue to re-start orchestrated accounts that flap out
+- [x] Somehow possible to get negative balances
 
 
 Subsequent things I could do
 - [ ] Caching quote, positions, orders, balance
 
+```text
+22:02:20.911 [DefaultDispatcher-worker-14] INFO MainKt -- --------Incoming Quote---------
+22:02:20.912 [DefaultDispatcher-worker-14] INFO MainKt -- Current quote: testTicker: 32/37 @ 1753758131846
+22:02:20.912 [DefaultDispatcher-worker-14] INFO MainKt -- Incoming quote: testTicker: 32/-1 @ 1753758140899
+22:02:20.932 [DefaultDispatcher-worker-14] INFO MainKt -- Next quote: testTicker: 33/38 @ 1753758140932
+22:02:20.974 [DefaultDispatcher-worker-15] INFO MainKt -- Notification sent to market maker
+22:02:21.006 [DefaultDispatcher-worker-1] INFO MainKt -- Credit exceed notification and transfer to orchestrator@iainschmitt.com
+22:02:21.006 [DefaultDispatcher-worker-1] INFO MainKt -- --------Incoming Quote---------
+22:02:21.006 [DefaultDispatcher-worker-1] INFO MainKt -- Current quote: testTicker: 33/38 @ 1753758140932
+22:02:21.006 [DefaultDispatcher-worker-1] INFO MainKt -- Incoming quote: testTicker: 30/-1 @ 1753758140928
+22:02:21.006 [DefaultDispatcher-worker-1] INFO MainKt -- Ignoring stale incoming quote from 1753758140928, tracking quote set at 1753758140953
+22:02:21.006 [DefaultDispatcher-worker-1] INFO MainKt -- Notification sent to market maker
+22:02:21.015 [DefaultDispatcher-worker-15] INFO MainKt -- Credit exceed notification and transfer to orchestrator@iainschmitt.com
+22:02:21.015 [DefaultDispatcher-worker-15] INFO MainKt -- --------Incoming Quote---------
+22:02:21.015 [DefaultDispatcher-worker-15] INFO MainKt -- Current quote: testTicker: 33/38 @ 1753758140932
+22:02:21.015 [DefaultDispatcher-worker-15] INFO MainKt -- Incoming quote: testTicker: 33/-1 @ 1753758140937
+22:02:21.015 [DefaultDispatcher-worker-15] INFO MainKt -- Ignoring stale incoming quote from 1753758140937, tracking quote set at 1753758140953
+22:02:21.015 [DefaultDispatcher-worker-15] INFO MainKt -- Notification sent to market maker
+22:02:21.022 [DefaultDispatcher-worker-7] INFO MainKt -- Credit exceed notification and transfer to orchestrator@iainschmitt.com
+22:02:21.023 [DefaultDispatcher-worker-7] INFO MainKt -- --------Incoming Quote---------
+22:02:21.023 [DefaultDispatcher-worker-7] INFO MainKt -- Current quote: testTicker: 33/38 @ 1753758140932
+22:02:21.023 [DefaultDispatcher-worker-7] INFO MainKt -- Incoming quote: testTicker: 33/38 @ 1753758140953
+22:02:21.023 [DefaultDispatcher-worker-7] INFO MainKt -- Ignoring stale incoming quote from 1753758140953, tracking quote set at 1753758140953
+22:02:21.023 [DefaultDispatcher-worker-7] INFO MainKt -- Notification sent to market maker
+22:02:21.030 [DefaultDispatcher-worker-11] INFO MainKt -- Credit exceed notification and transfer to orchestrator@iainschmitt.com
+```
 
 
 ### To Do

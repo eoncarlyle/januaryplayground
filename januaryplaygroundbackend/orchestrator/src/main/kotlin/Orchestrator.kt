@@ -56,8 +56,7 @@ class Orchestrator(
         }
     }
 
-    private fun launchNoiseTrader(dto: CreditTransferDto) {
-        logger.info("--------Message Producer-------")
+    private fun launchNoiseTrader(creditAmount: Int) {
         val noiseTraderEmail = "${System.currentTimeMillis()}_${orchestratorEmail}"
         val noiseTraderPassword = generateSecurePassword()
         orchestratorScope.launch {
@@ -67,7 +66,7 @@ class Orchestrator(
                         orchestratorEmail,
                         noiseTraderEmail,
                         noiseTraderPassword,
-                        dto.creditAmount
+                        creditAmount
                     )
                 ).bind()
 
@@ -108,7 +107,7 @@ class Orchestrator(
         either {
             logger.info("--------Message Producer-------")
             val dto = record.value().deserializeEither<CreditTransferDto>().bind()
-            launchNoiseTrader(dto)
+            launchNoiseTrader(dto.creditAmount)
 
             if (dto.targetUserEmail == orchestratorEmail) {
                 logger.info("Inbound credit transfer for this orchestrator")

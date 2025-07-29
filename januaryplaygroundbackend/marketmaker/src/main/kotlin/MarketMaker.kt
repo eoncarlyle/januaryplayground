@@ -33,7 +33,7 @@ class MarketMaker(
         marketMakerEmail,
         NotificationCategory.CREDIT_BALANCE,
         NotificationOperation.GREATER_THAN,
-        500 //Change back to 700 after testing
+        700
     )
 
     private val backendClient = BackendClient(logger)

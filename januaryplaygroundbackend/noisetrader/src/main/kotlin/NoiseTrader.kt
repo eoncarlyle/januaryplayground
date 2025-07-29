@@ -40,10 +40,10 @@ class NoiseTrader(
                             backendClient.connectWebSocket(
                                     email = email,
                                     tickers = listOf(ticker),
-                                    onOpen = { logger.info("WebSocket connection opened") },
+                                    onOpen = { logger.info("NT $email WebSocket connection opened") },
                                     onQuote = { quote -> onQuote(quote) },
                                     onClose = { code, reason ->
-                                        logger.error("Connection closed: $code, $reason")
+                                        logger.error("NT $email connection closed: $code, $reason")
                                     }
                             )
                         }
@@ -55,9 +55,9 @@ class NoiseTrader(
                     ClientFailure(-1, throwable.message ?: "Message not provided")
                 }
                 .onLeft { error ->
-                    logger.error("Error: $error")
+                    logger.error("NT $email error: $error")
                     val logoutSuccess = backendClient.logout()
-                    logger.info("Logout successful: $logoutSuccess")
+                    logger.info("NT $email Logout successful: $logoutSuccess")
                     backendClient.close()
                 }
     }
@@ -96,7 +96,7 @@ class NoiseTrader(
                                     }
                                 }
                                 .onLeft { failure ->
-                                    logger.warn("Noise trader order failed: $failure")
+                                    logger.warn("NT $email noise trader order failed: $failure")
                                     if (failure.first == 400) {
                                         tradeTypeState =
                                                 if (tradeTypeState.isBuy()) TradeType.SELL
@@ -112,7 +112,7 @@ class NoiseTrader(
                                                         )
                                                 )
                                                 throw RuntimeException(
-                                                        "Max exchange flap ($maxFlaps) hit"
+                                                        "NT $email Max exchange flap ($maxFlaps) hit"
                                                 )
                                             }
                                         } else flapCounter = 0
@@ -126,9 +126,9 @@ class NoiseTrader(
 
     private suspend fun onQuote(incomingQuote: Quote) {
         mutex.withLock {
-            logger.info("--------Incoming Quote---------")
-            logger.info("Current quote: $trackingQuote")
-            logger.info("Incoming quote: $incomingQuote")
+            logger.debug("--------Incoming Quote---------")
+            logger.debug("Current quote: {}", trackingQuote)
+            logger.debug("Incoming quote: {}", incomingQuote)
             trackingQuote = incomingQuote
         }
     }
@@ -164,9 +164,9 @@ class NoiseTrader(
         val orders = state.orders
 
         logger.info(
-                "Initial quote: ${startingQuote.ticker}/${startingQuote.bid}/${startingQuote.ask}"
+                "NT $email Initial quote: ${startingQuote.ticker}/${startingQuote.bid}/${startingQuote.ask}"
         )
-        logger.info("Initial position count: ${positions.count()}")
+        logger.info("NT $email initial position count: ${positions.count()}")
 
         if (positions.any { it.positionType != PositionType.LONG }) {
             return ClientFailure(-1, "Unimplemented short positions found").left()
@@ -185,7 +185,7 @@ class NoiseTrader(
                     backendClient
                             .postAllOrderCancel(exchangeRequestDto)
                             .mapLeft { failure ->
-                                logger.error("Client failure: ${failure.first}/${failure.second}")
+                                logger.error("NT $email Client failure: ${failure.first}/${failure.second}")
                                 failure
                             }
                             .map { startingQuote }
