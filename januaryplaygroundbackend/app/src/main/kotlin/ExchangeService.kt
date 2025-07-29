@@ -6,7 +6,6 @@ import io.github.reactivecircus.cache4k.Cache
 import org.slf4j.Logger
 import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
-import kotlin.math.log
 import kotlin.system.exitProcess
 
 class ExchangeService(
@@ -34,14 +33,7 @@ class ExchangeService(
                         userLongPositionCount,
                         getSortedMatchingOrderBook(validOrder)
                     )
-                val filledOrder = fillOrder(validOrder, marketOrderProposal)
-
-                if (exchangeDao.userAudit().any { pair -> pair.second < 0 }) {
-                    logger.error(exchangeDao.userAudit().toString())
-                    exitProcess(0)
-                }
-
-                return filledOrder
+                return fillOrder(validOrder, marketOrderProposal)
             }
         } finally {
             writeSemaphore.release()
