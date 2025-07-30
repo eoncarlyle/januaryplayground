@@ -76,6 +76,7 @@ data class NotificationRule(
     val user: String,
     val category: NotificationCategory,
     val operation: NotificationOperation,
+    val timestamp: Long,
     val dimension: Int
 )
 fun getNotificationCategory(ordinal: Int): Option<NotificationCategory> {

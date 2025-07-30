@@ -29,12 +29,7 @@ class MarketMaker(
 
     private val orchestratorEmail = "orchestrator@iainschmitt.com"
     private val orchestratorTransferAmount = 150
-    private val orchestratorCreditSendRule = NotificationRule(
-        marketMakerEmail,
-        NotificationCategory.CREDIT_BALANCE,
-        NotificationOperation.GREATER_THAN,
-        700
-    )
+    private var trackingNotificationRule: NotificationRule? = null
 
     private val backendClient = BackendClient(logger)
 
@@ -110,15 +105,40 @@ class MarketMaker(
         }
     }
 
-    private suspend fun onNotification(notificationRule: NotificationRule) {
+    private suspend fun onNotification(incomingNotificationRule: NotificationRule) {
         logger.info("Notification sent to market maker")
-        either {
-            if (notificationRule != orchestratorCreditSendRule) raise(ClientFailure(-1, "Invalid notification rule: $notificationRule"))
-            backendClient.deleteNotificationRule(notificationRule).bind()
-            backendClient.postCreditTransfer(CreditTransferDto(marketMakerEmail, orchestratorEmail, orchestratorTransferAmount)).bind()
-            backendClient.putNotificationRule(notificationRule).bind()
-            logger.info("Credit exceed notification and transfer to $orchestratorEmail")
-        }.mapLeft { error -> logger.error(error.toString()) }
+        mutex.withLock {
+            either {
+                if (incomingNotificationRule != trackingNotificationRule) raise(
+                    ClientFailure(
+                        -1,
+                        "Invalid notification rule: $incomingNotificationRule"
+                    )
+                )
+
+                backendClient.deleteNotificationRule(incomingNotificationRule).bind()
+                backendClient.postCreditTransfer(
+                    CreditTransferDto(
+                        marketMakerEmail,
+                        orchestratorEmail,
+                        orchestratorTransferAmount
+                    )
+                ).bind()
+
+                val nextTrackingNotificationRule = NotificationRule(
+                    marketMakerEmail,
+                    NotificationCategory.CREDIT_BALANCE,
+                    NotificationOperation.GREATER_THAN,
+                    System.currentTimeMillis(),
+                    700
+                )
+                backendClient.putNotificationRule(nextTrackingNotificationRule).bind()
+                trackingNotificationRule = nextTrackingNotificationRule
+
+                // Kotlin talk: string interpolation
+                logger.info("Credit exceed notification and transfer to $orchestratorEmail with notification reset")
+            }.mapLeft { error -> logger.error(error.toString()) }
+        }
     }
 
     private suspend fun cancelAndResubmit(incomingQuote: Quote, cancelErrorMsg: String, submitErrorMsg: String) =
@@ -230,7 +250,15 @@ class MarketMaker(
                         backendClient.postAllOrderCancel(exchangeRequestDto).bind()
                         val secondQuote = calculateNextQuote(firstQuote, true).bind()
                         initialLimitOrderSubmission(secondQuote).bind()
-                        backendClient.putNotificationRule(orchestratorCreditSendRule).bind()
+                        trackingNotificationRule = NotificationRule(
+                            marketMakerEmail,
+                            NotificationCategory.CREDIT_BALANCE,
+                            NotificationOperation.GREATER_THAN,
+                            System.currentTimeMillis(),
+                            700
+                        )
+                        // Kotlin talk: conservative static analysis
+                        backendClient.putNotificationRule(trackingNotificationRule!!).bind()
                         secondQuote
                     }.mapLeft { failure ->
                         logger.error("Client failure: ${failure.first}/${failure.second}")

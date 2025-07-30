@@ -555,7 +555,7 @@ class ExchangeDao(
     fun getNotificationRules(): MutableSet<NotificationRule> {
         val rules = HashSet<NotificationRule>()
         db.query { conn ->
-            conn.prepareStatement("select user, category, operation, dimension from notification_rules").use { stmt ->
+            conn.prepareStatement("select user, category, operation, timestamp, dimension from notification_rules").use { stmt ->
                 stmt.executeQuery().use { rs ->
                     while (rs.next()) {
                         val categoryOrdinal = rs.getInt("category")
@@ -566,10 +566,11 @@ class ExchangeDao(
                             val operation = getNotificationOperation(operationOrdinal).bind()
                             rules.add(
                                 NotificationRule(
-                                    user = rs.getString("user"),
-                                    category = category,
-                                    operation = operation,
-                                    dimension = rs.getInt("dimension")
+                                    rs.getString("user"),
+                                    category,
+                                    operation,
+                                    rs.getLong("timestamp"),
+                                    rs.getInt("dimension")
                                 )
                             )
                         }
@@ -581,19 +582,20 @@ class ExchangeDao(
     }
 
     fun createNotificationRule(rule: NotificationRule) {
-        val (userEmail, category, operation, dimension) = rule
+        val (userEmail, category, operation, timestamp, dimension) = rule
 
         db.query { conn ->
             conn.prepareStatement(
                 """
-                INSERT OR IGNORE INTO notification_rules (user, category, operation, dimension)
+                INSERT OR IGNORE INTO notification_rules (user, category, operation, timestamp, dimension)
                     values(?, ?, ?, ?)
                 """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setInt(2, category.ordinal)
                 stmt.setInt(3, operation.ordinal)
-                stmt.setInt(4, dimension)
+                stmt.setLong(4, timestamp)
+                stmt.setInt(5, dimension)
 
                 stmt.executeUpdate()
             }
@@ -601,7 +603,7 @@ class ExchangeDao(
     }
 
     fun deleteNotificationRule(rule: NotificationRule) {
-        val (userEmail, category, operation, dimension) = rule
+        val (userEmail, category, operation, timestamp, dimension) = rule //Kotlin talk: talk about destructuring
 
         db.query { conn ->
             conn.prepareStatement(
@@ -613,7 +615,8 @@ class ExchangeDao(
                 stmt.setString(1, userEmail)
                 stmt.setInt(2, category.ordinal)
                 stmt.setInt(3, operation.ordinal)
-                stmt.setInt(4, dimension)
+                stmt.setLong(4, timestamp)
+                stmt.setInt(5, dimension)
             }
         }
     }

@@ -9,6 +9,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.security.SecureRandom
+import java.util.concurrent.LinkedBlockingQueue
 
 private class OrchestratedNoiseTrader(
     email: String,
@@ -38,12 +39,15 @@ class Orchestrator(
     private val consumer = AppKafkaConsumer(kafkaConfig, "test-consumer-group")
     private val backendClient = BackendClient(logger)
     private val orchestratorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val defaultStartingCredits = 150
+
 
     suspend fun main() {
         runBlocking {
             either {
                 backendClient.login(orchestratorEmail, password).bind()
                 backendClient.postOrchestratorLiquidateAll(LiquidateAllOrchestratedUsersDto(orchestratorEmail)).bind()
+                relaunchAllPossibleNoiseTraders()
             }
         }
 
@@ -54,6 +58,14 @@ class Orchestrator(
             kafkaConsumerThread.start()
             kafkaConsumerThread.join()
         }
+    }
+
+    private suspend fun relaunchAllPossibleNoiseTraders() {
+        backendClient.getUserBalance(orchestratorEmail).map { response ->
+            repeat(response.balance.mod(defaultStartingCredits)) {
+                launchNoiseTrader(defaultStartingCredits)
+            }
+        }.mapLeft { logger.error(it.toString()) }
     }
 
     private fun launchNoiseTrader(creditAmount: Int) {
@@ -84,6 +96,7 @@ class Orchestrator(
                             noiseTraderEmail
                         )
                     )
+                    relaunchAllPossibleNoiseTraders()
                 }
             }
         }

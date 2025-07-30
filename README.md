@@ -41,13 +41,15 @@ The resulting requirements will be
 - [x] Adding an 'orchestrated_by' column in the database
 - [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
 - [x] Liquidation endpoint callable by orchestrators
-- ~[ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning~
+- [x] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning
 Current bugs
 - [ ] Backend notification cache broken
 - [ ] Orchestrator doesn't use stranded funds on startup
   - Get balance on startup and seed `balance % 150` acounts
   - Use blocking queue to re-start orchestrated accounts that flap out
 - [x] Somehow possible to get negative balances
+- [ ] Prevent the multiple-notification spam: do something similar as was done for the quote staleness
+  - If the notification creation timestamp is set (and sent with notifications), then these can be debounced
 
 
 Subsequent things I could do
