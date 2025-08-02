@@ -587,8 +587,8 @@ class ExchangeDao(
         db.query { conn ->
             conn.prepareStatement(
                 """
-                INSERT OR IGNORE INTO notification_rules (user, category, operation, timestamp, dimension)
-                    values(?, ?, ?, ?)
+                insert or replace into notification_rules (user, category, operation, timestamp, dimension)
+                    values(?, ?, ?, ?, ?)
                 """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
@@ -609,7 +609,7 @@ class ExchangeDao(
             conn.prepareStatement(
                 """
             delete from notification_rules 
-            where user = ? and category = ? and operation = ? and dimension = ?
+            where user = ? and category = ? and operation = ? and timestamp = ? and dimension = ?
             """
             ).use { stmt ->
                 stmt.setString(1, userEmail)

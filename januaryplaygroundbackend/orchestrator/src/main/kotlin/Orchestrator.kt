@@ -10,6 +10,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.security.SecureRandom
 import java.util.concurrent.LinkedBlockingQueue
+import kotlin.math.log
 
 private class OrchestratedNoiseTrader(
     email: String,
@@ -62,17 +63,20 @@ class Orchestrator(
 
     private suspend fun relaunchAllPossibleNoiseTraders() {
         backendClient.getUserBalance(orchestratorEmail).map { response ->
-            repeat(response.balance.mod(defaultStartingCredits)) {
+            val noiseTraderCount = response.balance / defaultStartingCredits
+            logger.info("Attempt at launching $noiseTraderCount noise traders")
+            repeat(response.balance / defaultStartingCredits) {
                 launchNoiseTrader(defaultStartingCredits)
             }
         }.mapLeft { logger.error(it.toString()) }
     }
 
     private fun launchNoiseTrader(creditAmount: Int) {
-        val noiseTraderEmail = "${System.currentTimeMillis()}_${orchestratorEmail}"
+        val noiseTraderEmail = "${System.currentTimeMillis()}_${generateRandomHash()}_${orchestratorEmail}"
         val noiseTraderPassword = generateSecurePassword()
         orchestratorScope.launch {
             either {
+                logger.info(orchestratorEmail)
                 backendClient.postSignUpOrchestrated(
                     OrchestratedCredentialsDto(
                         orchestratorEmail,
@@ -98,13 +102,19 @@ class Orchestrator(
                     )
                     relaunchAllPossibleNoiseTraders()
                 }
-            }
+            }.onLeft { error -> logger.error("Launch error: $error") }
         }
     }
 
-    private fun generateSecurePassword(length: Int = 16): String {
+    private fun generateSecurePassword(length: Int = 16): String =
+        generateRandomSequence("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*", length)
+
+
+    private fun generateRandomHash(): String =
+        generateRandomSequence("abcdefghijklmnopqrstuvwxyz0123456789", 6)
+
+    private fun generateRandomSequence(characters: String, length: Int = 16): String {
         val random = SecureRandom()
-        val characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*"
         val password = StringBuilder()
 
         repeat(length) {

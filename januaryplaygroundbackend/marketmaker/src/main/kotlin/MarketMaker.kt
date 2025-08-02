@@ -30,6 +30,7 @@ class MarketMaker(
     private val orchestratorEmail = "orchestrator@iainschmitt.com"
     private val orchestratorTransferAmount = 150
     private var trackingNotificationRule: NotificationRule? = null
+    private val notificationCreditAmount = 650
 
     private val backendClient = BackendClient(logger)
 
@@ -105,6 +106,7 @@ class MarketMaker(
         }
     }
 
+
     private suspend fun onNotification(incomingNotificationRule: NotificationRule) {
         logger.info("Notification sent to market maker")
         mutex.withLock {
@@ -130,10 +132,12 @@ class MarketMaker(
                     NotificationCategory.CREDIT_BALANCE,
                     NotificationOperation.GREATER_THAN,
                     System.currentTimeMillis(),
-                    700
+                    notificationCreditAmount
                 )
+
                 backendClient.putNotificationRule(nextTrackingNotificationRule).bind()
                 trackingNotificationRule = nextTrackingNotificationRule
+                logger.info("New tracking notification rule $nextTrackingNotificationRule")
 
                 // Kotlin talk: string interpolation
                 logger.info("Credit exceed notification and transfer to $orchestratorEmail with notification reset")
@@ -255,8 +259,10 @@ class MarketMaker(
                             NotificationCategory.CREDIT_BALANCE,
                             NotificationOperation.GREATER_THAN,
                             System.currentTimeMillis(),
-                            700
+                            notificationCreditAmount
                         )
+
+                        logger.info("Starting tracking notification rule $trackingNotificationRule")
                         // Kotlin talk: conservative static analysis
                         backendClient.putNotificationRule(trackingNotificationRule!!).bind()
                         secondQuote

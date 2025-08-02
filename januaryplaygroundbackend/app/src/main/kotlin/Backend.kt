@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import kotlin.math.log
 
 private data class QuoteQueueMessage<T : Queueable>(
     val request: Any,
@@ -60,6 +61,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
+        logger.error("${ctx.body()} failure: ${orderFailure.second}")
         when (orderFailure.first) {
             OrderFailureCode.INTERNAL_ERROR -> ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
             OrderFailureCode.UNKNOWN_TICKER -> ctx.status(HttpStatus.NOT_FOUND)

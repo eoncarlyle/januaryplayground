@@ -11,6 +11,7 @@ import org.slf4j.Logger
 
 fun Logger.withPrefix(prefix: String) = object : Logger by this {
     override fun error(message: String?) = this@withPrefix.error("$prefix: $message")
+    override fun warn(message: String?) = this@withPrefix.warn("$prefix: $message")
     override fun info(message: String?) = this@withPrefix.info("$prefix: $message")
     override fun debug(message: String?) = this@withPrefix.debug("$prefix: $message")
     // Implement other methods as needed
@@ -106,10 +107,11 @@ class NoiseTrader(
                                 .onLeft { failure ->
                                     logger.warn("Noise trader order failed: $failure")
                                     if (failure.first == 400) {
+                                        val oldTradeTypeState = tradeTypeState
                                         tradeTypeState =
                                                 if (tradeTypeState.isBuy()) TradeType.SELL
                                                 else TradeType.BUY
-
+                                        logger.info("Trade type: $oldTradeTypeState -> $tradeTypeState")
                                         if (isFlapping()) {
                                             flapCounter += 1
                                             if (flapCounter < maxFlaps) {
