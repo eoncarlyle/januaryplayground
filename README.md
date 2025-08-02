@@ -44,12 +44,13 @@ The resulting requirements will be
 - [x] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning
 Current bugs
 - [ ] Backend notification cache broken
-- [ ] Orchestrator doesn't use stranded funds on startup
+- [x] Orchestrator doesn't use stranded funds on startup
   - Get balance on startup and seed `balance % 150` acounts
   - Use blocking queue to re-start orchestrated accounts that flap out
 - [x] Somehow possible to get negative balances
-- [ ] Prevent the multiple-notification spam: do something similar as was done for the quote staleness
-  - If the notification creation timestamp is set (and sent with notifications), then these can be debounced
+- [x] Prevent the multiple-notification spam: do something similar as was done for the quote staleness
+- [ ] Prevent 204s on cancel-all from killing market maker
+- [ ] Prevent prices of -1 in market transactions
 
 
 Subsequent things I could do

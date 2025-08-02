@@ -275,7 +275,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                             is AllOrderCancelResponse.FilledOrdersCancelled ->
                                 ctx.status(HttpStatus.ACCEPTED)
 
-                            else -> ctx.status(HttpStatus.NO_CONTENT)
+                            else -> ctx.status(HttpStatus.OK)
                         }
                         ctx.json(response)
                         logger.info("Final quote: {}", exchangeService.getState().toString())

@@ -318,12 +318,12 @@ class BackendClient(
                     }
                 }
                 // Faced annoying serialisation problems
-                HttpStatusCode.NoContent -> {
+                HttpStatusCode.OK -> {
                     Either.catch {
                         response.body<AllOrderCancelResponse.NoOrdersCancelled>()
                     }.mapLeft { error ->
                         logger.error(error.message)
-                        return@mapLeft ClientFailure(-1, "Could not deserialise")
+                        return@mapLeft ClientFailure(-1, "Could not deserialise ${response.body<String>()}")
                     }
                 }
 
