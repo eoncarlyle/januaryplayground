@@ -10,6 +10,8 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.exp
+import kotlin.random.Random
 
 class MarketMaker(
     private val marketMakerEmail: String,
@@ -20,7 +22,7 @@ class MarketMaker(
     private val mutex = Mutex()
     private var trackingQuote: Quote? = null
     private var exchangeSequenceTimestamp: Long = -1
-    private val spreadFloor: Int = 3
+    private val spreadFloor: Int = 2
     private val initialSpread = 5
     private var spread: Int = initialSpread
     private val fallbackQuote = Quote(ticker, 30, 35, System.currentTimeMillis())
@@ -141,6 +143,12 @@ class MarketMaker(
 
                 // Kotlin talk: string interpolation
                 logger.info("Credit exceed notification and transfer to $orchestratorEmail with notification reset")
+
+                if (spread > 0 && exp((-1/spread).toDouble()) > Random.nextFloat() && spread > spreadFloor) {
+                    logger.info("Spread narrowing $spread -> ${spread - 1}")
+                    spread -= 1
+                }
+
             }.mapLeft { error -> logger.error(error.toString()) }
         }
     }
@@ -322,7 +330,9 @@ class MarketMaker(
 
             else -> {
                 //! Mutable state modification!
+                val previousSpread = spread;
                 spread += 1
+                logger.info("Spread widening $previousSpread -> $spread")
                 if (trackingQuote == null) {
                     logger.warn("Tracking quote empty: `calculateNextQuote` call will return Left")
                 }
