@@ -14,38 +14,13 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Active Topic Notes
 
-### Notification and Orchestrator Design
-Clients can be treated as external services: with a valid password they can sign up, and they can use the resulting client cookies to make REST requests; WebSocket auth is slightly more complicated but follows similar logic. There's no stopping someone from making their own market maker and having it be treated the same way. However, I want to be able to continually operate the market maker and noise traders without stopping anything. This should also be a relatively durable process, so there should be more than an in-flight network request making things work here. Because even my simple market maker outperforms randome noise traders, continual activity requires 'restocking' noise traders that run out of credits.
-
-The flow works something like this
-1) The orchestrator starts running a handful of noise traders
-2) The market maker sends a request to the backend to notify it when it has over a certain number of credits
-3) The market maker has the option to place funds into the orchestrator account with a REST call
-4) While communication between clients and backend is carried out over WebSockets, communication between internal services will use Kafka, which I have recently setup with SSL
-5) The backend is a producer on the client-orchestration topic, and it will send an event on this topic ordering another
-6) The orchestrator consumes these events, and creates a new noise trader on demand
-7) The orchestartor should have the power to liquidate nosie traders that it creates
-
-The resulting requirements will be
-- [x] Budget event notification endpoint: simple at first, just under or over a budget limit
-  - [x] Market maker event notificaiton handling, including dismisal
-- [x] Credit transfer endpoint
-- [x] Client orchestrator service
-  - [x] Backend: emit on transfer to orchestrator
-  - [x] Orchestrator
-    - [x] Consume events
-    - [ ] Liquidate all orchestrated accounts on startup
-    - [ ] Sign up noise trader, start noise trader
-    - [ ] Liquidate when NoiseTrader `main` returns
-    - [ ] Provide callback to remove the noise trader from the set of known live `OrchestratedNoiseTraders`
-- [x] Adding an 'orchestrated_by' column in the database
-- [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
-- [x] Liquidation endpoint callable by orchestrators
-- ~[ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning~
-
-Subsequent things I could do
-- [ ] Caching quote, positions, orders, balance
-
+- Frontend TODO
+  - New mutation hooks
+  - New query hooks
+  - Remove App.tsx manual state
+  - Change AuthProps
+  - Downstream component changes
+  - Persistence addition
 
 
 ### To Do
@@ -84,6 +59,35 @@ sealed class Event {
 
 ## Previous Topic Notes
 
+### Notification and Orchestrator Design
+Clients can be treated as external services: with a valid password they can sign up, and they can use the resulting client cookies to make REST requests; WebSocket auth is slightly more complicated but follows similar logic. There's no stopping someone from making their own market maker and having it be treated the same way. However, I want to be able to continually operate the market maker and noise traders without stopping anything. This should also be a relatively durable process, so there should be more than an in-flight network request making things work here. Because even my simple market maker outperforms randome noise traders, continual activity requires 'restocking' noise traders that run out of credits.
+
+The flow works something like this
+1) The orchestrator starts running a handful of noise traders
+2) The market maker sends a request to the backend to notify it when it has over a certain number of credits
+3) The market maker has the option to place funds into the orchestrator account with a REST call
+4) While communication between clients and backend is carried out over WebSockets, communication between internal services will use Kafka, which I have recently setup with SSL
+5) The backend is a producer on the client-orchestration topic, and it will send an event on this topic ordering another
+6) The orchestrator consumes these events, and creates a new noise trader on demand
+7) The orchestartor should have the power to liquidate nosie traders that it creates
+
+The resulting requirements will be
+- [x] Budget event notification endpoint: simple at first, just under or over a budget limit
+  - [x] Market maker event notificaiton handling, including dismisal
+- [x] Credit transfer endpoint
+- [x] Client orchestrator service
+  - [x] Backend: emit on transfer to orchestrator
+  - [x] Orchestrator
+    - [x] Consume events
+    - [x] Liquidate all orchestrated accounts on startup
+    - [x] Sign up noise trader, start noise trader
+    - [x] Liquidate when NoiseTrader `main` returns
+    - [ ] Provide callback to remove the noise trader from the set of known live `OrchestratedNoiseTraders`
+- [x] Adding an 'orchestrated_by' column in the database
+- [x] Adding an orchestrated sign-in that ties a given client to an orchestrator
+- [x] Liquidation endpoint callable by orchestrators
+- ~[ ] Orchestrator handling clients as either completeable futures or coroutine equivalent and calling liquidiation endpoint when they run out, the nrunning~
+
 ### WebSocket Authentication Detail
 - Create an endpoint that returns a short-lived token over JSON for authenticated HTTP contexts
 - If legitimate, invalidate the token and then store it in the WebSocket user store
@@ -108,7 +112,7 @@ sealed class Event {
 - If it is stored in `useState`, we'll need to make sure that the process of creating websockets can read off of something like local storage or something
   - We need subsequent websockets to pick up where previous ones left off
 
-## Auth Notes
+### Auth Notes
 - Session based authentication: storing cookies them for validation
 - Could add `userRoles` to the session object as well
 - `return@beforematched` and `ctx.skipRemainingHandlers()` important
