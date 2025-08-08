@@ -1,10 +1,10 @@
-import {Button} from "@/components/ui/button";
-import {useLocation} from "wouter";
-import {useLogout} from "@/util/queries.ts";
+import { Button } from "@/components/ui/button";
+import { useLogout } from "@/util/queries.ts";
+import { useLocation } from "wouter";
 
 export default function AuthNavBar() {
   const [_location, setLocation] = useLocation();
-  const { mutate: logout } = useLogout()
+  const { mutate: logout } = useLogout();
 
   return (
     <nav className="border-b">
@@ -16,8 +16,8 @@ export default function AuthNavBar() {
 
         <Button
           onClick={() => {
-            logout()
-            setLocation("/")
+            logout();
+            setLocation("/");
           }}
           className="flex items-center space-x-2"
         >

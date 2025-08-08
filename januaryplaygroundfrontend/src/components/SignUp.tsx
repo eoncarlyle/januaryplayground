@@ -1,14 +1,27 @@
-import {Button} from "@/components/ui/button";
-import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,} from "@/components/ui/card";
-import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
-import {Input} from "@/components/ui/input";
-import {AuthProps} from "@/model";
-import {useAuthRedirect} from "@/util/rest";
-import {zodResolver} from "@hookform/resolvers/zod";
-import {useForm} from "react-hook-form";
-import {useLocation} from "wouter";
-import {z} from "zod";
-import {useAuth, useLogin, useSignup} from "@/util/queries.ts";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { useAuth, useSignup } from "@/util/queries.ts";
+import { useAuthRedirect } from "@/util/rest";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useLocation } from "wouter";
+import { z } from "zod";
 
 const signUpSchema = z.object({
   email: z
@@ -36,8 +49,8 @@ export default function SignUp() {
   });
   const [location, setLocation] = useLocation();
 
-  const {data: authData } = useAuth();
-  const {mutate: signup} = useSignup()
+  const { data: authData } = useAuth();
+  const { mutate: signup } = useSignup();
 
   useAuthRedirect(false, authData, location, setLocation);
 
@@ -51,7 +64,7 @@ export default function SignUp() {
 
         <form
           onSubmit={form.handleSubmit((data: SignUpValues) => {
-            signup(data)
+            signup(data);
           })}
           className="space-y-6"
         >

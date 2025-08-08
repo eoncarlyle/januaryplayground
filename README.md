@@ -14,16 +14,16 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Active Topic Notes
 
-- Frontend TODO
+### To Do
+- TODO
+  - Remove requirement of email to auth evaluation
   - New mutation hooks
   - New query hooks
   - Remove App.tsx manual state
   - Change AuthProps
   - Downstream component changes
   - Persistence addition
-
-
-### To Do
+- Prevent prices of -1 in market transactions
 - Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good
 - ~~The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem~~
   - Notification service could alert
@@ -34,7 +34,6 @@ This repository is a playground for working on a grab bag of these technologies,
 - Fix domain model to turn order types into buy/sell/short
 - Observation frontend
 - Client order submission frontend
-
 
 ### Reference
 
@@ -95,7 +94,6 @@ The resulting requirements will be
 - [x] Somehow possible to get negative balances
 - [x] Prevent the multiple-notification spam: do something similar as was done for the quote staleness
 - [x] Prevent 204s on cancel-all from killing market maker
-- [ ] Prevent prices of -1 in market transactions
 
 
 Subsequent things I could do

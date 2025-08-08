@@ -1,23 +1,36 @@
-import {Button} from "@/components/ui/button";
-import {Card, CardContent, CardFooter, CardHeader, CardTitle,} from "@/components/ui/card";
-import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
-import {Input} from "@/components/ui/input";
-import {useAuth, useLogin} from "@/util/queries";
-import {useAuthRedirect} from "@/util/rest";
-import {zodResolver} from "@hookform/resolvers/zod/src/zod.js";
-import {useForm} from "react-hook-form";
-import {useLocation} from "wouter";
-import {z} from "zod";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { useAuth, useLogin } from "@/util/queries";
+import { useAuthRedirect } from "@/util/rest";
+import { zodResolver } from "@hookform/resolvers/zod/src/zod.js";
+import { useForm } from "react-hook-form";
+import { useLocation } from "wouter";
+import { z } from "zod";
 
 const logInSchema = z.object({
   email: z
     .string()
-    .min(1, {message: "Email is required"})
-    .email({message: "Must be a valid email address"}),
+    .min(1, { message: "Email is required" })
+    .email({ message: "Must be a valid email address" }),
   password: z
     .string()
-    .min(1, {message: "Password must be required"})
-    .max(64, {message: "Password must be less than 64 characters"}),
+    .min(1, { message: "Password must be required" })
+    .max(64, { message: "Password must be less than 64 characters" }),
 });
 
 type LogInValues = z.infer<typeof logInSchema>;
@@ -32,8 +45,8 @@ export default function LogIn() {
   });
 
   const [location, setLocation] = useLocation();
-  const {data: authData } = useAuth();
-  const {mutate: login } = useLogin()
+  const { data: authData } = useAuth();
+  const { mutate: login } = useLogin();
 
   useAuthRedirect(false, authData, location, setLocation);
   return (
@@ -47,7 +60,7 @@ export default function LogIn() {
         <form
           className="space-y-6"
           onSubmit={form.handleSubmit((data: LogInValues) => {
-            login(data)
+            login(data);
           })}
         >
           {form.formState.errors.root && (
@@ -60,13 +73,13 @@ export default function LogIn() {
             <FormField
               control={form.control}
               name="email"
-              render={({field}) => (
+              render={({ field }) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder="my@email.com" {...field} />
                   </FormControl>
-                  <FormMessage/>
+                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -74,13 +87,13 @@ export default function LogIn() {
             <FormField
               control={form.control}
               name="password"
-              render={({field}) => (
+              render={({ field }) => (
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>
-                  <FormMessage className="break-after-all max-w-xs"/>
+                  <FormMessage className="break-after-all max-w-xs" />
                 </FormItem>
               )}
             />

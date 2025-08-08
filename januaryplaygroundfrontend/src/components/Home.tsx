@@ -7,20 +7,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuth } from "@/util/queries.ts";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 
 import { setupWebsocket, useAuthRedirect } from "../util/rest";
 import AuthNavBar from "./AuthNavBar";
 import Layout from "./Layout";
-import {useAuth} from "@/util/queries.ts";
+import {Spinner} from "@/components/ui/spinnersx";
 
 export default function Home() {
   const [location, setLocation] = useLocation();
 
-  const { data: authData } = useAuth();
+  const { data: authData, status } = useAuth();
   const [socketState, setSocketState] = useState<null | WebSocket>(null);
-  const [socketMessageState, setSocketMessageState] = useState("");
+  const [_, setSocketMessageState] = useState("");
+
+
   useEffect(() => {
     if (socketState) return;
     const socket = new WebSocket("ws://localhost:7070/ws");
@@ -41,7 +44,7 @@ export default function Home() {
   }, [socketState, authData]);
   // Check auth if we know it is wrong
   useAuthRedirect(true, authData, location, setLocation);
-
+  console.log(authData)
   const invoices = [
     {
       invoice: "INV001",
@@ -87,10 +90,18 @@ export default function Home() {
     },
   ];
 
+  if (status === "pending") {
+    return <Spinner  size={64} />;
+  } else if (status === "error") {
+    return (<Layout>
+      <p>"Something has gone wrong"</p>
+    </Layout>)
+  }
+
   return (
     <Layout>
       <>
-        <AuthNavBar/>
+        <AuthNavBar />
         <div className="p-4">
           <h1 className="text-xl font-bold"> Market </h1>
           <Table className="w-3/5 justify-center items-center mx-auto my-3">

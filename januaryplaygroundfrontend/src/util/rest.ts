@@ -1,23 +1,16 @@
 import {
-  AuthProps,
   PersistentAuthState,
-  SetAuth,
   SetPersistentAuth,
   SetSocketMessageState,
   SetSocketState,
   TempSessionAuth,
 } from "@/model.ts";
-import { UseFormReturn } from "react-hook-form";
+
 import { AuthDto } from "./model";
 
 const EMAIL = "email";
 const LOGGED_IN = "loggedIn";
 const EXPIRE_TIME = "expireTime";
-
-type FormType = UseFormReturn<{
-  email: string;
-  password: string;
-}>;
 
 type SetLocationType = <S>(
   to: string | URL,
@@ -42,7 +35,6 @@ export function useAuthRedirect(
   location: string,
   setLocation: SetLocationType,
 ) {
-
   if (authDto && requiresAuth && !authDto.loggedIn) {
     setLocation("/login");
   } else if (
@@ -92,20 +84,22 @@ export async function setupWebsocket(
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
-          type: "incomingLifecycle",
+          type: "clientLifecycle",
           token: tempSessionAuth.token,
           email: email,
           operation: "authenticate",
+          tickers: []
         }),
       );
     } else {
       socket.onopen = (_event) => {
         socket.send(
           JSON.stringify({
-            type: "incomingLifecycle",
+            type: "clientLifecycle",
             token: tempSessionAuth.token,
             email: email,
             operation: "authenticate",
+            tickers: []
           }),
         );
       };
