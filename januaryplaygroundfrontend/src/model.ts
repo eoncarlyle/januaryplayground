@@ -18,13 +18,6 @@ export type SetPersistentAuth = (
   persistentAuthState: PersistentAuthState,
 ) => void;
 
-export interface AuthProps {
-  authState: AuthState;
-  setAuth: SetAuth;
-  persistentAuthState: PersistentAuthState;
-  setPersistentAuth: SetPersistentAuth;
-}
-
 export interface TempSessionAuth {
   token: string;
 }

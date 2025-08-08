@@ -8,6 +8,7 @@ import {
   TempSessionAuth,
 } from "@/model.ts";
 import { UseFormReturn } from "react-hook-form";
+import { AuthDto } from "./model";
 
 const EMAIL = "email";
 const LOGGED_IN = "loggedIn";
@@ -35,110 +36,19 @@ export function getBaseUrl(): string {
   }
 }
 
-export function createAuthOnSubmitHandler<T>(
-  form: FormType,
-  setAuth: SetAuth,
-  endpoint: "signup" | "login",
-) {
-  return async (data: T) => {
-    try {
-      const result = await fetch(`${getBaseUrl()}/auth/${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-
-      if (result.ok) {
-        const authBody = await result.json();
-        if (
-          typeof authBody === "object" &&
-          authBody !== null &&
-          "email" in authBody &&
-          "expireTime" in authBody
-        ) {
-          const newAuth = {
-            evaluated: false,
-            email: authBody.email,
-            loggedIn: true,
-            expireTime: authBody.expireTime,
-          };
-          setAuth(newAuth);
-        } else {
-          form.setError("root", {
-            type: "server",
-            message: "Something went wrong",
-          });
-        }
-      } else {
-        const errorMessage: unknown = await result.text();
-        if (
-          result.status < 500 &&
-          errorMessage &&
-          typeof errorMessage === "string"
-        ) {
-          form.setError("root", {
-            type: "server",
-            message: errorMessage,
-          });
-        } else {
-          form.setError("root", {
-            type: "server",
-            message: "Something went wrong",
-          });
-        }
-      }
-    } catch (e: unknown) {
-      console.error(`Fetch failed: ${e}`);
-    }
-  };
-}
-
-export function logOutHandler(setAuth: SetAuth, redirectOnSuccess: () => void) {
-  return async () => {
-    try {
-      const result = await fetch(`${getBaseUrl()}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (result.ok) {
-        setAuth(loggedOutAuthState);
-        setPersistentAuth(loggedOutAuthState);
-        redirectOnSuccess();
-      } else {
-        const errorMessage: unknown = await result.text();
-        if (
-          result.status < 500 &&
-          errorMessage &&
-          typeof errorMessage === "string"
-        ) {
-          console.error(`Log out response failure: ${errorMessage}`);
-        } else {
-          console.error(`Log out response failure: server error`);
-        }
-      }
-    } catch (e: unknown) {
-      console.error(`Fetch failed: ${e}`);
-    }
-  };
-}
-
 export function useAuthRedirect(
   requiresAuth: boolean,
-  authProps: AuthProps,
+  authDto: AuthDto | undefined,
   location: string,
   setLocation: SetLocationType,
 ) {
-  const authState = authProps.authState;
 
-  if (requiresAuth && !authState.loggedIn) {
+  if (authDto && requiresAuth && !authDto.loggedIn) {
     setLocation("/login");
   } else if (
+    authDto &&
     !requiresAuth &&
-    authState.loggedIn &&
+    authDto.loggedIn &&
     ["/login", "/signup"].includes(location)
   ) {
     setLocation("/home");

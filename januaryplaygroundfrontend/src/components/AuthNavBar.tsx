@@ -1,10 +1,10 @@
-import { Button } from "@/components/ui/button";
-import { AuthProps } from "@/model";
-import { logOutHandler } from "@/util/rest";
-import { useLocation } from "wouter";
+import {Button} from "@/components/ui/button";
+import {useLocation} from "wouter";
+import {useLogout} from "@/util/queries.ts";
 
-export default function AuthNavBar(props: AuthProps) {
+export default function AuthNavBar() {
   const [_location, setLocation] = useLocation();
+  const { mutate: logout } = useLogout()
 
   return (
     <nav className="border-b">
@@ -15,7 +15,10 @@ export default function AuthNavBar(props: AuthProps) {
         <div className="flex-1" />
 
         <Button
-          onClick={logOutHandler(props.setAuth, () => setLocation("/"))}
+          onClick={() => {
+            logout()
+            setLocation("/")
+          }}
           className="flex items-center space-x-2"
         >
           <span> Log out </span>

@@ -1,10 +1,8 @@
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
   TableCaption,
   TableCell,
-  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -12,14 +10,15 @@ import {
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 
-import { AuthProps } from "../model";
 import { setupWebsocket, useAuthRedirect } from "../util/rest";
 import AuthNavBar from "./AuthNavBar";
 import Layout from "./Layout";
+import {useAuth} from "@/util/queries.ts";
 
-export default function Home(authProps: AuthProps) {
+export default function Home() {
   const [location, setLocation] = useLocation();
 
+  const { data: authData } = useAuth();
   const [socketState, setSocketState] = useState<null | WebSocket>(null);
   const [socketMessageState, setSocketMessageState] = useState("");
   useEffect(() => {
@@ -28,7 +27,7 @@ export default function Home(authProps: AuthProps) {
     setSocketState(socket);
     setupWebsocket(
       //TODO fix, is ugly
-      authProps.authState.email || "",
+      authData?.email || "",
       socket,
       setSocketState,
       setSocketMessageState,
@@ -39,9 +38,9 @@ export default function Home(authProps: AuthProps) {
         socket.close();
       }
     };
-  }, [socketState, authProps.authState]);
+  }, [socketState, authData]);
   // Check auth if we know it is wrong
-  useAuthRedirect(true, authProps, location, setLocation);
+  useAuthRedirect(true, authData, location, setLocation);
 
   const invoices = [
     {
@@ -91,12 +90,7 @@ export default function Home(authProps: AuthProps) {
   return (
     <Layout>
       <>
-        <AuthNavBar
-          authState={authProps.authState}
-          setAuth={authProps.setAuth}
-          persistentAuthState={authProps.persistentAuthState}
-          setPersistentAuth={authProps.setPersistentAuth}
-        />
+        <AuthNavBar/>
         <div className="p-4">
           <h1 className="text-xl font-bold"> Market </h1>
           <Table className="w-3/5 justify-center items-center mx-auto my-3">

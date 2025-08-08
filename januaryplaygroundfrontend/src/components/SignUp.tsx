@@ -1,27 +1,14 @@
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { AuthProps } from "@/model";
-import { createAuthOnSubmitHandler, useAuthRedirect } from "@/util/rest";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { useLocation } from "wouter";
-import { z } from "zod";
+import {Button} from "@/components/ui/button";
+import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,} from "@/components/ui/card";
+import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
+import {Input} from "@/components/ui/input";
+import {AuthProps} from "@/model";
+import {useAuthRedirect} from "@/util/rest";
+import {zodResolver} from "@hookform/resolvers/zod";
+import {useForm} from "react-hook-form";
+import {useLocation} from "wouter";
+import {z} from "zod";
+import {useAuth, useLogin, useSignup} from "@/util/queries.ts";
 
 const signUpSchema = z.object({
   email: z
@@ -39,7 +26,7 @@ const signUpSchema = z.object({
 
 type SignUpValues = z.infer<typeof signUpSchema>;
 
-export default function SignUp(authProps: AuthProps) {
+export default function SignUp() {
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
@@ -48,9 +35,11 @@ export default function SignUp(authProps: AuthProps) {
     },
   });
   const [location, setLocation] = useLocation();
-  useAuthRedirect(false, authProps, location, setLocation);
 
-  //TODO: need to prevent logged in user from accessing this, need a lightweight auth endpoint for this
+  const {data: authData } = useAuth();
+  const {mutate: signup} = useSignup()
+
+  useAuthRedirect(false, authData, location, setLocation);
 
   return (
     <Card className="w-full max-w-md">
@@ -61,9 +50,9 @@ export default function SignUp(authProps: AuthProps) {
         </CardHeader>
 
         <form
-          onSubmit={form.handleSubmit(
-            createAuthOnSubmitHandler(form, authProps.setAuth, "signup"),
-          )}
+          onSubmit={form.handleSubmit((data: SignUpValues) => {
+            signup(data)
+          })}
           className="space-y-6"
         >
           {form.formState.errors.root && (
