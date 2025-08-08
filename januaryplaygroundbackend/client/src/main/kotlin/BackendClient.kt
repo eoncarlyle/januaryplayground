@@ -154,15 +154,18 @@ class BackendClient(
                         return@mapLeft ClientFailure(-1, "Could not deserialise")
                     }
                 }
+
                 else -> ClientFailure(response.status.value, response.body()).left()
             }
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
+
     private inline fun <reified T> HttpRequestBuilder.configureRequest(request: T, components: Array<out String>) {
         url { appendPathSegments(*components) }
         contentType(ContentType.Application.Json)
         setBody(request)
     }
+
     suspend fun <T, R> retry(
         argument: T,
         request: suspend (T) -> Either<ClientFailure, R>,
@@ -184,92 +187,116 @@ class BackendClient(
     }
 
 
-    suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> {
-        return postRequest<CredentialsDto, Map<String, String>>(
+    suspend fun signUp(credentialsDto: CredentialsDto): Either<ClientFailure, Map<String, String>> =
+        postRequest<CredentialsDto, Map<String, String>>(
             credentialsDto,
             HttpStatusCode.OK,
             "auth",
             "signup"
         )
-    }
 
-    suspend fun getUserLongPositions(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<PositionRecord>> {
-        return postRequest<ExchangeRequestDto, List<PositionRecord>>(
+    suspend fun getUserLongPositions(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<PositionRecord>> =
+        postRequest<ExchangeRequestDto, List<PositionRecord>>(
             exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "positions"
         )
-    }
 
-    suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookEntry>> {
-        return postRequest<ExchangeRequestDto, List<OrderBookEntry>>(
+    suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookEntry>> =
+        postRequest<ExchangeRequestDto, List<OrderBookEntry>>(
             exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "orders"
         )
-    }
 
-    suspend fun getUserBalance(userEmail: String): Either<ClientFailure, BalanceResponse> {
-        return postRequest<BalanceRequestDto, BalanceResponse>(
+    suspend fun getUserBalance(userEmail: String): Either<ClientFailure, BalanceResponse> =
+        postRequest<BalanceRequestDto, BalanceResponse>(
             BalanceRequestDto(userEmail),
             HttpStatusCode.OK,
             "exchange",
             "balance"
         )
-    }
 
-    suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> {
-        return postRequest<ExchangeRequestDto, Quote>(
+    suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> =
+        postRequest<ExchangeRequestDto, Quote>(
             exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "quote"
         )
-    }
 
-    suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderRequest): Either<ClientFailure, MarketOrderResponse> {
-        return postRequest(
+    suspend fun postMarketOrderRequest(marketOrderResponse: MarketOrderRequest): Either<ClientFailure, MarketOrderResponse> =
+        postRequest(
             marketOrderResponse,
             HttpStatusCode.Created,
             "exchange",
             "orders",
             "market"
         )
-    }
 
-    suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> {
-        return postRequest(
+    suspend fun postLimitOrderRequest(limitOrderRequest: LimitOrderRequest): Either<ClientFailure, LimitOrderResponse> =
+        postRequest(
             limitOrderRequest,
             HttpStatusCode.Created,
             "exchange",
             "orders",
             "limit"
         )
-    }
 
     // Not totally sure if the string deserialisaiton will work
-    suspend fun postCreditTransfer(creditTransferDto: CreditTransferDto): Either<ClientFailure, String> {
-        return postRequest(creditTransferDto, HttpStatusCode.Created, "auth", "credit-transfer")
-    }
+    suspend fun postCreditTransfer(creditTransferDto: CreditTransferDto): Either<ClientFailure, String> =
+        postRequest(creditTransferDto, HttpStatusCode.Created, "auth", "credit-transfer")
 
-    suspend fun putNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> {
-        return putRequest(
+    suspend fun putNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> = putRequest(
+        notificationRule,
+        HttpStatusCode.Created,
+        "exchange",
+        "notification-rule"
+    )
+
+    suspend fun postSignUpOrchestrated(orchestratedCredentialsDto: OrchestratedCredentialsDto): Either<ClientFailure, String> =
+        postRequest(orchestratedCredentialsDto, HttpStatusCode.Created, "auth", "orchestrator", "signup")
+
+    suspend fun deleteNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> =
+        deleteRequest(
             notificationRule,
-            HttpStatusCode.Created,
+            HttpStatusCode.NoContent,
             "exchange",
             "notification-rule"
         )
+
+    suspend fun postOrchestratorLiquidateSingle(liquidateOrchestratedUserDto: LiquidateOrchestratedUserDto): Either<ClientFailure, Unit> {
+        return Either.catch {
+            val response = client.post(httpBaseurl) {
+                url {
+                    appendPathSegments("auth", "orchestrator", "liquidate")
+                }
+                contentType(ContentType.Application.Json)
+                setBody(liquidateOrchestratedUserDto)
+            }
+            return when (response.status) {
+                HttpStatusCode.NoContent -> Unit.right()
+                else -> ClientFailure(response.status.value, response.body<String>()).left()
+            }
+        }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
-    suspend fun deleteNotificationRule(notificationRule: NotificationRule): Either<ClientFailure, String> {
-        return deleteRequest(
-            notificationRule,
-            HttpStatusCode.Created,
-            "exchange",
-            "notification-rule"
-        )
+    suspend fun postOrchestratorLiquidateAll(liquidateAllOrchestratedUsersDto: LiquidateAllOrchestratedUsersDto): Either<ClientFailure, Unit> {
+        return Either.catch {
+            val response = client.post(httpBaseurl) {
+                url {
+                    appendPathSegments("auth", "orchestrator", "liquidate-all")
+                }
+                contentType(ContentType.Application.Json)
+                setBody(liquidateAllOrchestratedUsersDto)
+            }
+            return when (response.status) {
+                HttpStatusCode.NoContent -> Unit.right()
+                else -> ClientFailure(response.status.value, response.body<String>()).left()
+            }
+        }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
     suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
@@ -291,12 +318,12 @@ class BackendClient(
                     }
                 }
                 // Faced annoying serialisation problems
-                HttpStatusCode.NoContent -> {
+                HttpStatusCode.OK -> {
                     Either.catch {
                         response.body<AllOrderCancelResponse.NoOrdersCancelled>()
                     }.mapLeft { error ->
                         logger.error(error.message)
-                        return@mapLeft ClientFailure(-1, "Could not deserialise")
+                        return@mapLeft ClientFailure(-1, "Could not deserialise ${response.body<String>()}")
                     }
                 }
 

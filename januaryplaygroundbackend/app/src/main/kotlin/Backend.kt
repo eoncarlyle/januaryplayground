@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import kotlin.math.log
 
 private data class QuoteQueueMessage<T : Queueable>(
     val request: Any,
@@ -60,6 +61,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
+        logger.error("${ctx.body()} failure: ${orderFailure.second}")
         when (orderFailure.first) {
             OrderFailureCode.INTERNAL_ERROR -> ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
             OrderFailureCode.UNKNOWN_TICKER -> ctx.status(HttpStatus.NOT_FOUND)
@@ -273,7 +275,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                             is AllOrderCancelResponse.FilledOrdersCancelled ->
                                 ctx.status(HttpStatus.ACCEPTED)
 
-                            else -> ctx.status(HttpStatus.NO_CONTENT)
+                            else -> ctx.status(HttpStatus.OK)
                         }
                         ctx.json(response)
                         logger.info("Final quote: {}", exchangeService.getState().toString())
@@ -370,14 +372,18 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         Thread {
             while (true) {
                 val notificationRule = emittedEventQueue.take()
+                logger.info("--------Kafka Producer-------")
+
                 try {
-                    producer.sendSync("orchestrator", "default", Json.encodeToString(notificationRule))
+                    val event = Json.encodeToString(notificationRule)
+                    logger.info(event)
+                    producer.sendSync("orchestrator", "default", event)
                 } catch (e: Exception) {
                     logger.error(e.stackTrace.toString())
                     throw e
                 }
             }
-        }
+        }.start()
     }
 
     private fun orderQuoteConsumer(
@@ -426,7 +432,11 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
             } else false
         }.groupBy { rule -> rule.user }
 
-        val liveSockets = wsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
-        logger.info("Updated $liveSockets clients over websockets with new quote");
+        if (rulesInEffect.isNotEmpty()) {
+            val liveSockets = wsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
+            logger.info("Updated $liveSockets clients over websockets with notification");
+        } else {
+            logger.info("No rules in effect")
+        }
     }
 }

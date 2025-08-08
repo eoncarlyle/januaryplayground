@@ -1,11 +1,11 @@
 import java.sql.Connection
 import java.sql.DriverManager
 
-class DatabaseHelper(private val dbPath: String) {
+open class DatabaseHelper(private val dbPath: String) {
     private fun connect(): Connection = DriverManager.getConnection("jdbc:sqlite:$dbPath")
     private val isolationLevel = Connection.TRANSACTION_SERIALIZABLE
 
-    fun <T> query(
+    open fun <T> query(
         block: (Connection) -> T
     ): T {
         connect().use { conn ->

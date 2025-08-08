@@ -10,10 +10,11 @@ import org.slf4j.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.math.log
+import kotlin.math.exp
+import kotlin.random.Random
 
 class MarketMaker(
-    private val email: String,
+    private val marketMakerEmail: String,
     private val password: String,
     private val ticker: Ticker,
     private val logger: Logger,
@@ -21,36 +22,32 @@ class MarketMaker(
     private val mutex = Mutex()
     private var trackingQuote: Quote? = null
     private var exchangeSequenceTimestamp: Long = -1
-    private val spreadFloor: Int = 3
+    private val spreadFloor: Int = 2
     private val initialSpread = 5
     private var spread: Int = initialSpread
     private val fallbackQuote = Quote(ticker, 30, 35, System.currentTimeMillis())
     private val marketSize = 3
-    private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
+    private val exchangeRequestDto = ExchangeRequestDto(marketMakerEmail, ticker)
 
     private val orchestratorEmail = "orchestrator@iainschmitt.com"
     private val orchestratorTransferAmount = 150
-    private val orchestratorCreditSendRule = NotificationRule(
-        orchestratorEmail,
-        NotificationCategory.CREDIT_BALANCE,
-        NotificationOperation.GREATER_THAN,
-        700
-    )
+    private var trackingNotificationRule: NotificationRule? = null
+    private val notificationCreditAmount = 650
 
     private val backendClient = BackendClient(logger)
 
     fun main(): Unit = runBlocking {
         Either.catch {
-            backendClient.login(email, password)
-                .flatMap { _ -> backendClient.getStartingState(exchangeRequestDto) }
-                .flatMap { state -> mutex.withLock { handleStartingStateInMutex(state) } }
+            backendClient.login(marketMakerEmail, password)
+                .flatMap { backendClient.getStartingState(exchangeRequestDto) }
+                .flatMap { mutex.withLock { handleStartingStateInMutex(it) } }
                 .onRight { quote ->
                     mutex.withLock {
                         trackingQuote = quote
                     }
                     launch {
                         backendClient.connectWebSocket(
-                            email = email,
+                            email = marketMakerEmail,
                             tickers = listOf(ticker),
                             onOpen = { logger.info("WebSocket connection opened") },
                             onQuote = { onQuote(it) },
@@ -111,14 +108,49 @@ class MarketMaker(
         }
     }
 
-    private suspend fun onNotification(notificationRule: NotificationRule) {
-        either {
-            if (notificationRule != orchestratorCreditSendRule) raise(ClientFailure(-1, "Invalid notification rule: $notificationRule"))
-            backendClient.deleteNotificationRule(notificationRule).bind()
-            backendClient.postCreditTransfer(CreditTransferDto(orchestratorEmail, orchestratorTransferAmount)).bind()
-            backendClient.putNotificationRule(notificationRule).bind()
-            logger.info("Credit exceed notification and transfer to $orchestratorEmail")
-        }.mapLeft { error -> logger.error(error.toString()) }
+
+    private suspend fun onNotification(incomingNotificationRule: NotificationRule) {
+        logger.info("Notification sent to market maker")
+        mutex.withLock {
+            either {
+                if (incomingNotificationRule != trackingNotificationRule) raise(
+                    ClientFailure(
+                        -1,
+                        "Invalid notification rule: $incomingNotificationRule"
+                    )
+                )
+
+                backendClient.deleteNotificationRule(incomingNotificationRule).bind()
+                backendClient.postCreditTransfer(
+                    CreditTransferDto(
+                        marketMakerEmail,
+                        orchestratorEmail,
+                        orchestratorTransferAmount
+                    )
+                ).bind()
+
+                val nextTrackingNotificationRule = NotificationRule(
+                    marketMakerEmail,
+                    NotificationCategory.CREDIT_BALANCE,
+                    NotificationOperation.GREATER_THAN,
+                    System.currentTimeMillis(),
+                    notificationCreditAmount
+                )
+
+                backendClient.putNotificationRule(nextTrackingNotificationRule).bind()
+                trackingNotificationRule = nextTrackingNotificationRule
+                logger.info("New tracking notification rule $nextTrackingNotificationRule")
+
+                // Kotlin talk: string interpolation
+                logger.info("Credit exceed notification and transfer to $orchestratorEmail with notification reset")
+
+                if (spread > 0 && exp((-1/spread).toDouble()) > Random.nextFloat() && spread > spreadFloor) {
+                    logger.info("Spread narrowing $spread -> ${spread - 1}")
+                    spread -= 1
+                }
+
+            }.mapLeft { error -> logger.error(error.toString()) }
+        }
     }
 
     private suspend fun cancelAndResubmit(incomingQuote: Quote, cancelErrorMsg: String, submitErrorMsg: String) =
@@ -145,7 +177,7 @@ class MarketMaker(
 
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
-                    email = email,
+                    email = marketMakerEmail,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.BUY,
@@ -155,7 +187,7 @@ class MarketMaker(
 
             val sellLimitOrder = backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
-                    email = email,
+                    email = marketMakerEmail,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,
@@ -172,7 +204,7 @@ class MarketMaker(
     ): Either<ClientFailure, LimitOrderResponse> {
         return backendClient.postLimitOrderRequest(
             LimitOrderRequest(
-                email = email,
+                email = marketMakerEmail,
                 ticker = ticker,
                 size = marketSize,
                 tradeType = TradeType.BUY,
@@ -181,7 +213,7 @@ class MarketMaker(
         ).flatMap { _ ->
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
-                    email = email,
+                    email = marketMakerEmail,
                     ticker = ticker,
                     size = marketSize,
                     tradeType = TradeType.SELL,
@@ -230,7 +262,17 @@ class MarketMaker(
                         backendClient.postAllOrderCancel(exchangeRequestDto).bind()
                         val secondQuote = calculateNextQuote(firstQuote, true).bind()
                         initialLimitOrderSubmission(secondQuote).bind()
-                        backendClient.putNotificationRule(orchestratorCreditSendRule).bind()
+                        trackingNotificationRule = NotificationRule(
+                            marketMakerEmail,
+                            NotificationCategory.CREDIT_BALANCE,
+                            NotificationOperation.GREATER_THAN,
+                            System.currentTimeMillis(),
+                            notificationCreditAmount
+                        )
+
+                        logger.info("Starting tracking notification rule $trackingNotificationRule")
+                        // Kotlin talk: conservative static analysis
+                        backendClient.putNotificationRule(trackingNotificationRule!!).bind()
                         secondQuote
                     }.mapLeft { failure ->
                         logger.error("Client failure: ${failure.first}/${failure.second}")
@@ -288,7 +330,9 @@ class MarketMaker(
 
             else -> {
                 //! Mutable state modification!
+                val previousSpread = spread;
                 spread += 1
+                logger.info("Spread widening $previousSpread -> $spread")
                 if (trackingQuote == null) {
                     logger.warn("Tracking quote empty: `calculateNextQuote` call will return Left")
                 }

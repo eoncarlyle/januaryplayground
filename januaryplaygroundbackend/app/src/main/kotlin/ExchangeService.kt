@@ -17,11 +17,11 @@ class ExchangeService(
     private val cache = Cache.Builder<String, MutableSet<NotificationRule>>()
         .maximumCacheSize(1)
         .build()
-    private val NOTIFICATION_RULE_CACHE_KEY = "notifications"
+    private val notificationRuleCacheKey = "notifications"
+    private val notificationSemaphore = Semaphore(1)
 
-    fun marketOrderRequest(order: MarketOrderRequest, writeSemaphore: Semaphore): OrderResult<MarketOrderResponse> {
-        writeSemaphore.acquire()
-        try {
+    fun marketOrderRequest(order: MarketOrderRequest, writeSemaphore: Semaphore): OrderResult<MarketOrderResponse> =
+        withSemaphore(writeSemaphore) {
             return validateOrder(order).map { (validOrder, userBalance) ->
                 val userLongPositionCount =
                     exchangeDao.getUserLongPositions(order.email, order.ticker).sumOf { pos -> pos.size }
@@ -34,10 +34,7 @@ class ExchangeService(
                     )
                 return fillOrder(validOrder, marketOrderProposal)
             }
-        } finally {
-            writeSemaphore.release()
         }
-    }
 
     private fun fillOrder(
         order: Order,
@@ -64,9 +61,8 @@ class ExchangeService(
             }
     }
 
-    fun limitOrderRequest(order: LimitOrderRequest, writeSemaphore: Semaphore): OrderResult<LimitOrderResponse> {
-        writeSemaphore.acquire()
-        try {
+    fun limitOrderRequest(order: LimitOrderRequest, writeSemaphore: Semaphore): OrderResult<LimitOrderResponse> =
+        withSemaphore(writeSemaphore) {
             return validateOrder(order).map { (validOrder, userBalance) ->
                 val matchingPendingOrders = getSortedMatchingOrderBook(validOrder)
                 val crossingOrders: SortedOrderBook = matchingPendingOrders.filter { (price, _) ->
@@ -86,10 +82,7 @@ class ExchangeService(
                     else -> createRestingLimitOrder(validOrder)
                 }
             }
-        } finally {
-            writeSemaphore.release()
         }
-    }
 
     fun getState(): Pair<Int, Int> {
         return exchangeDao.getState();
@@ -212,29 +205,27 @@ class ExchangeService(
         proposedOrders: ArrayList<OrderBookEntry>,
         userBalance: Int,
         userLongPositions: Int
-    ): Either<OrderFailure, ArrayList<OrderBookEntry>> {
+    ): Either<OrderFailure, ArrayList<OrderBookEntry>> =
         if (order.isBuy()) {
-            return if (proposedOrders.sumOf { op -> (op.price * op.size) } <= userBalance) proposedOrders.right()
+            if (proposedOrders.sumOf { op -> (op.size - op.finalSize) * op.price } <= userBalance) proposedOrders.right()
             else Pair(
                 OrderFailureCode.INSUFFICIENT_BALANCE,
                 "Insufficient balance for order"
             ).left()
         } else {
-            return if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) proposedOrders.right()
+            if (proposedOrders.sumOf { op -> (op.size - op.finalSize) } <= userLongPositions) proposedOrders.right()
             else Pair(
                 OrderFailureCode.INSUFFICIENT_SHARES,
                 "Insufficient shares for order"
             ).left()
         }
-    }
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun allOrderCancel(
         order: ExchangeRequestDto,
         writeSemaphore: Semaphore
-    ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> {
-        writeSemaphore.acquire()
-        try {
+    ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> =
+        withSemaphore(writeSemaphore) {
             if (exchangeDao.getTicker(order.ticker) == null) {
                 return Pair(
                     AllOrderCancelFailureCode.UNKNOWN_TICKER,
@@ -254,51 +245,30 @@ class ExchangeService(
 
                 else -> AllOrderCancelResponse.NoOrdersCancelled(System.currentTimeMillis()).right()
             }
-
-        } finally {
-            writeSemaphore.release()
         }
-    }
 
     fun getStatelessQuoteInLock(ticker: Ticker): StatelessQuote? {
         return exchangeDao.getPartialQuote(ticker)
     }
 
-    fun getStatelessQuoteOutsideLock(ticker: Ticker, lightswitch: Lightswitch): StatelessQuote? {
-        try {
-            lightswitch.lock()
+    fun getStatelessQuoteOutsideLock(ticker: Ticker, lightswitch: Lightswitch): StatelessQuote? =
+        withLightswitch(lightswitch) {
             return exchangeDao.getPartialQuote(ticker)
-        } finally {
-            lightswitch.unlock()
         }
+
+    fun getUserBalance(userEmail: String, lightswitch: Lightswitch): Int? = withLightswitch(lightswitch) {
+        return exchangeDao.getUserBalance(userEmail)
     }
 
-    fun getUserBalance(userEmail: String, lightswitch: Lightswitch): Int? {
-        try {
-            lightswitch.lock()
-            return exchangeDao.getUserBalance(userEmail)
-        } finally {
-            lightswitch.unlock()
-        }
-    }
-
-    fun getUserLongPositions(userEmail: String, ticker: Ticker, lightswitch: Lightswitch): List<PositionRecord> {
-        try {
-            lightswitch.lock()
+    fun getUserLongPositions(userEmail: String, ticker: Ticker, lightswitch: Lightswitch): List<PositionRecord> =
+        withLightswitch(lightswitch) {
             return exchangeDao.getUserLongPositions(userEmail, ticker)
-        } finally {
-            lightswitch.unlock()
         }
-    }
 
-    fun getUserOrders(userEmail: String, ticker: Ticker, lightswitch: Lightswitch): List<OrderBookEntry> {
-        try {
-            lightswitch.lock()
+    fun getUserOrders(userEmail: String, ticker: Ticker, lightswitch: Lightswitch): List<OrderBookEntry> =
+        withLightswitch(lightswitch) {
             return exchangeDao.getUserOrders(userEmail, ticker)
-        } finally {
-            lightswitch.unlock()
         }
-    }
 
     private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
         val tickerRecord = exchangeDao.getTicker(order.ticker)
@@ -319,32 +289,46 @@ class ExchangeService(
         ValidOrderRecord(order, userBalance)
     }
 
-    fun getNotificationRules(): Set<NotificationRule> {
-        val maybeRules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
-        if (maybeRules != null) {
-            return maybeRules
-        } else {
+    // Kotlin talk: `T` can be unit, void is not special
+    private inline fun <T> withSemaphore(semaphore: Semaphore, action: () -> T): T {
+        semaphore.acquire()
+        try {
+            return action()
+        } finally {
+            semaphore.release()
+        }
+    }
+
+    private inline fun <T> withNotificationSemaphore(action: () -> T): T = withSemaphore(notificationSemaphore, action)
+
+    private inline fun <T> withLightswitch(lightswitch: Lightswitch, action: () -> T): T {
+        lightswitch.unlock()
+        try {
+            return action()
+        } finally {
+            lightswitch.lock()
+        }
+    }
+
+    fun getNotificationRules(): Set<NotificationRule> = withNotificationSemaphore {
+        cache.get(notificationRuleCacheKey) ?: run {
             val rules = exchangeDao.getNotificationRules()
-            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
-            return rules
+            cache.put(notificationRuleCacheKey, rules)
+            rules
         }
     }
 
-    fun createNotificationRule(rule: NotificationRule) {
-        val rules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
-        if (rules?.contains(rule) == false) {
-            exchangeDao.createNotificationRule(rule)
-            rules.add(rule)
-            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
-        }
+    fun createNotificationRule(rule: NotificationRule) = withNotificationSemaphore {
+        exchangeDao.createNotificationRule(rule)
+        cache.put(notificationRuleCacheKey, exchangeDao.getNotificationRules())
     }
 
-    fun deleteNotificationRule(rule: NotificationRule): Boolean {
-        val rules = cache.get(NOTIFICATION_RULE_CACHE_KEY)
-        return if (rules?.contains(rule) == true) {
+    fun deleteNotificationRule(rule: NotificationRule): Boolean = withNotificationSemaphore {
+        val cachedRules = cache.get(notificationRuleCacheKey)
+        if (cachedRules?.contains(rule) == true) {
             exchangeDao.deleteNotificationRule(rule)
-            rules.remove(rule)
-            cache.put(NOTIFICATION_RULE_CACHE_KEY, rules)
+            val updatedRules = cachedRules.toMutableSet().apply { remove(rule) }
+            cache.put(notificationRuleCacheKey, updatedRules)
             true
         } else false
     }

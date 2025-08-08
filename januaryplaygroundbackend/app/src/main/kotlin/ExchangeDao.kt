@@ -243,7 +243,7 @@ class ExchangeDao(
                 }
 
                 conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, partialOrder.size * partialOrder.price * order.sign())
+                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * partialOrder.price * order.sign())
                     stmt.setString(2, partialOrder.user)
                     stmt.executeUpdate()
                 }
@@ -269,7 +269,9 @@ class ExchangeDao(
             }
             // Addressing orderer
             conn.prepareStatement("update user set balance = balance - ? where email = ?").use { stmt ->
-                stmt.setInt(1, marketOrderProposal.sumOf { entry -> entry.size * entry.price } * order.sign())
+                stmt.setInt(
+                    1,
+                    marketOrderProposal.sumOf { entry -> (entry.size - entry.finalSize) * entry.price } * order.sign())
                 stmt.setString(2, order.email)
                 stmt.executeUpdate()
             }
@@ -536,10 +538,24 @@ class ExchangeDao(
         return DeleteAllPositionsRecord(cancelledTick, orderCount)
     }
 
+    fun userAudit(): List<Pair<String, Int>> {
+        val results = ArrayList<Pair<String, Int>>()
+        db.query { conn ->
+            conn.prepareStatement("select email, balance from user").use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        results.add(Pair(rs.getString("email"), rs.getInt("balance")))
+                    }
+                }
+            }
+        }
+        return results
+    }
+
     fun getNotificationRules(): MutableSet<NotificationRule> {
         val rules = HashSet<NotificationRule>()
         db.query { conn ->
-            conn.prepareStatement("select user, category, operation, dimension from notification_rules").use { stmt ->
+            conn.prepareStatement("select user, category, operation, timestamp, dimension from notification_rules").use { stmt ->
                 stmt.executeQuery().use { rs ->
                     while (rs.next()) {
                         val categoryOrdinal = rs.getInt("category")
@@ -550,10 +566,11 @@ class ExchangeDao(
                             val operation = getNotificationOperation(operationOrdinal).bind()
                             rules.add(
                                 NotificationRule(
-                                    user = rs.getString("user"),
-                                    category = category,
-                                    operation = operation,
-                                    dimension = rs.getInt("dimension")
+                                    rs.getString("user"),
+                                    category,
+                                    operation,
+                                    rs.getLong("timestamp"),
+                                    rs.getInt("dimension")
                                 )
                             )
                         }
@@ -565,39 +582,42 @@ class ExchangeDao(
     }
 
     fun createNotificationRule(rule: NotificationRule) {
-        val (userEmail, category, operation, dimension) = rule
+        val (userEmail, category, operation, timestamp, dimension) = rule
 
         db.query { conn ->
             conn.prepareStatement(
                 """
-                INSERT OR IGNORE INTO notification_rules (user, category, operation, dimension)
-                    values(?, ?, ?, ?)
+                insert or replace into notification_rules (user, category, operation, timestamp, dimension)
+                    values(?, ?, ?, ?, ?)
                 """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setInt(2, category.ordinal)
                 stmt.setInt(3, operation.ordinal)
-                stmt.setInt(4, dimension)
+                stmt.setLong(4, timestamp)
+                stmt.setInt(5, dimension)
+
+                stmt.executeUpdate()
             }
         }
     }
 
     fun deleteNotificationRule(rule: NotificationRule) {
-        val (userEmail, category, operation, dimension) = rule
+        val (userEmail, category, operation, timestamp, dimension) = rule //Kotlin talk: talk about destructuring
 
         db.query { conn ->
             conn.prepareStatement(
-        """
+                """
             delete from notification_rules 
-            where user = ? and category = ? and operation = ? and dimension = ?
+            where user = ? and category = ? and operation = ? and timestamp = ? and dimension = ?
             """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setInt(2, category.ordinal)
                 stmt.setInt(3, operation.ordinal)
-                stmt.setInt(4, dimension)
+                stmt.setLong(4, timestamp)
+                stmt.setInt(5, dimension)
             }
         }
     }
-
 }
