@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
-import kotlin.math.log
 
 private data class QuoteQueueMessage<T : Queueable>(
     val request: Any,

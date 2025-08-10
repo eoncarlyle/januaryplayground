@@ -35,14 +35,14 @@ export function useAuthRedirect(
   location: string,
   setLocation: SetLocationType,
 ) {
-  if (authDto && requiresAuth && !authDto.loggedIn) {
+  if (!authDto && requiresAuth) {
     setLocation("/login");
   } else if (
     authDto &&
     !requiresAuth &&
-    authDto.loggedIn &&
     ["/login", "/signup"].includes(location)
   ) {
+    console.log("here!", authDto, requiresAuth, location);
     setLocation("/home");
   }
 }

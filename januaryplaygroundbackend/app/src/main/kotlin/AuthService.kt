@@ -131,7 +131,7 @@ class AuthService(
         try {
             val result = either {
                 val dto = parseCtxBody<OrchestratedCredentialsDto>(ctx).bind()
-                val auth = evaluateAuth(ctx, "orchestratorEmail").getOrElse { raise(404 to "User authentication failed") }
+                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
                 ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to create orchestrated user" }
                 ensure(hasAtLeastAsManyCredits(auth.first, dto.initialCreditBalance)) { 403 to "Insufficient Funds" }
 
@@ -173,7 +173,7 @@ class AuthService(
         try {
             val result = either {
                 val dto = parseCtxBody<LiquidateOrchestratedUserDto>(ctx).bind()
-                val auth = evaluateAuth(ctx, "orchestratorEmail").getOrElse { raise(404 to "User authentication failed") }
+                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
                 ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
                 ensure(isOrchestratedBy(dto.targetUserEmail, auth.first)) {
                     403 to "Target account not orchestrated by user"
@@ -224,7 +224,7 @@ class AuthService(
         writeSemaphore.acquire()
         try {
             either {
-                val auth = evaluateAuth(ctx, "orchestratorEmail").getOrElse { raise(404 to "User authentication failed") }
+                val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
                 ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
 
                 val orchestratedUsers = getOrchestratedUsers(auth.first).bind()
@@ -285,7 +285,7 @@ class AuthService(
         try {
             parseCtxBodyMiddleware<CreditTransferDto>(ctx) { dto ->
                 val result = either {
-                    val auth = evaluateAuth(ctx, "sendingUserEmail").getOrElse { raise(404 to "User authentication failed") }
+                    val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
                     ensure(hasAtLeastAsManyCredits(auth.first, dto.creditAmount)) { 403 to "Insufficient Funds" }
                     ensure(emailPresent(dto.targetUserEmail)) { 400 to "Target user does not exist" }
 
@@ -412,17 +412,14 @@ class AuthService(
     }
 
     // TODO While different DTOs need to send the current user email on different keys, this should accept some common interface
-    fun evaluateAuth(ctx: Context, emailKey: String = "email"): Option<Pair<String, Long>> {
+    fun evaluateAuth(ctx: Context): Option<Pair<String, Long>> {
         return option {
-            val email = Option.fromNullable(ctx.bodyAsClass<Map<String, Any>>()[emailKey])
-                .map { it.toString() }.bind()
             val token = Option.fromNullable(ctx.cookie(session)).bind()
             val maybePair =
                 db.query { conn ->
-                    conn.prepareStatement("select email, expire_timestamp from session where token = ? and email = ?")
+                    conn.prepareStatement("select email, expire_timestamp from session where token = ?")
                         .use { stmt ->
                             stmt.setString(1, token)
-                            stmt.setString(2, email)
                             stmt.executeQuery()
                                 .use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
                         }

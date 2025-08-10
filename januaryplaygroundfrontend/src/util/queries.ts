@@ -2,14 +2,13 @@ import { AuthDto } from "@/util/model.ts";
 import { getBaseUrl } from "@/util/rest.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-export const useAuth = (email: string) => {
+export const useAuth = () => {
   return useQuery<AuthDto>({
     queryKey: ["auth"],
     queryFn: async () => {
       const response = await fetch(`${getBaseUrl()}/auth/evaluate`, {
         method: "POST",
-        credentials: "include",
-        body: JSON.stringify({ email })
+        credentials: "include"
       });
 
       if (!response.ok) {
@@ -32,7 +31,6 @@ export const useLogout = () => {
         method: "POST",
         credentials: "include",
       });
-      const cachedAuthData = queryClient.getQueryData(['auth'])
       if (!response.ok) {
         throw new Error(`Logout failed: ${response.status}`);
       }
@@ -102,10 +100,8 @@ export const useSignup = () => {
       return await extractAuth(response);
     },
     onSuccess: (authData) => {
-      // Update the auth cache with new data
       queryClient.setQueryData(["auth"], authData);
 
-      // Optionally invalidate to trigger background refetch
       queryClient.invalidateQueries({ queryKey: ["auth"] });
     },
   });
