@@ -14,7 +14,7 @@ import { useLocation } from "wouter";
 import { setupWebsocket, useAuthRedirect } from "../util/rest";
 import AuthNavBar from "./AuthNavBar";
 import Layout from "./Layout";
-import { Spinner } from "@/components/ui/spinner.tsx";
+import {Spinner} from "@/components/ui/spinner";
 
 export default function Home() {
   const [location, setLocation] = useLocation();

@@ -9,6 +9,7 @@ import io.javalin.http.Context
 import io.javalin.http.HttpStatus
 import io.javalin.http.util.NaiveRateLimit
 import io.javalin.websocket.WsConfig
+import io.javalin.websocket.WsContext
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
@@ -25,12 +26,13 @@ private data class QuoteQueueMessage<T : Queueable>(
 )
 
 class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) {
-    private val wsUserMap = WsUserMap()
+    private val authenticatedWsUserMap = WsUserMap()
+    private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
-    private val quoteQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
+    private val orderQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
 
     // This is gross and must be narrowed at some point
-    private val emittedEventQueue = LinkedBlockingQueue<CreditTransferDto>()
+    private val creditTransferQueue = LinkedBlockingQueue<CreditTransferDto>()
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(writeSemaphore)
@@ -55,8 +57,8 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }
     }
 
-    private val authService = AuthService(db, secure, wsUserMap, logger)
-    private val exchangeService = ExchangeService(db, secure, wsUserMap, logger)
+    private val authService = AuthService(db, secure, authenticatedWsUserMap, logger)
+    private val exchangeService = ExchangeService(db, secure, authenticatedWsUserMap, logger)
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
@@ -95,7 +97,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
             authService.transferCredits(
                 ctx,
                 writeSemaphore
-            ) { dto -> emittedEventQueue.put(dto) }
+            ) { dto -> creditTransferQueue.put(dto) }
         }
         this.javalinApp.post("/auth/orchestrator/liquidate") { ctx ->
             authService.liquidateSingleOrchestratedUser(
@@ -117,11 +119,12 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         this.javalinApp.delete("/exchange/notification-rule") { deleteNotificationRule(it) }
 
         // # WebSockets
-        this.javalinApp.ws("/ws") { webSocketConsumer(it) }
+        this.javalinApp.ws("/ws/authenticated") { privateWebSocketConsumer(it) }
+        this.javalinApp.ws("/ws/public") { publicWebSocketConsumer(it) }
 
         this.javalinApp.start(7070)
         heartbeatThread()
-        websocketUpdateThread()
+        orderQueueConsumerThread()
         kafkaProducerThread()
     }
 
@@ -209,7 +212,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
                         //logger.info("Final state: {}", marketService.getState().toString())
-                        quoteQueue.put(
+                        orderQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
                                 response,
@@ -243,7 +246,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
                         //logger.info("Final state: {}", marketService.getState().toString())
-                        quoteQueue.put(
+                        orderQueue.put(
                             QuoteQueueMessage(
                                 orderRequest,
                                 response,
@@ -278,7 +281,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                         }
                         ctx.json(response)
                         logger.info("Final quote: {}", exchangeService.getState().toString())
-                        quoteQueue.put(
+                        orderQueue.put(
                             QuoteQueueMessage(
                                 cancelRequest,
                                 response,
@@ -319,7 +322,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }
     }
 
-    private fun webSocketConsumer(ws: WsConfig) {
+    private fun privateWebSocketConsumer(ws: WsConfig) {
         ws.onConnect { ctx -> authService.handleWsConnection(ctx) }
         // The only expected inbound messages are for client authentication
         ws.onMessage { ctx ->
@@ -345,22 +348,27 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }
     }
 
+    private fun publicWebSocketConsumer(ws: WsConfig) {
+        ws.onConnect { publicWsUsers.add(it) }
+        ws.onClose { publicWsUsers.remove(it) }
+    }
+
     private fun heartbeatThread() {
         Thread {
             while (true) {
                 Thread.sleep(5000) // Every 5 seconds
 
-                wsUserMap.forEachLiveSocket { ctx ->
+                authenticatedWsUserMap.forEachLiveSocket { ctx ->
                     ctx.send(objectMapper.writeValueAsString(ServerTimeMessage(System.currentTimeMillis())))
                 }
             }
         }.start()
     }
 
-    private fun websocketUpdateThread() {
+    private fun orderQueueConsumerThread() {
         Thread {
             while (true) {
-                val (request, queueableResponse, initialQuote, finalQuote) = quoteQueue.take()
+                val (request, queueableResponse, initialQuote, finalQuote) = orderQueue.take()
                 orderQuoteConsumer(initialQuote, finalQuote, queueableResponse, request)
                 notificationRuleEventProducer()
             }
@@ -370,7 +378,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private fun kafkaProducerThread() {
         Thread {
             while (true) {
-                val notificationRule = emittedEventQueue.take()
+                val notificationRule = creditTransferQueue.take()
                 logger.info("--------Kafka Producer-------")
 
                 try {
@@ -401,7 +409,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                 val sentQuote = finalQuote.getQuote(queueableResponse.exchangeSequenceTimestamp)
                 logger.info("Forcing request: $request")
                 logger.info("Quote transition: [${sentQuote.exchangeSequenceTimestamp}] $initialQuote -> $finalQuote ")
-                val liveSockets = wsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) { ctx ->
+                val liveSockets = authenticatedWsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) { ctx ->
                     ctx.send(QuoteMessage(sentQuote))
                 }
                 logger.info("Updated $liveSockets clients over websockets with new quote");
@@ -432,7 +440,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }.groupBy { rule -> rule.user }
 
         if (rulesInEffect.isNotEmpty()) {
-            val liveSockets = wsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
+            val liveSockets = authenticatedWsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
             logger.info("Updated $liveSockets clients over websockets with notification");
         } else {
             logger.info("No rules in effect")

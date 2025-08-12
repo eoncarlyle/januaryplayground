@@ -52,8 +52,8 @@ class AuthService(
                 ctx.status(200)
                 ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
             }.onLeft { throwable ->
-                ctx.status(500)
-                ctx.json(mapOf("message" to throwable))
+                ctx.status(throwable.first)
+                ctx.json(throwable.second)
             }
         }
     }

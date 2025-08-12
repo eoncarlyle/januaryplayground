@@ -97,6 +97,7 @@ enum class OrderFailureCode {
     INSUFFICIENT_BALANCE,
     INSUFFICIENT_SHARES, // Market, FOK
     INTERNAL_ERROR,
+    BAD_PRICE,
     NOT_IMPLEMENTED
 }
 

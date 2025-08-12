@@ -270,7 +270,7 @@ class ExchangeService(
             return exchangeDao.getUserOrders(userEmail, ticker)
         }
 
-    private fun <T : OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
+    private fun <T: OrderRequest> validateOrder(order: T): Either<OrderFailure, ValidOrderRecord<T>> = either {
         val tickerRecord = exchangeDao.getTicker(order.ticker)
         ensure(tickerRecord != null) {
             Pair(
@@ -286,6 +286,9 @@ class ExchangeService(
         }
         val userBalance = exchangeDao.getUserBalance(order.email)
         ensure(userBalance != null) { Pair(OrderFailureCode.UNKNOWN_USER, "Unknown user attempting to transact") }
+        if (order is LimitOrderRequest) {
+            ensure(order.price > 0) { Pair(OrderFailureCode.BAD_PRICE, "Price must be greater than zero, ${order.price} provided") }
+        }
         ValidOrderRecord(order, userBalance)
     }
 

@@ -386,7 +386,7 @@ class BackendClient(
         onNotification: suspend (NotificationRule) -> Unit,
         onError: (Throwable) -> Unit
     ) {
-        client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws", port = port) {
+        client.webSocket(method = HttpMethod.Get, host = baseurl, path = "/ws/authenticated", port = port) {
             logger.info("WebSocket connection established")
             onOpen()
             send(
