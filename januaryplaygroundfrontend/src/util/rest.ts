@@ -2,11 +2,12 @@ import {
   PersistentAuthState,
   SetPersistentAuth,
   SetSocketMessageState,
-  SetSocketState,
+  SetSocketState, SocketState,
   TempSessionAuth,
 } from "@/model.ts";
 
-import { AuthDto } from "./model";
+import {AuthDto} from "./model";
+import React from "react";
 
 const EMAIL = "email";
 const LOGGED_IN = "loggedIn";
@@ -53,12 +54,12 @@ export async function getWebsocketAuth(
   return fetch(`${getBaseUrl()}/auth/sessions/temporary`, {
     method: "POST",
     credentials: "include",
-    body: JSON.stringify({ email: email }),
+    body: JSON.stringify({email: email}),
   })
     .then((auth) => auth.json())
     .then((body) => {
       if (typeof body === "object" && body !== null && "token" in body) {
-        return { token: body["token"] };
+        return {token: body["token"]};
       } else return null;
     });
 }
@@ -68,7 +69,7 @@ export async function getWebsocketAuth(
 //"email" in authBody &&
 //"expireTime" in authBody
 
-export async function setupWebsocket(
+export async function setupAuthenticatedWebsocket(
   email: string,
   socket: WebSocket,
   setSocketState: SetSocketState,
@@ -121,6 +122,21 @@ export async function setupWebsocket(
   }
 }
 
+export async function setupPublicWebsocket(
+  socket: WebSocket,
+  setMsgs: React.Dispatch<React.SetStateAction<String[]>>
+) {
+
+  socket.onmessage = (event) => {
+    setMsgs(msgs => [...msgs, JSON.stringify(event.data)].slice(-10));
+  };
+
+  socket.onerror = (event) => {
+    console.error("WebSocket error:", event);
+  };
+}
+
+
 export const loggedOutAuthState = {
   evaluated: false,
   email: null,
@@ -129,7 +145,7 @@ export const loggedOutAuthState = {
 };
 
 function setPersistentAuth(persistentAuthState: PersistentAuthState) {
-  const { loggedIn, email, expireTime } = persistentAuthState;
+  const {loggedIn, email, expireTime} = persistentAuthState;
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
     localStorage.setItem(EMAIL, email);

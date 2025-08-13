@@ -16,13 +16,10 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ### To Do
 - Very basic public frontend showing the following: I don't think that the authenticated frontend are really necessary, although they would be nice to fix at some point - definitely keep the components around though
-    - Quote changes
-    - Sucsessful orders
+    ~~- Quote changes~~
+    ~~- Sucsessful orders~~
     - Flapping out of noise traders
     - Creation of new noise traders
-    - Steps
-      - New `orderQueueConsumerThread` function
-      - Publish backend events based off of this
 ~~- Prevent prices of -1 in market transactions~~
 - Faster position cleanup: include information about current position in the order proposal, checking for deletes each time is not good
 - ~~The market makers need to be better capitalised: if they run out of positions to sell that is a pretty big problem~~
@@ -41,6 +38,12 @@ This repository is a playground for working on a grab bag of these technologies,
   - Downstream component changes
   - Persistence addition
   - Client order submission frontend
+
+### Public Websockets message types
+- `QuoteMessage`
+- `MarketOrderResponse`
+- `LimitOrderResponse`
+- `CreditTransferDto`
 
 ### Reference
 

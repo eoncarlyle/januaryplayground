@@ -10,6 +10,7 @@ import "./App.css";
 import Home from "./components/Home";
 import LogIn from "./components/LogIn";
 import SignUp from "./components/SignUp";
+import {Landing} from "@/components/Landing.tsx";
 
 function InternalApp() {
   /* Reflect on the fact that you did not immediately understand that if the first was allowed, the
@@ -27,10 +28,10 @@ function InternalApp() {
 
   return (
     <Switch>
-      <Route path="/signup" component={() => <SignUp />} />
-      <Route path="/login" component={() => <LogIn />} />
-      <Route path="/" component={() => "Landing Page"} />
-      <Route path="/home" component={() => <Home />} />
+      {/*<Route path="/signup" component={() => <SignUp />} />*/}
+      {/*<Route path="/login" component={() => <LogIn />} />*/}
+      <Route path="/" component={() => <Landing />} />
+      {/*<Route path="/home" component={() => <Home />} />*/}
     </Switch>
   );
 }

@@ -17,6 +17,11 @@ enum class WebSocketResponseStatus(val code: Int) {
 // Will have fields added to it
 class WsUserMapRecord(val token: String?, val email: String?, val authenticated: Boolean, val tickers: List<Ticker>)
 
+fun HashSet<WsContext>.forEachLiveSocket(action: (WsContext) -> Unit): Int =
+    this.filter { it.session.isOpen }
+        .onEach { action(it) }
+        .size
+
 class WsUserMap {
     private val map = HashMap<WsContext, WsUserMapRecord>()
 
@@ -38,7 +43,7 @@ class WsUserMap {
         }
     }
 
-    fun notifyLiveSocketsInEffect(rulesInEffect:  Map<String, List<NotificationRule>>): Int {
+    fun notifyLiveSocketsInEffect(rulesInEffect: Map<String, List<NotificationRule>>): Int {
         synchronized(this) {
             val aliveSockets = map.keys.filter { it.session.isOpen && map[it]?.authenticated ?: false }
 

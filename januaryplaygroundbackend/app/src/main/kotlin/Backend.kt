@@ -138,7 +138,6 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     }
 
     private fun getQuote(ctx: Context) {
-        //Extra braces below responded in very strange way
         parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
             val ticker = dto.ticker
             if (exchangeService.validateTicker(ticker)) {
@@ -368,8 +367,8 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private fun orderQueueConsumerThread() {
         Thread {
             while (true) {
-                val (request, queueableResponse, initialQuote, finalQuote) = orderQueue.take()
-                orderQuoteConsumer(initialQuote, finalQuote, queueableResponse, request)
+                val (request, queueableOrderResponse, initialQuote, finalQuote) = orderQueue.take()
+                orderResponseConsumer(initialQuote, finalQuote, queueableOrderResponse, request)
                 notificationRuleEventProducer()
             }
         }.start()
@@ -385,6 +384,11 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                     val event = Json.encodeToString(notificationRule)
                     logger.info(event)
                     producer.sendSync("orchestrator", "default", event)
+
+                    val orderLivePublicSockets = publicWsUsers.forEachLiveSocket {
+                        it.send(notificationRule)
+                    }
+                    logger.info("Updated $orderLivePublicSockets clients over public websockets with incoming credit transfer notification")
                 } catch (e: Exception) {
                     logger.error(e.stackTrace.toString())
                     throw e
@@ -393,26 +397,37 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }.start()
     }
 
-    private fun orderQuoteConsumer(
+    private fun orderResponseConsumer(
         initialQuote: StatelessQuote?,
         finalQuote: StatelessQuote?,
-        queueableResponse: Queueable,
+        queueableOrderResponse: Queueable,
         request: Any
     ) {
-        logger.info("---------OrderQuoteConsumer---------")
+        logger.info("---------OrderResponseConsumer---------")
         logger.info("Incoming Quote: $initialQuote")
+
+        val orderLivePublicSockets = publicWsUsers.forEachLiveSocket {
+            it.send(queueableOrderResponse)
+        }
+        logger.info("Updated $orderLivePublicSockets clients over public websockets with new quote")
 
         if (initialQuote != null && finalQuote != null) {
             if (initialQuote.ticker != finalQuote.ticker) {
                 logger.warn("Illegal ticker combination, must be fixed by better typing: ${initialQuote.ticker}, ${finalQuote.ticker}")
             } else if (initialQuote.ask != finalQuote.ask || initialQuote.bid != finalQuote.bid) {
-                val sentQuote = finalQuote.getQuote(queueableResponse.exchangeSequenceTimestamp)
+                val sentQuote = finalQuote.getQuote(queueableOrderResponse.exchangeSequenceTimestamp)
                 logger.info("Forcing request: $request")
                 logger.info("Quote transition: [${sentQuote.exchangeSequenceTimestamp}] $initialQuote -> $finalQuote ")
-                val liveSockets = authenticatedWsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) { ctx ->
-                    ctx.send(QuoteMessage(sentQuote))
+                val liveAuthenticatedSockets = authenticatedWsUserMap.forEachSubscribingLiveSocket(finalQuote.ticker) {
+                    it.send(QuoteMessage(sentQuote))
                 }
-                logger.info("Updated $liveSockets clients over websockets with new quote");
+                logger.info("Updated $liveAuthenticatedSockets clients over authenticated websockets with new quote")
+
+                val quoteLivePublicSockets = publicWsUsers.forEachLiveSocket {
+                    it.send(QuoteMessage(sentQuote))
+                }
+
+                logger.info("Updated $quoteLivePublicSockets clients over public websockets with new quote")
             }
         } else {
             val serialisedRequest = objectMapper.writeValueAsString(request)
@@ -437,11 +452,11 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                     NotificationOperation.LESS_THAN -> balance < rule.dimension
                 }
             } else false
-        }.groupBy { rule -> rule.user }
+        }.groupBy { it.user }
 
         if (rulesInEffect.isNotEmpty()) {
-            val liveSockets = authenticatedWsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
-            logger.info("Updated $liveSockets clients over websockets with notification");
+            val liveAuthenticatedSockets = authenticatedWsUserMap.notifyLiveSocketsInEffect(rulesInEffect)
+            logger.info("Updated $liveAuthenticatedSockets clients over authenticated websockets with notification")
         } else {
             logger.info("No rules in effect")
         }

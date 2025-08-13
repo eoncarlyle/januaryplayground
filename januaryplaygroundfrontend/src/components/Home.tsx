@@ -11,7 +11,7 @@ import { useAuth } from "@/util/queries.ts";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 
-import { setupWebsocket, useAuthRedirect } from "../util/rest";
+import { setupAuthenticatedWebsocket, useAuthRedirect } from "../util/rest";
 import AuthNavBar from "./AuthNavBar";
 import Layout from "./Layout";
 import {Spinner} from "@/components/ui/spinner";
@@ -28,7 +28,7 @@ export default function Home() {
     if (socketState) return;
     const socket = new WebSocket("ws://localhost:7070/ws");
     setSocketState(socket);
-    setupWebsocket(
+    setupAuthenticatedWebsocket(
       //TODO fix, is ugly
       authData?.email || "",
       socket,
