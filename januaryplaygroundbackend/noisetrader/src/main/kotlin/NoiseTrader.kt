@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.Logger
+import kotlin.math.min
 
 fun Logger.withPrefix(prefix: String) = object : Logger by this {
     override fun error(message: String?) = this@withPrefix.error("$prefix: $message")
@@ -79,7 +80,7 @@ class NoiseTrader(
                     // Conservative static anaylsis
                     if (trackingQuote != null &&
                                     trackingQuote!!.hasbidAskFull() &&
-                                    Random.nextInt(0..trackingQuote!!.spread()) == 0
+                                    Random.nextInt(0.. min(trackingQuote!!.spread(), 5 ))  == 0
                     ) {
                         val marketOrder =
                                 either<ClientFailure, MarketOrderResponse> {
@@ -115,6 +116,22 @@ class NoiseTrader(
                                         if (isFlapping()) {
                                             flapCounter += 1
                                             if (flapCounter < maxFlaps) {
+
+                                                backendClient.getUserLongPositions(ExchangeRequestDto(email, ticker)).onRight {
+                                                    if (it.isNotEmpty()) {
+                                                        logger.info("Selling ${it.size} positions prior to exiting")
+                                                        backendClient.postMarketOrderRequest(
+                                                            MarketOrderRequest(
+                                                                email = email,
+                                                                ticker = ticker,
+                                                                size = it.size,
+                                                                tradeType = TradeType.SELL,
+                                                                orderType = OrderType.Market
+                                                            )
+                                                        )
+                                                    }
+                                                }
+
                                                 wsCoroutineHandle.cancel(
                                                         "Max exchange flap ($maxFlaps) hit",
                                                         Throwable(

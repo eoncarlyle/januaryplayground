@@ -14,6 +14,11 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Active Topic Notes
 
+### New deadlock
+- `a9ea0f6`: ~~the orchestrator needs to reclaim shares~~ when liquidating accounts, redistributing them to spawned noise traders
+- Otherwise there is effectivley a deadlock where a bunch of liquidiated noise traders can hold onto trades
+- The best way to handle this is the noise trader selling prior to exiting - much simpler than manual share handling
+
 ### To Do
 - Very basic public frontend showing the following: I don't think that the authenticated frontend are really necessary, although they would be nice to fix at some point - definitely keep the components around though
     ~~- Quote changes~~
@@ -39,11 +44,14 @@ This repository is a playground for working on a grab bag of these technologies,
   - Persistence addition
   - Client order submission frontend
 
-### Public Websockets message types
-- `QuoteMessage`
-- `MarketOrderResponse`
-- `LimitOrderResponse`
-- `CreditTransferDto`
+### Public Websockets
+
+- Message Types
+  - `QuoteMessage`
+  - `MarketOrderResponse`
+  - `LimitOrderResponse`
+  - `CreditTransferDto`
+- These will need to be placed into
 
 ### Reference
 
