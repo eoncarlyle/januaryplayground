@@ -34,7 +34,7 @@ private enum class ClientSupportedMethods {
 }
 
 data class StartingState(
-    val quote: Quote,
+    val quote: Map<Ticker, Quote>,
     val positions: List<PositionRecord>,
     val orders: List<OrderBookEntry>
 )

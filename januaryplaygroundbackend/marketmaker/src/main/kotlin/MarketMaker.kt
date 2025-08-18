@@ -16,7 +16,7 @@ import kotlin.random.Random
 class MarketMaker(
     private val marketMakerEmail: String,
     private val password: String,
-    private val ticker: Ticker,
+    private val tickers: List<Ticker>,
     private val logger: Logger,
 ) {
     private val mutex = Mutex()
@@ -25,9 +25,8 @@ class MarketMaker(
     private val spreadFloor: Int = 2
     private val initialSpread = 5
     private var spread: Int = initialSpread
-    private val fallbackQuote = Quote(ticker, 30, 35, System.currentTimeMillis())
     private val marketSize = 3
-    private val exchangeRequestDto = ExchangeRequestDto(marketMakerEmail, ticker)
+    private val exchangeRequestDto = ExchangeRequestDto(marketMakerEmail, tickers)
 
     private val orchestratorEmail = "orchestrator@iainschmitt.com"
     private val orchestratorTransferAmount = 150
@@ -48,7 +47,7 @@ class MarketMaker(
                     launch {
                         backendClient.connectWebSocket(
                             email = marketMakerEmail,
-                            tickers = listOf(ticker),
+                            tickers = tickers,
                             onOpen = { logger.info("WebSocket connection opened") },
                             onQuote = { onQuote(it) },
                             onNotification = { onNotification(it) },
@@ -68,7 +67,7 @@ class MarketMaker(
     private suspend fun onQuote(incomingQuote: Quote) {
         mutex.withLock {
 
-            if (ticker != incomingQuote.ticker) {
+            if (!tickers.contains(incomingQuote.ticker)) {
                 return
             }
 
@@ -178,7 +177,7 @@ class MarketMaker(
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
                     email = marketMakerEmail,
-                    ticker = ticker,
+                    ticker = tickers,
                     size = marketSize,
                     tradeType = TradeType.BUY,
                     price = nextQuote.bid
@@ -188,7 +187,7 @@ class MarketMaker(
             val sellLimitOrder = backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
                     email = marketMakerEmail,
-                    ticker = ticker,
+                    ticker = tickers,
                     size = marketSize,
                     tradeType = TradeType.SELL,
                     price = nextQuote.ask
@@ -205,7 +204,7 @@ class MarketMaker(
         return backendClient.postLimitOrderRequest(
             LimitOrderRequest(
                 email = marketMakerEmail,
-                ticker = ticker,
+                ticker = tickers,
                 size = marketSize,
                 tradeType = TradeType.BUY,
                 price = currentQuote.bid
@@ -214,7 +213,7 @@ class MarketMaker(
             backendClient.postLimitOrderRequest(
                 LimitOrderRequest(
                     email = marketMakerEmail,
-                    ticker = ticker,
+                    ticker = tickers,
                     size = marketSize,
                     tradeType = TradeType.SELL,
                     price = currentQuote.ask
@@ -256,7 +255,7 @@ class MarketMaker(
                 return ClientFailure(-1, "Unimplemented short positions found").left()
             }
             if (orders.isNotEmpty()) {
-                val marketMakerImpliedQuote = getMarketMakerImpliedQuote(ticker, orders)
+                val marketMakerImpliedQuote = getMarketMakerImpliedQuote(tickers, orders)
                 return if (marketMakerImpliedQuote == null || marketMakerImpliedQuote != firstQuote) {
                     either {
                         backendClient.postAllOrderCancel(exchangeRequestDto).bind()
@@ -298,7 +297,7 @@ class MarketMaker(
             incomingQuoteQuote.hasBidAskEmpty() && isFirstQuote -> {
                 //TODO : this is bad
                 logger.warn("Fallback quote used, assumption that market is empty")
-                fallbackQuote
+                getFallbackQuote(ticker)
             }
 
             incomingQuoteQuote.hasbidAskFull() -> {
@@ -308,13 +307,13 @@ class MarketMaker(
                     val midpoint = (incomingQuoteQuote.bid + incomingQuoteQuote.ask) / 2
                     val bid = midpoint - spread / 2
                     val ask = bid + spread
-                    Quote(ticker, bid, ask, System.currentTimeMillis())
+                    Quote(tickers, bid, ask, System.currentTimeMillis())
                 }
             }
 
             incomingQuoteQuote.hasAsksWithoutBids() -> {
                 Quote(
-                    ticker,
+                    tickers,
                     incomingQuoteQuote.ask - 1 - spread,
                     incomingQuoteQuote.ask - 1,
                     System.currentTimeMillis()
@@ -322,7 +321,7 @@ class MarketMaker(
             }
 
             incomingQuoteQuote.hasBidsWithoutAsks() -> Quote(
-                ticker,
+                tickers,
                 incomingQuoteQuote.bid + 1,
                 incomingQuoteQuote.bid + 1 + spread,
                 System.currentTimeMillis()
@@ -337,7 +336,7 @@ class MarketMaker(
                     logger.warn("Tracking quote empty: `calculateNextQuote` call will return Left")
                 }
                 Quote(
-                    ticker,
+                    tickers,
                     trackingQuote?.bid?.minus(1) ?: -1,
                     trackingQuote?.ask?.plus(1) ?: -1,
                     System.currentTimeMillis()
@@ -353,4 +352,8 @@ class MarketMaker(
             }
         }
     }
+
+
+    private fun getFallbackQuote(ticker: Ticker) = Quote(ticker, 30, 35, System.currentTimeMillis())
+
 }

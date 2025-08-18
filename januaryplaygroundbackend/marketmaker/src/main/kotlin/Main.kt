@@ -15,7 +15,7 @@ fun main(args: Array<String>): Unit = runBlocking {
         val password = args[1]
         val ticker = args[2]
 
-        MarketMaker(email, password, ticker, logger).main()
+        MarketMaker(email, password, listOf(ticker), logger).main()
     }
 }
 
