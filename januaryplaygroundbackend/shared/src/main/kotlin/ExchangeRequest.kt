@@ -43,14 +43,14 @@ data class LimitOrderRequest(
 }
 
 //This needs to be renamed to `SingleTickerExchangeRequestDto`
-data class ExchangeRequestDto(
+data class SingleTickerReqDto(
     val email: String,
     val ticker: Ticker,
 )
 
-data class MultiTickerExchangeRequestDto(
+data class MultiTickerReqDto(
     val email: String,
-    val ticker: List<Ticker>,
+    val tickers: List<Ticker>,
 )
 
 data class BalanceRequestDto(

@@ -85,7 +85,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
 
         // ## Querying state
         this.javalinApp.post("/exchange/quote") { getQuote(it) }
-        this.javalinApp.post("/exchange/quotes") { getQuote(it) }
+        this.javalinApp.post("/exchange/quotes") { getQuoteList(it) }
         this.javalinApp.post("/exchange/positions") { getUserLongPositions(it) }
         this.javalinApp.post("/exchange/orders") { getUserOrders(it) }
         this.javalinApp.post("/exchange/balance") { getUserBalance(it) }
@@ -139,7 +139,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     }
 
     private fun getQuote(ctx: Context) {
-        parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
+        parseCtxBody<SingleTickerReqDto>(ctx).map { dto ->
             val ticker = dto.ticker
             if (exchangeService.validateTicker(ticker)) {
                 val partialQuote = exchangeService.getStatelessQuoteOutsideLock(ticker, readerLightswitch)
@@ -161,8 +161,35 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }
     }
 
+    private fun getQuoteList(ctx: Context) {
+        parseCtxBody<MultiTickerReqDto>(ctx).map { dto ->
+            val tickers = dto.tickers
+
+            val invalidTickers = tickers.filter { !exchangeService.validateTicker(it) }
+            if (invalidTickers.isNotEmpty()) {
+                ctx.status(HttpStatus.NOT_FOUND)
+                ctx.json("message" to  invalidTickers.map { it.unknownMessage() })
+            } else {
+                val partialQuotes = exchangeService.getStatelessQuoteMapOutsideLock(tickers, readerLightswitch)
+                // Talk: the ticker utility type that maps to string, prevents stringly typing
+                val omittedTickers = tickers.filter { !partialQuotes.keys.contains(it) }
+                if (omittedTickers.isNotEmpty()) {
+                    ctx.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    ctx.json("message" to "Unknown error with '$omittedTickers'")
+                } else {
+                    val time = System.currentTimeMillis()
+                    ctx.status(HttpStatus.OK)
+                    ctx.json(partialQuotes.map { (k,v) -> k to v.getQuote(time) })
+                }
+            }
+        }.mapLeft { pair ->
+            ctx.status(pair.first)
+            ctx.json(mapOf("message" to pair.second))
+        }
+    }
+
     private fun getUserLongPositions(ctx: Context) {
-        parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
+        parseCtxBody<SingleTickerReqDto>(ctx).map { dto ->
             val ticker = dto.ticker
             if (exchangeService.validateTicker(ticker)) {
                 ctx.status(HttpStatus.OK)
@@ -175,7 +202,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     }
 
     private fun getUserOrders(ctx: Context) {
-        parseCtxBody<ExchangeRequestDto>(ctx).map { dto ->
+        parseCtxBody<SingleTickerReqDto>(ctx).map { dto ->
             val ticker = dto.ticker
             if (exchangeService.validateTicker(ticker)) {
                 ctx.status(HttpStatus.OK)
@@ -265,7 +292,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     }
 
     private fun allOrderCancel(ctx: Context) {
-        parseCtxBodyMiddleware<ExchangeRequestDto>(ctx) { cancelRequest ->
+        parseCtxBodyMiddleware<SingleTickerReqDto>(ctx) { cancelRequest ->
             logger.info("Starting quote: {}", exchangeService.getState().toString())
             // Use optionals to unnest
             if (exchangeService.validateTicker(cancelRequest.ticker)) {

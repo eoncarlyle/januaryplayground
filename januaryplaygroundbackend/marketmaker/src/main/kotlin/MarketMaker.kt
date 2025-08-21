@@ -26,7 +26,7 @@ class MarketMaker(
     private val initialSpread = 5
     private var spread: Int = initialSpread
     private val marketSize = 3
-    private val exchangeRequestDto = ExchangeRequestDto(marketMakerEmail, tickers)
+    private val singleTickerReqDto = SingleTickerReqDto(marketMakerEmail, tickers)
 
     private val orchestratorEmail = "orchestrator@iainschmitt.com"
     private val orchestratorTransferAmount = 150
@@ -38,7 +38,7 @@ class MarketMaker(
     fun main(): Unit = runBlocking {
         Either.catch {
             backendClient.login(marketMakerEmail, password)
-                .flatMap { backendClient.getStartingState(exchangeRequestDto) }
+                .flatMap { backendClient.getStartingState(singleTickerReqDto) }
                 .flatMap { mutex.withLock { handleStartingStateInMutex(it) } }
                 .onRight { quote ->
                     mutex.withLock {
@@ -153,7 +153,7 @@ class MarketMaker(
     }
 
     private suspend fun cancelAndResubmit(incomingQuote: Quote, cancelErrorMsg: String, submitErrorMsg: String) =
-        backendClient.retry(exchangeRequestDto, backendClient::postAllOrderCancel, 3)
+        backendClient.retry(singleTickerReqDto, backendClient::postAllOrderCancel, 3)
             .mapLeft {
                 logger.error(cancelErrorMsg)
                 exitProcess(1)
@@ -243,7 +243,7 @@ class MarketMaker(
     }
 
     private suspend fun handleStartingStateInMutex(state: StartingState): Either<ClientFailure, Quote> {
-        val firstQuote = state.quote
+        val firstQuote = state.quotes
         val positions = state.positions
         val orders = state.orders
 
@@ -258,7 +258,7 @@ class MarketMaker(
                 val marketMakerImpliedQuote = getMarketMakerImpliedQuote(tickers, orders)
                 return if (marketMakerImpliedQuote == null || marketMakerImpliedQuote != firstQuote) {
                     either {
-                        backendClient.postAllOrderCancel(exchangeRequestDto).bind()
+                        backendClient.postAllOrderCancel(singleTickerReqDto).bind()
                         val secondQuote = calculateNextQuote(firstQuote, true).bind()
                         initialLimitOrderSubmission(secondQuote).bind()
                         trackingNotificationRule = NotificationRule(

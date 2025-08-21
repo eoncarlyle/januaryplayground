@@ -69,6 +69,7 @@ class ExchangeDao(
                     if (rs.next()) {
                         val bid = rs.getInt(1)
                         val ask = rs.getInt(2)
+                        // Why? Short circut equivalence?
                         if (rs.wasNull() || ask == 0 && rs.wasNull()) null
                         else StatelessQuote(ticker, bid, ask)
                     } else null
@@ -77,40 +78,37 @@ class ExchangeDao(
         }
     }
 
-    fun getPartialQuotes(tickers: List<Ticker>): StatelessQuote? {
-        val tickerList = tickers.map().joinToString()
-        val a = """
+    fun getPartialQuoteList(tickers: List<Ticker>): List<StatelessQuote> {
+        val tickerList = tickers.joinToString { "($it)" }
+        val quotes = ArrayList<StatelessQuote>()
+        val getPartialQuotesQuery = """
                 with ticker_list(ticker) as (
                     values $tickerList
                 ) select
-                    coalesce((select max(price) from order_records
-                    where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
-                    coalesce((select min(price) from order_records
-                    where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
+                    t.ticker,
+                    coalesce((select max(price) from order_records o
+                        where ticker = o.ticker and trade_type = 0 and filled_tick = -1), -1) as bid,
+                    coalesce((select min(price) from order_records o
+                        where ticker = o.ticker and trade_type = 1 and filled_tick = -1), -1) as ask
+                from ticker_list t;
                 """
-        return db.query { conn ->
-            conn.prepareStatement(
-                """
-            with tickers(ticker) as 
-             select
-                coalesce((select max(price) from order_records
-                where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
-                coalesce((select min(price) from order_records
-                where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
-             """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setString(2, ticker)
+        db.query { conn ->
+            conn.prepareStatement(getPartialQuotesQuery).use { stmt ->
                 stmt.executeQuery().use { rs ->
                     if (rs.next()) {
-                        val bid = rs.getInt(1)
-                        val ask = rs.getInt(2)
-                        if (rs.wasNull() || ask == 0 && rs.wasNull()) null
-                        else StatelessQuote(ticker, bid, ask)
-                    } else null
+                        val ticker = rs.getString(1)
+                        val bid = rs.getInt(2)
+                        val ask = rs.getInt(3)
+
+                        // null saftey
+                        if (!rs.wasNull() && !listOf(ticker, bid, ask).any { it == null }) {
+                            quotes.add(StatelessQuote(ticker, bid, ask))
+                        }
+                    }
                 }
             }
         }
+        return quotes
     }
 
     private fun buyMatchingOrderBook(
