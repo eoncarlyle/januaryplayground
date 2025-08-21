@@ -34,7 +34,7 @@ private enum class ClientSupportedMethods {
 }
 
 data class StartingState(
-    val quotes: Map<Ticker, Quote>,
+    val quote: Map<Ticker, Quote>,
     val positions: List<PositionRecord>,
     val orders: List<OrderBookEntry>
 )
@@ -195,17 +195,17 @@ class BackendClient(
             "signup"
         )
 
-    suspend fun getUserLongPositions(multiTickerReqDto: MultiTickerReqDto): Either<ClientFailure, List<PositionRecord>> =
-        postRequest<MultiTickerReqDto, List<PositionRecord>>(
-            multiTickerReqDto,
+    suspend fun getUserLongPositions(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<PositionRecord>> =
+        postRequest<ExchangeRequestDto, List<PositionRecord>>(
+            exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "positions"
         )
 
-    suspend fun getUserOrders(multiTickerReqDto: MultiTickerReqDto): Either<ClientFailure, List<OrderBookEntry>> =
-        postRequest<MultiTickerReqDto, List<OrderBookEntry>>(
-            multiTickerReqDto,
+    suspend fun getUserOrders(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, List<OrderBookEntry>> =
+        postRequest<ExchangeRequestDto, List<OrderBookEntry>>(
+            exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "orders"
@@ -219,17 +219,9 @@ class BackendClient(
             "balance"
         )
 
-    suspend fun getQuote(singleTickerReqDto: SingleTickerReqDto): Either<ClientFailure, Quote> =
-        postRequest<SingleTickerReqDto, Quote>(
-            singleTickerReqDto,
-            HttpStatusCode.OK,
-            "exchange",
-            "quote"
-        )
-
-    suspend fun getQuoteMap(multiTickerReqDto: MultiTickerReqDto): Either<ClientFailure, Map<Ticker, Quote>> =
-        postRequest<MultiTickerReqDto, Map<Ticker, Quote>>(
-            multiTickerReqDto,
+    suspend fun getQuote(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, Quote> =
+        postRequest<ExchangeRequestDto, Quote>(
+            exchangeRequestDto,
             HttpStatusCode.OK,
             "exchange",
             "quote"
@@ -307,14 +299,14 @@ class BackendClient(
         }.mapLeft { throwable -> ClientFailure(-1, throwable.message ?: "Message not provided") }
     }
 
-    suspend fun postAllOrderCancel(singleTickerReqDto: SingleTickerReqDto): Either<ClientFailure, AllOrderCancelResponse> {
+    suspend fun postAllOrderCancel(exchangeRequestDto: ExchangeRequestDto): Either<ClientFailure, AllOrderCancelResponse> {
         return Either.catch {
             val response = client.post(httpBaseurl) {
                 url {
                     appendPathSegments("exchange", "orders", "cancel-all")
                 }
                 contentType(ContentType.Application.Json)
-                setBody(singleTickerReqDto)
+                setBody(exchangeRequestDto)
             }
             return when (response.status) {
                 HttpStatusCode.Accepted -> {
@@ -342,13 +334,13 @@ class BackendClient(
 
 
     suspend fun getStartingState(
-        multiTickerReqDto: MultiTickerReqDto
+        exchangeRequestDto: ExchangeRequestDto
     ): Either<ClientFailure, StartingState> {
         return either {
-            val quotes = getQuoteMap(multiTickerReqDto).bind()
-            val positions = getUserLongPositions(multiTickerReqDto).bind()
-            val orders = getUserOrders(multiTickerReqDto).bind()
-            StartingState(quotes, positions, orders)
+            val quote = getQuote(exchangeRequestDto).bind()
+            val positions = getUserLongPositions(exchangeRequestDto).bind()
+            val orders = getUserOrders(exchangeRequestDto).bind()
+            StartingState(quote, positions, orders)
         }
     }
 

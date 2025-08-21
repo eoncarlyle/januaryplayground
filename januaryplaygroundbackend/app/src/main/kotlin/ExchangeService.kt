@@ -222,7 +222,7 @@ class ExchangeService(
 
     // It will only be necessary to delete all orders of a particular trader to get the market maker working correctly
     fun allOrderCancel(
-        order: SingleTickerReqDto,
+        order: ExchangeRequestDto,
         writeSemaphore: Semaphore
     ): OrderCancelResult<AllOrderCancelFailure, AllOrderCancelResponse> =
         withSemaphore(writeSemaphore) {
@@ -254,14 +254,6 @@ class ExchangeService(
     fun getStatelessQuoteOutsideLock(ticker: Ticker, lightswitch: Lightswitch): StatelessQuote? =
         withLightswitch(lightswitch) {
             return exchangeDao.getPartialQuote(ticker)
-        }
-
-    fun getStatelessQuoteMapOutsideLock(tickers: List<Ticker>, lightswitch: Lightswitch): Map<Ticker, StatelessQuote> =
-        withLightswitch(lightswitch) {
-            val rawQuotes = exchangeDao.getPartialQuoteList(tickers).groupBy { it.ticker }
-
-            if (rawQuotes.keys.any { (rawQuotes[it]?.size ?: 0) != 1 } ) {
-                mapOf() } else { rawQuotes.mapValues { it.value[0] } }
         }
 
     fun getUserBalance(userEmail: String, lightswitch: Lightswitch): Int? = withLightswitch(lightswitch) {
