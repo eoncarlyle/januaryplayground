@@ -77,42 +77,6 @@ class ExchangeDao(
         }
     }
 
-    fun getPartialQuotes(tickers: List<Ticker>): StatelessQuote? {
-        val tickerList = tickers.map().joinToString()
-        val a = """
-                with ticker_list(ticker) as (
-                    values $tickerList
-                ) select
-                    coalesce((select max(price) from order_records
-                    where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
-                    coalesce((select min(price) from order_records
-                    where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
-                """
-        return db.query { conn ->
-            conn.prepareStatement(
-                """
-            with tickers(ticker) as 
-             select
-                coalesce((select max(price) from order_records
-                where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
-                coalesce((select min(price) from order_records
-                where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
-             """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setString(2, ticker)
-                stmt.executeQuery().use { rs ->
-                    if (rs.next()) {
-                        val bid = rs.getInt(1)
-                        val ask = rs.getInt(2)
-                        if (rs.wasNull() || ask == 0 && rs.wasNull()) null
-                        else StatelessQuote(ticker, bid, ask)
-                    } else null
-                }
-            }
-        }
-    }
-
     private fun buyMatchingOrderBook(
         ticker: Ticker
     ): List<OrderBookEntry> {

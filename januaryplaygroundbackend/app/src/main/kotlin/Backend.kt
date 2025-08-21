@@ -85,7 +85,6 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
 
         // ## Querying state
         this.javalinApp.post("/exchange/quote") { getQuote(it) }
-        this.javalinApp.post("/exchange/quotes") { getQuote(it) }
         this.javalinApp.post("/exchange/positions") { getUserLongPositions(it) }
         this.javalinApp.post("/exchange/orders") { getUserOrders(it) }
         this.javalinApp.post("/exchange/balance") { getUserBalance(it) }
