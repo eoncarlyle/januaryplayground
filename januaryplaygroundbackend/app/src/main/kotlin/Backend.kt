@@ -18,9 +18,9 @@ import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
-private data class QuoteQueueMessage<T : Queueable>(
+private data class OrderQueueMessage(
     val request: Any,
-    val response: T,
+    val response: Queueable,
     val initialStatelessQuote: StatelessQuote?,
     val finalStatelessQuote: StatelessQuote?
 )
@@ -29,7 +29,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private val authenticatedWsUserMap = WsUserMap()
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
-    private val orderQueue = LinkedBlockingQueue<QuoteQueueMessage<Queueable>>()
+    private val orderQueue = LinkedBlockingQueue<OrderQueueMessage>()
 
     // This is gross and must be narrowed at some point
     private val creditTransferQueue = LinkedBlockingQueue<CreditTransferDto>()
@@ -212,7 +212,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                         ctx.json(response)
                         //logger.info("Final state: {}", marketService.getState().toString())
                         orderQueue.put(
-                            QuoteQueueMessage(
+                            OrderQueueMessage(
                                 orderRequest,
                                 response,
                                 initialStatelessQuote,
@@ -246,7 +246,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                         ctx.json(response)
                         //logger.info("Final state: {}", marketService.getState().toString())
                         orderQueue.put(
-                            QuoteQueueMessage(
+                            OrderQueueMessage(
                                 orderRequest,
                                 response,
                                 initialStatelessQuote,
@@ -281,7 +281,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                         ctx.json(response)
                         logger.info("Final quote: {}", exchangeService.getState().toString())
                         orderQueue.put(
-                            QuoteQueueMessage(
+                            OrderQueueMessage(
                                 cancelRequest,
                                 response,
                                 initialStatelessQuote,

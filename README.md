@@ -14,10 +14,14 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Active Topic Notes
 
-### New deadlock
-- `a9ea0f6`: ~~the orchestrator needs to reclaim shares~~ when liquidating accounts, redistributing them to spawned noise traders
-- Otherwise there is effectivley a deadlock where a bunch of liquidiated noise traders can hold onto trades
-- The best way to handle this is the noise trader selling prior to exiting - much simpler than manual share handling
+### Public websockets emitted events
+- `QuoteQueueMessage<T: Queueable>`: Successful orders
+- `QuoteMessage`: Updating ticker quote
+- `CreditTransferDto`: Transfer from MM to orchestrator
+
+### Multi-ticker
+- I definitely should have made this multi-ticker at the outset
+- `multi-ticker` has the work to make this happen, I have the quote side implemented but not the orders and positions (which should follow similarly)
 
 ### To Do
 - Very basic public frontend showing the following: I don't think that the authenticated frontend are really necessary, although they would be nice to fix at some point - definitely keep the components around though
