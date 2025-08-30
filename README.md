@@ -14,7 +14,14 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ## Active Topic Notes
 
-### Public websockets emitted events
+### Basic frontend
+
+#### Steps
+- [ ] Create Zod Schema
+- [ ] Test that Zod Schema work correctly by
+- [ ] Use the Zod Schema for 
+
+#### Emitted messages
 - `QuoteQueueMessage<T: Queueable>`: Successful orders
 - `QuoteMessage`: Updating ticker quote
 - `CreditTransferDto`: Transfer from MM to orchestrator
