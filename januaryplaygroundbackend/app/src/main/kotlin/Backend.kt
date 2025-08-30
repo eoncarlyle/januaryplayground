@@ -19,7 +19,8 @@ import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
 private data class OrderQueueMessage(
-    val request: Any,
+    val request: Any, // This is only ever an OrderRequest or an ExchangeRequestDto,
+    // but not having union types makes this annoying; realistically should make this a different queue?
     val response: Queueable,
     val initialStatelessQuote: StatelessQuote?,
     val finalStatelessQuote: StatelessQuote?
@@ -273,7 +274,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                 exchangeService.allOrderCancel(cancelRequest, writeSemaphore)
                     .onRight { response ->
                         when (response) {
-                            is AllOrderCancelResponse.FilledOrdersCancelled ->
+                            is AllOrderCancelResponse.SomeOrdersCancelled ->
                                 ctx.status(HttpStatus.ACCEPTED)
 
                             else -> ctx.status(HttpStatus.OK)

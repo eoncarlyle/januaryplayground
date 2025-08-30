@@ -3,7 +3,6 @@ package com.iainschmitt.januaryplaygroundbackend.shared
 import arrow.core.Either
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import java.util.concurrent.Semaphore
 
 typealias OrderFailure = Pair<OrderFailureCode, String>
 typealias OrderResult<T> = Either<OrderFailure, T>
@@ -113,7 +112,7 @@ enum class AllOrderCancelFailureCode {
 }
 
 sealed class AllOrderCancelResponse: Queueable {
-    data class FilledOrdersCancelled(
+    data class SomeOrdersCancelled(
         val ticker: Ticker,
         val orders: Int, override val exchangeSequenceTimestamp: Long
     ) : AllOrderCancelResponse()

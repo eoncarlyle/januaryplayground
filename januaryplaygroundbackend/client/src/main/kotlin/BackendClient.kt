@@ -311,7 +311,7 @@ class BackendClient(
             return when (response.status) {
                 HttpStatusCode.Accepted -> {
                     Either.catch {
-                        response.body<AllOrderCancelResponse.FilledOrdersCancelled>()
+                        response.body<AllOrderCancelResponse.SomeOrdersCancelled>()
                     }.mapLeft { error ->
                         logger.error(error.message)
                         return@mapLeft ClientFailure(-1, "Could not deserialise")

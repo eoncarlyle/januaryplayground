@@ -237,7 +237,7 @@ class ExchangeService(
 
             return when {
                 deleteRecord.orderCount > 0 ->
-                    AllOrderCancelResponse.FilledOrdersCancelled(
+                    AllOrderCancelResponse.SomeOrdersCancelled(
                         order.ticker,
                         deleteRecord.orderCount,
                         System.currentTimeMillis()
