@@ -56,7 +56,6 @@ export default function App() {
     maxAge: 1000 * 60 * 60 * 24, // 24 hours
     dehydrateOptions: {
       shouldDehydrateQuery: (query: any) => {
-        // Only persist auth queries
         return query?.queryKey[0] === "auth";
       },
     },

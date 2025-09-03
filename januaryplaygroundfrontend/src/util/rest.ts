@@ -124,7 +124,7 @@ export async function setupAuthenticatedWebsocket(
 
 export async function setupPublicWebsocket(
   socket: WebSocket,
-  setMsgs: React.Dispatch<React.SetStateAction<String[]>>
+  setMsgs: React.Dispatch<React.SetStateAction<string[]>>
 ) {
 
   socket.onmessage = (event) => {

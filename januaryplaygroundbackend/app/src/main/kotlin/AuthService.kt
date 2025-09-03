@@ -220,6 +220,33 @@ class AuthService(
         }.mapLeft { 500 to "Internal server error" }
     }
 
+    private fun _liquidateSingleOrchestratedUser(
+        targetUserBalance: Int,
+        dto: LiquidateOrchestratedUserDto,
+        auth: Pair<String, Long>
+    ): Either<Pair<Int, String>, Int> {
+        return Either.catch {
+            db.query { conn ->
+                conn.prepareStatement(
+                    "update user set balance = balance - ? where email = ?"
+                ).use { stmt ->
+                    stmt.setInt(1, targetUserBalance)
+                    stmt.setString(2, dto.targetUserEmail)
+                    stmt.executeUpdate()
+                }
+            }
+            db.query { conn ->
+                conn.prepareStatement(
+                    "update user set balance = balance + ? where email = ?"
+                ).use { stmt ->
+                    stmt.setInt(1, targetUserBalance)
+                    stmt.setString(2, auth.first)
+                    stmt.executeUpdate()
+                }
+            }
+        }.mapLeft { 500 to "Internal server error" }
+    }
+
     fun liquidateAllOrchestratedUsers(ctx: Context, writeSemaphore: Semaphore) {
         writeSemaphore.acquire()
         try {

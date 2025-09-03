@@ -16,6 +16,7 @@ This repository is a playground for working on a grab bag of these technologies,
 
 ### Basic frontend
 
+- Had to change MM user to `myTestMmPassword`
 #### Steps
 - [ ] Create Zod Schema
 - [ ] Test that Zod Schema work correctly by

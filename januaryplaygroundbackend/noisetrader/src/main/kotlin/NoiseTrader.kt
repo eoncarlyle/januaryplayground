@@ -28,7 +28,7 @@ class NoiseTrader(
     private val transactionSize = 1
     private val exchangeRequestDto = ExchangeRequestDto(email, ticker)
     private val mutex = Mutex()
-    
+
     private val logger = defaultLogger.withPrefix("[NT $email]")
     private val backendClient = BackendClient(logger)
 

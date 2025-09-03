@@ -4,8 +4,8 @@ POST http://localhost:7070/auth/signup
 Content-Type: application/json
 
 {
-  "email": "noise1@iainschmitt.com",
-  "password": "noisePassword"
+  "email": "testmm@iainschmitt.com",
+  "password": "myTestMmPassword"
 }
 
 ###
@@ -13,8 +13,8 @@ POST http://localhost:7070/auth/login
 Content-Type: application/json
 
 {
-  "email": "noise1@iainschmitt.com",
-  "password": "noisePassword"
+  "email": "testmm@iainschmitt.com",
+  "password": "myTestMmPassword"
 }
 
 ###
