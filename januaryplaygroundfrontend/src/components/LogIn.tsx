@@ -18,10 +18,10 @@ import { Input } from "@/components/ui/input";
 import { useAuth, useLogin } from "@/util/queries";
 import { useAuthRedirect } from "@/util/rest";
 import { zodResolver } from "@hookform/resolvers/zod/src/zod.js";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { z } from "zod";
-import { useEffect } from "react";
 
 const logInSchema = z.object({
   email: z
@@ -48,11 +48,11 @@ export default function LogIn() {
   const [location, setLocation] = useLocation();
   const { data: authData } = useAuth();
   const { mutate: login } = useLogin();
-  
+
   useEffect(() => {
     useAuthRedirect(false, authData, location, setLocation);
   }, [authData, location, setLocation]);
-  
+
   return (
     //<Card className="w-full max-w-md">
     <Card>

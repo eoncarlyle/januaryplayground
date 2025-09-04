@@ -44,12 +44,10 @@ class Orchestrator(
 
 
     suspend fun main() {
-        runBlocking {
-            either {
-                backendClient.login(orchestratorEmail, password).bind()
-                backendClient.postOrchestratorLiquidateAll(LiquidateAllOrchestratedUsersDto(orchestratorEmail)).bind()
-                relaunchAllPossibleNoiseTraders()
-            }
+        either {
+            backendClient.login(orchestratorEmail, password).bind()
+            backendClient.postOrchestratorLiquidateAll(LiquidateAllOrchestratedUsersDto(orchestratorEmail)).bind()
+            relaunchAllPossibleNoiseTraders()
         }
 
         withContext(Dispatchers.IO) {

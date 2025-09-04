@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
   TableBody,
@@ -14,7 +15,6 @@ import { useLocation } from "wouter";
 import { setupAuthenticatedWebsocket, useAuthRedirect } from "../util/rest";
 import AuthNavBar from "./AuthNavBar";
 import Layout from "./Layout";
-import {Spinner} from "@/components/ui/spinner";
 
 export default function Home() {
   const [location, setLocation] = useLocation();
@@ -22,7 +22,6 @@ export default function Home() {
   const { data: authData, status } = useAuth();
   const [socketState, setSocketState] = useState<null | WebSocket>(null);
   const [_, setSocketMessageState] = useState("");
-
 
   useEffect(() => {
     if (socketState) return;
@@ -44,7 +43,7 @@ export default function Home() {
   }, [socketState, authData]);
   // Check auth if we know it is wrong
   useAuthRedirect(true, authData, location, setLocation);
-  console.log(authData)
+  console.log(authData);
   const invoices = [
     {
       invoice: "INV001",
@@ -91,11 +90,13 @@ export default function Home() {
   ];
 
   if (status === "pending") {
-    return <Spinner  size={64} />;
+    return <Spinner size={64} />;
   } else if (status === "error") {
-    return (<Layout>
-      <p>"Something has gone wrong"</p>
-    </Layout>)
+    return (
+      <Layout>
+        <p>"Something has gone wrong"</p>
+      </Layout>
+    );
   }
 
   return (

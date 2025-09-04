@@ -42,38 +42,38 @@ export const quoteMessageSchema = z.object({
     ask: z.number(),
     exchangeSequenceTimestamp: z.number(),
   }),
-  type: z.literal("outgoingQuote")
-})
+  type: z.literal("outgoingQuote"),
+});
 
-export type QuoteMessage = z.infer<typeof quoteMessageSchema>
+export type QuoteMessage = z.infer<typeof quoteMessageSchema>;
 
 export const creditTransferDtoSchema = z.object({
   sendingUserEmail: z.string(),
   targetUserEmail: z.string(),
   creditAmount: z.number(),
-})
+});
 
-export type CreditTransferDto = z.infer<typeof creditTransferDtoSchema>
+export type CreditTransferDto = z.infer<typeof creditTransferDtoSchema>;
 
-const tradeTypeSchema = z.enum(['BUY', 'SELL']);
-const orderTypeSchema = z.enum(['Market', 'Limit']);
+const tradeTypeSchema = z.enum(["BUY", "SELL"]);
+const orderTypeSchema = z.enum(["Market", "Limit"]);
 
 export const marketOrderRequestSchema = z.object({
-  type: z.string().default('incomingOrder'),
+  type: z.string().default("incomingOrder"),
   email: z.string().email(),
   ticker: z.string(),
   size: z.number().int().positive(),
   tradeType: tradeTypeSchema,
-  orderType: z.literal('Market'),
+  orderType: z.literal("Market"),
 });
 
 export const limitOrderRequestSchema = z.object({
-  type: z.string().default('incomingOrder'),
+  type: z.string().default("incomingOrder"),
   email: z.string().email(),
   ticker: z.string(),
   size: z.number().int().positive(),
   tradeType: tradeTypeSchema,
-  orderType: z.literal('Limit'),
+  orderType: z.literal("Limit"),
   price: z.number().int().positive(),
 });
 
@@ -115,12 +115,12 @@ export const statelessQuoteSchema = z.object({
   ticker: z.string(),
   bid: z.number(),
   ask: z.number(),
-})
+});
 
 export const exchangeRequestDtoSchema = z.object({
   email: z.string(), //z.string().email(): should eventually, keeping simple for now
   ticker: z.string(),
-})
+});
 
 const someOrdersCancelledSchema = z.object({
   ticker: z.string(),
@@ -137,20 +137,47 @@ export const marketOrderQueueMessageSchema = z.object({
   response: orderFilledSchema,
   initialStatelessQuote: statelessQuoteSchema.nullish(),
   finalStatelessQuote: statelessQuoteSchema.nullish(),
-})
+});
 
 export const limitOrderQueueMessageSchema = z.object({
   request: limitOrderRequestSchema,
-  response: z.union([orderFilledSchema, orderPartiallyFilledSchema, orderAcknowledgedSchema]),
+  response: z.union([
+    orderFilledSchema,
+    orderPartiallyFilledSchema,
+    orderAcknowledgedSchema,
+  ]),
   initialStatelessQuote: statelessQuoteSchema.nullish(),
   finalStatelessQuote: statelessQuoteSchema.nullish(),
-})
+});
 
 export const cancelOrderQueueMessageSchema = z.object({
   request: exchangeRequestDtoSchema,
   response: z.union([someOrdersCancelledSchema, noOrdersCancelledSchema]),
   initialStatelessQuote: statelessQuoteSchema.nullish(),
   finalStatelessQuote: statelessQuoteSchema.nullish(),
-})
+});
 
-export const incomingSchemaList = [creditTransferDtoSchema, quoteMessageSchema, marketOrderQueueMessageSchema, limitOrderQueueMessageSchema, cancelOrderQueueMessageSchema]
+export type OrderFilled = z.infer<typeof orderFilledSchema>;
+export type OrderPartiallyFilled = z.infer<typeof orderPartiallyFilledSchema>;
+export type OrderAcknowledged = z.infer<typeof orderAcknowledgedSchema>;
+export type SomeOrdersCancelled = z.infer<typeof someOrdersCancelledSchema>;
+export type NoOrdersCancelled = z.infer<typeof noOrdersCancelledSchema>;
+
+export type PublicWebsocketMessage =
+  | CreditTransferDto
+  | QuoteMessage
+  | OrderFilled
+  | OrderPartiallyFilled
+  | OrderAcknowledged
+  | SomeOrdersCancelled
+  | NoOrdersCancelled;
+
+export const publicWebsocketMesageSchema = [
+  creditTransferDtoSchema,
+  quoteMessageSchema,
+  orderFilledSchema,
+  orderPartiallyFilledSchema,
+  orderAcknowledgedSchema,
+  someOrdersCancelledSchema,
+  noOrdersCancelledSchema,
+] as const;

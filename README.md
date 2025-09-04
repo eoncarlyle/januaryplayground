@@ -18,14 +18,33 @@ This repository is a playground for working on a grab bag of these technologies,
 
 - Had to change MM user to `myTestMmPassword`
 #### Steps
-- [ ] Create Zod Schema
-- [ ] Test that Zod Schema work correctly by
-- [ ] Use the Zod Schema for 
+- [x] Create Zod Schema
+- [x] Test that Zod Schema work correctly
+- 
 
 #### Emitted messages
-- `QuoteQueueMessage<T: Queueable>`: Successful orders
-- `QuoteMessage`: Updating ticker quote
-- `CreditTransferDto`: Transfer from MM to orchestrator
+```typescript
+export type PublicWebsocketMessage =
+        | CreditTransferDto
+        | QuoteMessage
+        | OrderFilled
+        | OrderPartiallyFilled
+        | OrderAcknowledged
+        | SomeOrdersCancelled
+        | NoOrdersCancelled;
+```
+- The `QuoteMessage` will indicate pricing, but everything else should be on a ticker stream
+
+#### Fixing stranded
+- In Auth service we need to add this to the orchestrator liquidation logic, otherwise we will get stranded shares
+- It wouldn't be a bad idea to literally delete consumers too
+```sqlite
+select email, balance, size as position_size
+from user u
+         left join position_records p on u.email = p.user
+where orchestrated_by = 'orchestrator@iainschmitt.com' and p.position_type = 0;
+
+```
 
 ### Multi-ticker
 - I definitely should have made this multi-ticker at the outset

@@ -2,12 +2,13 @@ import {
   PersistentAuthState,
   SetPersistentAuth,
   SetSocketMessageState,
-  SetSocketState, SocketState,
+  SetSocketState,
+  SocketState,
   TempSessionAuth,
 } from "@/model.ts";
-
-import {AuthDto} from "./model";
 import React from "react";
+
+import { AuthDto } from "./model";
 
 const EMAIL = "email";
 const LOGGED_IN = "loggedIn";
@@ -54,12 +55,12 @@ export async function getWebsocketAuth(
   return fetch(`${getBaseUrl()}/auth/sessions/temporary`, {
     method: "POST",
     credentials: "include",
-    body: JSON.stringify({email: email}),
+    body: JSON.stringify({ email: email }),
   })
     .then((auth) => auth.json())
     .then((body) => {
       if (typeof body === "object" && body !== null && "token" in body) {
-        return {token: body["token"]};
+        return { token: body["token"] };
       } else return null;
     });
 }
@@ -89,7 +90,7 @@ export async function setupAuthenticatedWebsocket(
           token: tempSessionAuth.token,
           email: email,
           operation: "authenticate",
-          tickers: []
+          tickers: [],
         }),
       );
     } else {
@@ -100,7 +101,7 @@ export async function setupAuthenticatedWebsocket(
             token: tempSessionAuth.token,
             email: email,
             operation: "authenticate",
-            tickers: []
+            tickers: [],
           }),
         );
       };
@@ -124,18 +125,16 @@ export async function setupAuthenticatedWebsocket(
 
 export async function setupPublicWebsocket(
   socket: WebSocket,
-  setMsgs: React.Dispatch<React.SetStateAction<string[]>>
+  setMsgs: React.Dispatch<React.SetStateAction<object[]>>,
 ) {
-
   socket.onmessage = (event) => {
-    setMsgs(msgs => [...msgs, JSON.stringify(event.data)].slice(-10));
+    setMsgs((msgs) => [...msgs, JSON.parse(event.data)].slice(-10));
   };
 
   socket.onerror = (event) => {
     console.error("WebSocket error:", event);
   };
 }
-
 
 export const loggedOutAuthState = {
   evaluated: false,
@@ -145,7 +144,7 @@ export const loggedOutAuthState = {
 };
 
 function setPersistentAuth(persistentAuthState: PersistentAuthState) {
-  const {loggedIn, email, expireTime} = persistentAuthState;
+  const { loggedIn, email, expireTime } = persistentAuthState;
   localStorage.setItem(LOGGED_IN, loggedIn ? "true" : "false");
   if (email) {
     localStorage.setItem(EMAIL, email);

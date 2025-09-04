@@ -8,7 +8,7 @@ export const useAuth = () => {
     queryFn: async () => {
       const response = await fetch(`${getBaseUrl()}/auth/evaluate`, {
         method: "POST",
-        credentials: "include"
+        credentials: "include",
       });
 
       if (!response.ok) {
