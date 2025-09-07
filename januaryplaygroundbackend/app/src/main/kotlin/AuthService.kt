@@ -13,9 +13,11 @@ import io.javalin.websocket.WsContext
 import java.util.concurrent.Semaphore
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
+import java.sql.Connection
 import java.time.Duration
 import java.time.Instant
 import kotlin.collections.mapOf
+
 
 // Should break out the queries here into AuthDao
 class AuthService(
@@ -132,8 +134,9 @@ class AuthService(
             val result = either {
                 val dto = parseCtxBody<OrchestratedCredentialsDto>(ctx).bind()
                 val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
-                ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to create orchestrated user" }
-                ensure(hasAtLeastAsManyCredits(auth.first, dto.initialCreditBalance)) { 403 to "Insufficient Funds" }
+                val orchestratorEmail = auth.first
+                ensure(isOrchestrator(orchestratorEmail)) { 403 to "Must be admin to create orchestrated user" }
+                ensure(hasAtLeastAsManyCredits(orchestratorEmail, dto.initialCreditBalance)) { 403 to "Insufficient Funds" }
 
                 val passwordHash = BCrypt.hashpw(dto.userPassword, BCrypt.gensalt())
 
@@ -143,7 +146,7 @@ class AuthService(
                             "update user set balance = balance - ? where email = ?"
                         ).use { stmt ->
                             stmt.setInt(1, dto.initialCreditBalance)
-                            stmt.setString(2, auth.first)
+                            stmt.setString(2, orchestratorEmail)
                             stmt.executeUpdate()
                         }
                         conn.prepareStatement(
@@ -152,8 +155,49 @@ class AuthService(
                             stmt.setString(1, dto.userEmail)
                             stmt.setString(2, passwordHash)
                             stmt.setInt(3, dto.initialCreditBalance)
-                            stmt.setString(4, auth.first)
+                            stmt.setString(4, orchestratorEmail)
                             stmt.executeUpdate()
+                        }
+
+                        val referenceTime = System.currentTimeMillis()
+
+                        dto.initialPositions.forEach { positionPair ->
+                            val (ticker, positionSize) =  positionPair
+                            conn.prepareStatement(
+                            """
+                                update position_records set 
+                                    size = size - ?, 
+                                    received_tick = ?
+                                where id = (
+                                    select id from position_records
+                                    where user = ?
+                                    and ticker = ?
+                                    and position_type = ?
+                                    order by received_tick limit 1
+                                )
+                                """
+                            ).use { stmt ->
+                                stmt.setInt(1, positionSize)
+                                stmt.setLong(2, referenceTime)
+                                stmt.setString(3, orchestratorEmail)
+                                stmt.setString(4, ticker)
+                                stmt.setInt(5, PositionType.LONG.ordinal)
+                                stmt.executeUpdate()
+                            }
+
+                            conn.prepareStatement(
+                                """
+                                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
+                                        on conflict (user, ticker, position_type)
+                                        do update set size = size + excluded.size, received_tick = excluded.received_tick
+                                    """
+                            ).use { stmt ->
+                                stmt.setString(1, dto.userEmail)
+                                stmt.setString(2, ticker)
+                                stmt.setInt(3, PositionType.LONG.ordinal)
+                                stmt.setInt(4, positionSize)
+                                stmt.setLong(5, referenceTime)
+                            }
                         }
                     }
                 }.mapLeft { 500 to "Internal server error" }.bind()
@@ -252,9 +296,10 @@ class AuthService(
         try {
             either {
                 val auth = evaluateAuth(ctx).getOrElse { raise(404 to "User authentication failed") }
-                ensure(isOrchestrator(auth.first)) { 403 to "Must be admin to liquidate orchestrated users" }
+                val orchestratorEmail = auth.first
+                ensure(isOrchestrator(orchestratorEmail)) { 403 to "Must be admin to liquidate orchestrated users" }
 
-                val orchestratedUsers = getOrchestratedUsers(auth.first).bind()
+                val orchestratedUsers = getOrchestratedUsers(orchestratorEmail).bind()
                 if (orchestratedUsers.isNotEmpty()) {
                     // Should probably return something different if no results but leaving this for now
                     Either.catch {
@@ -262,19 +307,57 @@ class AuthService(
 
                         db.query { conn ->
                             conn.prepareStatement("update user set balance = 0 where orchestrated_by = ?").use { stmt ->
-                                stmt.setString(1, auth.first)
-                                stmt.executeUpdate()
-                            }
-                        }
-                        db.query { conn ->
-                            conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                                stmt.setInt(1, totalBalance)
-                                stmt.setString(2, auth.first)
+                                stmt.setString(1, orchestratorEmail)
                                 stmt.executeUpdate()
                             }
                         }
 
-                        totalBalance
+                        // Short orders: would have to be mindful about consolidation
+                        val orchestratedUsersLongPositions = HashMap<String, Int>()
+                        db.query { conn ->
+                            conn.prepareStatement("""
+                                select ticker, sum(size)
+                                    from user u
+                                    left join position_records p on u.email = p.user
+                                    where orchestrated_by = ? and p.position_type = ?
+                                    group by ticker;
+                            """
+                            ).use { stmt ->
+                                stmt.setString(1, orchestratorEmail)
+                                stmt.setInt(2, PositionType.LONG.ordinal)
+                                stmt.executeQuery().use { rs ->
+                                    while (rs.next()) {
+                                        orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
+                                    }
+                                }
+                            }
+                        }
+
+                        db.query { conn ->
+                            conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
+                                stmt.setInt(1, totalBalance)
+                                stmt.setString(2, orchestratorEmail)
+                                stmt.executeUpdate()
+                            }
+                        }
+
+                        val referenceTime = System.currentTimeMillis()
+                        orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
+                            db.query { conn ->
+                                conn.prepareStatement("""
+                                insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
+                                    on conflict (user, ticker, position_type)
+                                    do update set size = size + excluded.size, received_tick = excluded.received_tick
+                            """).use { stmt ->
+                                    stmt.setString(1, orchestratorEmail)
+                                    stmt.setString(2, ticker)
+                                    stmt.setInt(3, PositionType.LONG.ordinal)
+                                    stmt.setInt(4,  longPositions)
+                                    stmt.setLong(5, referenceTime)
+                                    stmt.executeUpdate()
+                                }
+                            }
+                        }
                     }.mapLeft { 500 to "Internal server error" }.bind()
                 }
                 201 to "Update successful"
@@ -283,7 +366,7 @@ class AuthService(
                     ctx.status(error.first)
                     ctx.json("message" to error.second)
                 },
-                {ctx.status(204)}
+                { ctx.status(204) }
             )
         } finally {
             writeSemaphore.release()
@@ -466,10 +549,11 @@ class AuthService(
 
     private fun isOrchestrator(email: String): Boolean {
         return db.query { conn ->
-            conn.prepareStatement("select email from user where email = ? and type = ${AccountType.ORCHESTRATOR.ordinal}").use { stmt ->
-                stmt.setString(1, email)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
+            conn.prepareStatement("select email from user where email = ? and type = ${AccountType.ORCHESTRATOR.ordinal}")
+                .use { stmt ->
+                    stmt.setString(1, email)
+                    stmt.executeQuery().use { rs -> rs.next() }
+                }
         }
     }
 

@@ -20,7 +20,8 @@ This repository is a playground for working on a grab bag of these technologies,
 #### Steps
 - [x] Create Zod Schema
 - [x] Test that Zod Schema work correctly
-- 
+- [ ] Basic UI for quote, ticker stream
+- [ ] Stranded consumer fix
 
 #### Emitted messages
 ```typescript
