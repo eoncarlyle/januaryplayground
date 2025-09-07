@@ -1,4 +1,5 @@
 import arrow.core.Either
+import arrow.core.combine
 import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaConsumer
@@ -11,6 +12,7 @@ import org.slf4j.LoggerFactory
 import java.security.SecureRandom
 import java.util.concurrent.LinkedBlockingQueue
 import kotlin.math.log
+import kotlin.system.exitProcess
 
 private class OrchestratedNoiseTrader(
     email: String,
@@ -47,7 +49,23 @@ class Orchestrator(
         either {
             backendClient.login(orchestratorEmail, password).bind()
             backendClient.postOrchestratorLiquidateAll(LiquidateAllOrchestratedUsersDto(orchestratorEmail)).bind()
+            val positions = backendClient.getUserLongPositions(ExchangeRequestDto(orchestratorEmail, ticker)).bind()
+            if (positions.isNotEmpty()) {
+                val quote = backendClient.getQuote(ExchangeRequestDto(orchestratorEmail, password)).bind()
+                backendClient.postLimitOrderRequest(
+                    LimitOrderRequest(
+                        email = orchestratorEmail,
+                        ticker = ticker,
+                        size = positions.sumOf { it.size },
+                        tradeType = TradeType.SELL,
+                        price = quote.ask
+                    )
+                )
+            }
             relaunchAllPossibleNoiseTraders()
+        }.mapLeft {
+            logger.error("Client failure: ${it.second}")
+            exitProcess(1)
         }
 
         withContext(Dispatchers.IO) {

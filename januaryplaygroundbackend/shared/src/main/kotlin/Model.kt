@@ -9,8 +9,7 @@ import kotlinx.serialization.Serializable
 class CredentialsDto(val email: String, val password: String)
 
 class OrchestratedCredentialsDto(
-    val orchestratorEmail: String, val userEmail: String, val userPassword: String, val initialCreditBalance: Int,
-    val initialPositions: List<Pair<Ticker, Int>> = listOf()
+    val orchestratorEmail: String, val userEmail: String, val userPassword: String, val initialCreditBalance: Int
 )
 
 class LiquidateOrchestratedUserDto(val orchestratorEmail: String, val targetUserEmail: String)
