@@ -29,7 +29,7 @@ fun main(args: Array<String>) {
         when (maybeConfig) {
             is Some -> maybeConfig.value.toKafkaSSLConfig()
             else -> {
-                println("Kafk configuration must be provided")
+                println("Kafka configuration must be provided")
                 exitProcess(1)
             }
         }

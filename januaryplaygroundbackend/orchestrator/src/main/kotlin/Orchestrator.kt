@@ -51,7 +51,7 @@ class Orchestrator(
             backendClient.postOrchestratorLiquidateAll(LiquidateAllOrchestratedUsersDto(orchestratorEmail)).bind()
             val positions = backendClient.getUserLongPositions(ExchangeRequestDto(orchestratorEmail, ticker)).bind()
             if (positions.isNotEmpty()) {
-                val quote = backendClient.getQuote(ExchangeRequestDto(orchestratorEmail, password)).bind()
+                val quote = backendClient.getQuote(ExchangeRequestDto(orchestratorEmail, ticker)).bind()
                 backendClient.postLimitOrderRequest(
                     LimitOrderRequest(
                         email = orchestratorEmail,

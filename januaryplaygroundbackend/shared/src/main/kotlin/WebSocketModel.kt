@@ -94,6 +94,7 @@ enum class WebSocketLifecycleOperation {
     ),
     JsonSubTypes.Type(value = ServerLifecycleMessage::class, name = "serverLifecycle"),
     JsonSubTypes.Type(value = QuoteMessage::class, name = "outgoingQuote"),
+    JsonSubTypes.Type(value = AllQuotesMessage::class, name = "outgoingQuotes"),
     JsonSubTypes.Type(value = ServerTimeMessage::class, name = "outgoingServerTime"),
     JsonSubTypes.Type(value = NotificationMessage::class, name = "outgoingNotification")
 )
@@ -145,6 +146,12 @@ data class QuoteMessage(
     val quote: Quote
 ) : WebSocketMessage {
     override val type: String = "outgoingQuote"
+}
+
+data class AllQuotesMessage(
+    val quotes: List<StatelessQuote>
+) : WebSocketMessage {
+    override val type: String = "outgoingQuotes"
 }
 
 data class NotificationMessage(

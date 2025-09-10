@@ -3,12 +3,15 @@ import {
   SetPersistentAuth,
   SetSocketMessageState,
   SetSocketState,
-  SocketState,
   TempSessionAuth,
 } from "@/model.ts";
-import React from "react";
+import { Dispatch, SetStateAction } from "react";
 
-import { AuthDto } from "./model";
+import {
+  AuthDto,
+  PublicWebsocketMessage,
+  publicWebsocketMesageSchema,
+} from "./model";
 
 const EMAIL = "email";
 const LOGGED_IN = "loggedIn";
@@ -123,12 +126,27 @@ export async function setupAuthenticatedWebsocket(
   }
 }
 
+export const parseWebsocketMessage = (
+  input: unknown,
+): PublicWebsocketMessage | null => {
+  for (const schema of publicWebsocketMesageSchema) {
+    const result = schema.safeParse(input);
+    if (result.success) {
+      return result.data;
+    }
+  }
+  return null;
+};
+
 export async function setupPublicWebsocket(
   socket: WebSocket,
-  setMsgs: React.Dispatch<React.SetStateAction<object[]>>,
+  setMsgs: Dispatch<SetStateAction<PublicWebsocketMessage[]>>,
 ) {
   socket.onmessage = (event) => {
-    setMsgs((msgs) => [...msgs, JSON.parse(event.data)].slice(-10));
+    const parsedMessage = parseWebsocketMessage(JSON.parse(event.data));
+    if (parsedMessage) {
+      setMsgs((msgs) => [...msgs, parsedMessage].slice(-10));
+    }
   };
 
   socket.onerror = (event) => {

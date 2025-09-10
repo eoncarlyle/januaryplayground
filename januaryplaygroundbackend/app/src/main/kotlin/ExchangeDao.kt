@@ -52,16 +52,16 @@ class ExchangeDao(
         }
     }
 
-    fun getPartialQuote(ticker: Ticker): StatelessQuote? {
+    fun getStatelessQuote(ticker: Ticker): StatelessQuote? {
         return db.query { conn ->
             conn.prepareStatement(
                 """
-             select
-                coalesce((select max(price) from order_records
-                where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
-                coalesce((select min(price) from order_records
-                where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
-             """
+                 select
+                    coalesce((select max(price) from order_records
+                    where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
+                    coalesce((select min(price) from order_records
+                    where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
+                 """
             ).use { stmt ->
                 stmt.setString(1, ticker)
                 stmt.setString(2, ticker)
@@ -75,6 +75,33 @@ class ExchangeDao(
                 }
             }
         }
+    }
+
+    fun getAllStatelessQuotes(): List<StatelessQuote> {
+        val quotes = ArrayList<StatelessQuote>()
+        db.query { conn ->
+            conn.prepareStatement(
+                """
+                select
+                    t.symbol,
+                    coalesce((select max(price) from order_records
+                              where ticker = t.symbol and trade_type = 0 and filled_tick = -1), -1) as bid,
+                    coalesce((select min(price) from order_records
+                              where ticker = t.symbol and trade_type = 1 and filled_tick = -1), -1) as ask
+                    from ticker t;
+                """
+            ).use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val ticker = rs.getString(1)
+                        val bid = rs.getInt(2)
+                        val ask = rs.getInt(3)
+                        quotes.add(StatelessQuote(ticker, bid, ask))
+                    }
+                }
+            }
+        }
+        return quotes
     }
 
     private fun buyMatchingOrderBook(
@@ -555,28 +582,29 @@ class ExchangeDao(
     fun getNotificationRules(): MutableSet<NotificationRule> {
         val rules = HashSet<NotificationRule>()
         db.query { conn ->
-            conn.prepareStatement("select user, category, operation, timestamp, dimension from notification_rules").use { stmt ->
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        val categoryOrdinal = rs.getInt("category")
-                        val operationOrdinal = rs.getInt("operation")
+            conn.prepareStatement("select user, category, operation, timestamp, dimension from notification_rules")
+                .use { stmt ->
+                    stmt.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            val categoryOrdinal = rs.getInt("category")
+                            val operationOrdinal = rs.getInt("operation")
 
-                        option {
-                            val category = getNotificationCategory(categoryOrdinal).bind()
-                            val operation = getNotificationOperation(operationOrdinal).bind()
-                            rules.add(
-                                NotificationRule(
-                                    rs.getString("user"),
-                                    category,
-                                    operation,
-                                    rs.getLong("timestamp"),
-                                    rs.getInt("dimension")
+                            option {
+                                val category = getNotificationCategory(categoryOrdinal).bind()
+                                val operation = getNotificationOperation(operationOrdinal).bind()
+                                rules.add(
+                                    NotificationRule(
+                                        rs.getString("user"),
+                                        category,
+                                        operation,
+                                        rs.getLong("timestamp"),
+                                        rs.getInt("dimension")
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
-            }
         }
         return rules
     }

@@ -31,6 +31,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val orderQueue = LinkedBlockingQueue<OrderQueueMessage>()
+    private val newPublicSocketQueue = LinkedBlockingQueue<WsContext>()
 
     // This is gross and must be narrowed at some point
     private val creditTransferQueue = LinkedBlockingQueue<CreditTransferDto>()
@@ -127,6 +128,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         heartbeatThread()
         orderQueueConsumerThread()
         kafkaProducerThread()
+        publicWebsocketHeartbeat()
     }
 
     private fun exchangeAuthEvaluationMiddleware(ctx: Context) {
@@ -356,10 +358,20 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private fun heartbeatThread() {
         Thread {
             while (true) {
-                Thread.sleep(5000) // Every 5 seconds
-
+                Thread.sleep(1500)
                 authenticatedWsUserMap.forEachLiveSocket { ctx ->
                     ctx.send(objectMapper.writeValueAsString(ServerTimeMessage(System.currentTimeMillis())))
+                }
+            }
+        }.start()
+    }
+
+    private fun publicWebsocketHeartbeat() {
+        Thread {
+            while (true) {
+                Thread.sleep(500)
+                publicWsUsers.forEachLiveSocket { ctx ->
+                    ctx.send(AllQuotesMessage(exchangeService.getAllStatelessQuotesInLock(readerLightswitch)))
                 }
             }
         }.start()

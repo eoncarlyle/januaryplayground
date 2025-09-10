@@ -47,6 +47,19 @@ export const quoteMessageSchema = z.object({
 
 export type QuoteMessage = z.infer<typeof quoteMessageSchema>;
 
+export const allQuotesMessageSchema = z.object({
+  quotes: z.array(
+    z.object({
+      ticker: z.string(),
+      bid: z.number(),
+      ask: z.number(),
+    }),
+  ),
+  type: z.literal("outgoingQuotes"),
+});
+
+export type AllQuotesMessage = z.infer<typeof allQuotesMessageSchema>;
+
 export const creditTransferDtoSchema = z.object({
   sendingUserEmail: z.string(),
   targetUserEmail: z.string(),
@@ -166,6 +179,7 @@ export type NoOrdersCancelled = z.infer<typeof noOrdersCancelledSchema>;
 export type PublicWebsocketMessage =
   | CreditTransferDto
   | QuoteMessage
+  | AllQuotesMessage
   | OrderFilled
   | OrderPartiallyFilled
   | OrderAcknowledged
@@ -175,6 +189,7 @@ export type PublicWebsocketMessage =
 export const publicWebsocketMesageSchema = [
   creditTransferDtoSchema,
   quoteMessageSchema,
+  allQuotesMessageSchema,
   orderFilledSchema,
   orderPartiallyFilledSchema,
   orderAcknowledgedSchema,
