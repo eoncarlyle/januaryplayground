@@ -15,7 +15,11 @@ This repository is a playground for working on a grab bag of these technologies,
 ## Active Topic Notes
 
 ### Basic frontend
-- Had to change MM user to `myTestMmPassword`
+- I am 100% going to forget this so writing this in the README, if you're asking where all that old frontend stuff was, it is in
+  - `a3500ac Frontend cleanup of obsolete components`
+- Creds
+  - `testmm@iainschmitt.com myTestMmPassword MNAD`
+  - `orchestrator@iainschmitt.com myTestOrchestratorPassword MNAD`
 #### Steps
 - [x] Create Zod Schema
 - [x] Test that Zod Schema work correctly
