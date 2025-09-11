@@ -13,6 +13,7 @@ import io.javalin.websocket.WsContext
 import java.util.concurrent.Semaphore
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
+import java.sql.Connection
 import java.time.Duration
 import java.time.Instant
 import kotlin.collections.mapOf
@@ -162,48 +163,6 @@ class AuthService(
                             stmt.setString(4, orchestratorEmail)
                             stmt.executeUpdate()
                         }
-
-                        /*
-                        val referenceTime = System.currentTimeMillis()
-
-                        dto.initialPositions.forEach { positionPair ->
-                            val (ticker, positionSize) = positionPair
-                            conn.prepareStatement(
-                                """
-                                update position_records set
-                                    size = size - ?,
-                                    received_tick = ?
-                                where id = (
-                                    select id from position_records
-                                    where user = ?
-                                    and ticker = ?
-                                    and position_type = ?
-                                    order by received_tick limit 1
-                                )
-                                """
-                            ).use { stmt ->
-                                stmt.setInt(1, positionSize)
-                                stmt.setLong(2, referenceTime)
-                                stmt.setString(3, orchestratorEmail)
-                                stmt.setString(4, ticker)
-                                stmt.setInt(5, PositionType.LONG.ordinal)
-                                stmt.executeUpdate()
-                            }
-
-                            conn.prepareStatement(
-                                """
-                                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                                        on conflict (user, ticker, position_type)
-                                        do update set size = size + excluded.size, received_tick = excluded.received_tick
-                                    """
-                            ).use { stmt ->
-                                stmt.setString(1, dto.userEmail)
-                                stmt.setString(2, ticker)
-                                stmt.setInt(3, PositionType.LONG.ordinal)
-                                stmt.setInt(4, positionSize)
-                                stmt.setLong(5, referenceTime)
-                            }
-                         */
                     }
                     Unit
                 }.mapLeft { 500 to "Internal server error" }.bind()
@@ -228,8 +187,6 @@ class AuthService(
                 ensure(isOrchestratedBy(dto.targetUserEmail, auth.first)) {
                     403 to "Target account not orchestrated by user"
                 }
-
-                val targetUserBalance = getBalance(dto.targetUserEmail).getOrElse { 0 }
 
                 liquidateSingleOrchestratedUser(dto, auth).bind()
                 201 to "Update successful"
@@ -271,10 +228,13 @@ class AuthService(
                     stmt.executeUpdate()
                 }
 
-                liquidateSingleUserOrchestratedPositions(dto.orchestratorEmail, dto.targetUserEmail)
+                liquidateSingleUserOrchestratedPositions(conn, dto.orchestratorEmail, dto.targetUserEmail)
             }
 
-        }.mapLeft { 500 to "Internal server error" }
+        }.mapLeft { throwable ->
+            logger.error(throwable.message)
+            500 to "Internal server error"
+        }
     }
 
     fun liquidateAllOrchestratedUsers(ctx: Context, writeSemaphore: Semaphore) {
@@ -327,6 +287,7 @@ class AuthService(
     }
 
     private fun liquidateSingleUserOrchestratedPositions(
+        conn: Connection,
         orchestratorEmail: String,
         userEmail: String
     ) {
@@ -334,55 +295,52 @@ class AuthService(
 
         // Short orders: would have to be mindful about consolidation
         val orchestratedUsersLongPositions = HashMap<String, Int>()
-        db.query { conn ->
-            conn.prepareStatement(
-                """
+        conn.prepareStatement(
+            """
                 select ticker, sum(size)
                     from user u
-                    left join position_records p on u.email = ?
-                    where orchestrated_by = ? and p.position_type = ?
+                    left join position_records p on u.email = p.user
+                    where orchestrated_by = ? and u.email = ? and p.position_type = ?
                     group by ticker;
             """
-            ).use { stmt ->
-                stmt.setString(1, userEmail)
-                stmt.setString(2, orchestratorEmail)
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
-                    }
+        ).use { stmt ->
+            stmt.setString(1, orchestratorEmail)
+            stmt.setString(2, userEmail)
+            stmt.setInt(3, PositionType.LONG.ordinal)
+            stmt.executeQuery().use { rs ->
+                while (rs.next()) {
+                    orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
                 }
             }
         }
 
         orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
-            db.query { conn ->
-                conn.prepareStatement(
-                    """
+            conn.prepareStatement(
+                """
                     delete from position_records
                         where ticker = ? 
                         and user = ?
                         and position_type = ?
                     """
-                ).use { stmt ->
-                    stmt.setString(1, userEmail)
-                    stmt.setString(2, ticker)
-                    stmt.setInt(3, PositionType.LONG.ordinal)
-                    stmt.executeUpdate()
-                }
+            ).use { stmt ->
+                stmt.setString(1, ticker)
+                stmt.setString(2, userEmail) //Inverting these: nasty bug
+                stmt.setInt(3, PositionType.LONG.ordinal)
+                stmt.executeUpdate()
+            }
 
-                conn.prepareStatement("""
+            conn.prepareStatement("""
                     insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
                         on conflict (user, ticker, position_type)
                         do update set size = size + excluded.size, received_tick = excluded.received_tick
-                """).use { stmt ->
-                    stmt.setString(1, orchestratorEmail)
-                    stmt.setString(2, ticker)
-                    stmt.setInt(3, PositionType.LONG.ordinal)
-                    stmt.setInt(4, longPositions)
-                    stmt.setLong(5, referenceTime)
-                    stmt.executeUpdate()
-                }
+                    """
+            ).use { stmt ->
+                stmt.setString(1, orchestratorEmail)
+                stmt.setString(2, ticker)
+                stmt.setInt(3, PositionType.LONG.ordinal)
+                stmt.setInt(4, longPositions)
+                stmt.setLong(5, referenceTime)
+                stmt.executeUpdate()
             }
         }
     }
@@ -420,22 +378,26 @@ class AuthService(
 
         orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
             db.query { conn ->
-                conn.prepareStatement("""
+                conn.prepareStatement(
+                    """
                     delete from position_records
                         where ticker = ? 
                         and user in $orchestratedUserSqlList
                         and position_type = ?
-                """).use { stmt ->
+                """
+                ).use { stmt ->
                     stmt.setString(1, ticker)
                     stmt.setInt(2, PositionType.LONG.ordinal)
                     stmt.executeUpdate()
                 }
 
-                conn.prepareStatement("""
+                conn.prepareStatement(
+                    """
                     insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
                         on conflict (user, ticker, position_type)
                         do update set size = size + excluded.size, received_tick = excluded.received_tick
-                """).use { stmt ->
+                        """
+                ).use { stmt ->
                     stmt.setString(1, orchestratorEmail)
                     stmt.setString(2, ticker)
                     stmt.setInt(3, PositionType.LONG.ordinal)

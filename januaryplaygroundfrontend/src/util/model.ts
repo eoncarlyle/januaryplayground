@@ -196,3 +196,14 @@ export const publicWebsocketMesageSchema = [
   someOrdersCancelledSchema,
   noOrdersCancelledSchema,
 ] as const;
+
+export type StatelessQuote = {
+  ticker: string;
+  bid: number;
+  ask: number;
+};
+
+export type LandingPageState = {
+  quote: StatelessQuote;
+  displayedMessages: PublicWebsocketMessage[];
+};

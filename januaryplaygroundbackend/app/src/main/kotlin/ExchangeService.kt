@@ -85,7 +85,7 @@ class ExchangeService(
         }
 
     fun getState(): Pair<Int, Int> {
-        return exchangeDao.getState();
+        return exchangeDao.getState()
     }
 
     // Assumes already within transaction semaphore!

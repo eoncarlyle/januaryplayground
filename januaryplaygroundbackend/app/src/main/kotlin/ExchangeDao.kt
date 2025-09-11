@@ -326,7 +326,7 @@ class ExchangeDao(
                 insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
                     on conflict (user, ticker, position_type)
                     do update set size = size + excluded.size, received_tick = excluded.received_tick
-                """,
+            """,
             Statement.RETURN_GENERATED_KEYS
         ).use { stmt ->
             stmt.setString(1, order.email)
@@ -347,7 +347,7 @@ class ExchangeDao(
         orderFilledTick: Long
     ): Long {
         return conn.prepareStatement(
-            """
+        """
             update position_records set 
                 size = size - ?, 
                 received_tick = ?
@@ -416,14 +416,14 @@ class ExchangeDao(
 
     private fun statePair(conn: Connection): Pair<Int, Int> {
         return conn.prepareStatement(
-            """
-               select positions, balances
+        """
+                select positions, balances
                     from (
-                         select
-                             (select sum(size) from position_records) as positions,
-                             (select sum(balance) from user) as balances
-                     )
-                """
+                        select
+                            (select sum(size) from position_records) as positions,
+                            (select sum(balance) from user) as balances
+            )
+            """
         ).use { stmt ->
             stmt.executeQuery().use { rs ->
                 Pair(rs.getInt("positions"), rs.getInt("balances"))
@@ -437,10 +437,10 @@ class ExchangeDao(
 
         orderId = db.query { conn ->
             conn.prepareStatement(
+            """
+                insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
+                    values (?, ?, ?, ?, ?, ?, ?, ?) 
                 """
-                    insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
-                        values (?, ?, ?, ?, ?, ?, ?, ?) 
-                    """
             ).use { stmt ->
                 stmt.setString(1, order.email)
                 stmt.setString(2, order.ticker)
@@ -471,9 +471,9 @@ class ExchangeDao(
         return db.query { conn ->
             conn.prepareStatement(
                 """
-            select id, size from position_records
-                where user = ? AND ticker = ? AND position_type = ?
-            """
+                select id, size from position_records
+                    where user = ? AND ticker = ? AND position_type = ?
+                """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setString(2, ticker)
@@ -533,10 +533,10 @@ class ExchangeDao(
         return db.query { conn ->
             conn.prepareStatement(
                 """
-           select
-               (select sum(size) from position_records) as position_sum,
-               (select sum(balance) from user) as credit_sum
-           """
+               select
+                   (select sum(size) from position_records) as position_sum,
+                   (select sum(balance) from user) as credit_sum
+               """
             ).use { stmt ->
                 stmt.executeQuery().use { rs ->
                     if (rs.next()) {
@@ -636,9 +636,9 @@ class ExchangeDao(
         db.query { conn ->
             conn.prepareStatement(
                 """
-            delete from notification_rules 
-            where user = ? and category = ? and operation = ? and timestamp = ? and dimension = ?
-            """
+                delete from notification_rules 
+                    where user = ? and category = ? and operation = ? and timestamp = ? and dimension = ?
+                """
             ).use { stmt ->
                 stmt.setString(1, userEmail)
                 stmt.setInt(2, category.ordinal)

@@ -135,11 +135,11 @@ class NoiseTrader(
                                                 wsCoroutineHandle.cancel(
                                                         "Max exchange flap ($maxFlaps) hit",
                                                         Throwable(
-                                                                "Max exchange flap ($maxFlaps) hit"
+                                                                "Max exchange flap ($maxFlaps) hit by noise trader $email"
                                                         )
                                                 )
                                                 throw RuntimeException(
-                                                        "Max exchange flap ($maxFlaps) hit"
+                                                        "Max exchange flap ($maxFlaps) hit by noise trader $email"
                                                 )
                                             }
                                         } else flapCounter = 0

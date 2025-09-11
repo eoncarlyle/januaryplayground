@@ -31,9 +31,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val orderQueue = LinkedBlockingQueue<OrderQueueMessage>()
-    private val newPublicSocketQueue = LinkedBlockingQueue<WsContext>()
 
-    // This is gross and must be narrowed at some point
     private val creditTransferQueue = LinkedBlockingQueue<CreditTransferDto>()
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
@@ -247,7 +245,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                     .onRight { response ->
                         ctx.status(HttpStatus.CREATED)
                         ctx.json(response)
-                        //logger.info("Final state: {}", marketService.getState().toString())
+
                         orderQueue.put(
                             OrderQueueMessage(
                                 orderRequest,
@@ -455,6 +453,8 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
 
     private fun notificationRuleEventProducer() {
         logger.info("--------Notification Producer-------")
+        val state = exchangeService.getState()
+        logger.info("Current state: ${state.first} positions, ${state.second} credits")
         val rulesInEffect = exchangeService.getNotificationRules().filter { rule ->
             // This will need to change if other notification rules supported
             if (rule.category === NotificationCategory.CREDIT_BALANCE) {
