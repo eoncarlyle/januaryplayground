@@ -25,3 +25,13 @@ test {
 kotlin {
     jvmToolchain(21)
 }
+
+jar {
+    manifest {
+        attributes "Main-Class": "App.kt"
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}

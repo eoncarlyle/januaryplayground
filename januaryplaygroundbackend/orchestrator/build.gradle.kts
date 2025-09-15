@@ -29,3 +29,13 @@ tasks.test {
 kotlin {
     jvmToolchain(21)
 }
+
+tasks.jar {
+    manifest {
+        attributes(
+            "Main-Class" to "AppKt",
+        )
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+}
