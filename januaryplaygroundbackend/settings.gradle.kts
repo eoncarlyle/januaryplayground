@@ -13,6 +13,7 @@ plugins {
 rootProject.name = "januaryplaygroundbackend"
 include("app")
 include("shared")
+include("exchange")
 include("client")
 include("marketmaker")
 include("noisetrader")

@@ -42,7 +42,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         config.bundledPlugins.enableCors { cors ->
             // TODO: specify this correctly in production
             cors.addRule {
-                it.allowHost("http://localhost:5173", "https://demo.iainschmitt.com")
+                it.allowHost("http://localhost:5173")
                 it.allowCredentials = true
             }
         }
