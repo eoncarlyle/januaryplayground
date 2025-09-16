@@ -1,10 +1,13 @@
 plugins {
     kotlin("jvm") version "2.0.21"
     kotlin("plugin.serialization") version "1.9.10"
+    id("com.gradleup.shadow") version "9.1.0"
+    application
 }
 
-group = "com.iainschmitt.januaryplaygroundbackend"
-version = "unspecified"
+application {
+    mainClass = "MainKt"
+}
 
 repositories {
     mavenCentral()

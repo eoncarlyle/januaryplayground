@@ -2,6 +2,8 @@ package com.iainschmitt.januaryplaygroundbackend.shared.kafka
 
 import java.util.*
 import arrow.core.Option
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 data class KafkaSSLConfig(
     val bootstrapServers: String = "",
@@ -70,7 +72,14 @@ private fun resolveResourcePath(path: String): String {
     }
 
     val classLoader = Thread.currentThread().contextClassLoader ?: ClassLoader.getSystemClassLoader()
-    val resourceUrl = classLoader.getResource(path)
+    val resourceStream = classLoader.getResourceAsStream(path)
 
-    return resourceUrl?.path ?: path
+    return if (resourceStream != null && (path.endsWith(".jks") || path.endsWith(".p12") || path.endsWith(".pem"))) {
+        val tempFile = kotlin.io.path.createTempFile(suffix = path.substringAfterLast("."))
+        tempFile.toFile().deleteOnExit()
+        Files.copy(resourceStream, tempFile, StandardCopyOption.REPLACE_EXISTING)
+        tempFile.toString()
+    } else {
+        classLoader.getResource(path)?.path ?: path
+    }
 }

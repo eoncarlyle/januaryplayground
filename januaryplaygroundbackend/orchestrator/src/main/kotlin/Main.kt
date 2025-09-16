@@ -1,12 +1,7 @@
 import arrow.core.raise.option
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.*
 import kotlinx.coroutines.*
-import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.slf4j.LoggerFactory
-import ch.qos.logback.classic.LoggerContext
-import java.util.*
 import kotlin.system.exitProcess
-import kotlin.time.Duration.Companion.seconds
 
 suspend fun main(args: Array<String>) {
     option {
