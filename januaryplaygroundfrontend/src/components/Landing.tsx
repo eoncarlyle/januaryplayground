@@ -129,7 +129,11 @@ export function Landing() {
   });
 
   useEffect(() => {
-    const socket = new WebSocket("ws://localhost:7070/ws/public");
+    const socket = new WebSocket(
+      import.meta.env.DEV
+        ? "ws://localhost:7070/ws/public"
+        : "wss://api.demo.iainschmitt.com/ws/public"
+    );
 
     setupPublicWebsocket(socket, setPageState);
     return () => {

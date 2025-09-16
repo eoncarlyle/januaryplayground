@@ -43,6 +43,8 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
             // TODO: specify this correctly in production
             cors.addRule {
                 it.allowHost("http://localhost:5173")
+                it.allowHost("https://api.demo.iainschmitt.com")
+                it.allowHost("https://demo.iainschmitt.com")
                 it.allowCredentials = true
             }
         }
