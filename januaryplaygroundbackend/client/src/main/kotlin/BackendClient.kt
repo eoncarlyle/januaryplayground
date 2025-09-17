@@ -42,9 +42,10 @@ data class StartingState(
 class BackendClient(
     private val logger: Logger,
     private val baseurl: String = "127.0.0.1",
-    private val port: Int = 7070
+    private val port: Int = 7070,
+    var secure: Boolean = false
 ) {
-    private val httpBaseurl = "http://$baseurl:$port"
+    private val httpBaseurl = "${if (secure) "https" else "http"}://$baseurl:$port"
     private val objectMapper = jacksonObjectMapper()
 
     private val client = HttpClient(CIO) {
