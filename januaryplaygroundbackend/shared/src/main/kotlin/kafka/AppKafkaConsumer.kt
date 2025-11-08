@@ -3,6 +3,8 @@ package com.iainschmitt.januaryplaygroundbackend.shared.kafka
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import com.iainschmitt.januaryplaygroundbackend.shared.ApplicationConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.SimplePropertiesLoader.toProperties
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.apache.kafka.clients.consumer.ConsumerConfig
@@ -22,7 +24,7 @@ inline fun <reified T> String.deserializeEither(): Either<String, T> =
         (e.message ?: "Unknown error").left()
     }
 class AppKafkaConsumer(
-    sslConfig: KafkaSSLConfig,
+    sslConfig: ApplicationConfig,
     private val groupId: String = "default-consumer-group"
 ) {
     private val consumer: KafkaConsumer<String, String>

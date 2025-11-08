@@ -1,4 +1,5 @@
 import arrow.core.raise.option
+import com.iainschmitt.januaryplaygroundbackend.shared.SimplePropertiesLoader
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.*
 import kotlinx.coroutines.*
 import kotlin.system.exitProcess

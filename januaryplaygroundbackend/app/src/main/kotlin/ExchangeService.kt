@@ -255,7 +255,6 @@ class ExchangeService(
             return exchangeDao.getStatelessQuote(ticker)
         }
 
-
     fun getUserBalance(userEmail: String, lightswitch: Lightswitch): Int? = withLightswitch(lightswitch) {
         return exchangeDao.getUserBalance(userEmail)
     }

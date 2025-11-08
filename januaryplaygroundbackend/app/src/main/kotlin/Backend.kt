@@ -3,7 +3,7 @@ import arrow.core.getOrElse
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaProducer
-import com.iainschmitt.januaryplaygroundbackend.shared.kafka.KafkaSSLConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.ApplicationConfig
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.HttpStatus
@@ -26,7 +26,7 @@ private data class OrderQueueMessage(
     val finalStatelessQuote: StatelessQuote?
 )
 
-class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) {
+class Backend(db: DatabaseHelper, applicationConfig: ApplicationConfig, topics: BackendKafkaTopics, secure: Boolean) {
     private val authenticatedWsUserMap = WsUserMap()
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
@@ -36,7 +36,7 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(writeSemaphore)
-    private val producer = AppKafkaProducer(kafkaConfig)
+    private val producer = AppKafkaProducer(applicationConfig)
 
     private val javalinApp = Javalin.create { config ->
         config.bundledPlugins.enableCors { cors ->
