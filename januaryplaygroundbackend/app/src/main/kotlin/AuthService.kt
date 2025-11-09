@@ -26,7 +26,7 @@ class AuthService(
     private val wsUserMap: WsUserMap,
     private val logger: Logger
 ) {
-
+    private val authDao = AuthDao(db)
     private val session = "session"
     private val email = "email"
     private val expireTime = "expireTime"
@@ -37,18 +37,7 @@ class AuthService(
                 val passwordHash = BCrypt.hashpw(dto.password, BCrypt.gensalt())
                 ensure(!emailPresent(dto.email)) { raise(400 to "Account with email `${dto.email}` already exists") }
 
-                Either.catch {
-                    db.query { conn ->
-                        conn.prepareStatement(
-                            "insert into user (email, password_hash) values (?, ?)"
-                        )
-                            .use { stmt ->
-                                stmt.setString(1, dto.email)
-                                stmt.setString(2, passwordHash)
-                                stmt.executeUpdate()
-                            }
-                    }
-                }.onLeft { raise(500 to "Internal error") }
+                authDao.createUser(dto.email, passwordHash).onLeft { raise(500 to "Internal error") }
                 val session = createSession(dto.email)
                 ctx.cookie(session.first)
                 ctx.status(200)
@@ -63,26 +52,16 @@ class AuthService(
 
     fun logIn(ctx: Context) {
         parseCtxBodyMiddleware<CredentialsDto>(ctx) { dto ->
-            val maybePasswordHash =
-                db.query { conn ->
-                    conn.prepareStatement("select password_hash from user where email = ?").use { stmt
-                        ->
-                        stmt.setString(1, dto.email)
-                        stmt.executeQuery().use { rs ->
-                            if (rs.next()) Option.fromNullable(rs.getString("password_hash")) else none()
-                        }
-                    }
+            authDao.getMaybePasswordHash(dto.email)
+                .filter { passwordHash -> BCrypt.checkpw(dto.password, passwordHash) }.onSome {
+                    val session = createSession(dto.email)
+                    ctx.cookie(session.first)
+                    ctx.status(200)
+                    ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
+                }.onNone {
+                    ctx.status(404)
+                    ctx.json(mapOf("message" to "Email or password not found"))
                 }
-
-            maybePasswordHash.filter { passwordHash -> BCrypt.checkpw(dto.password, passwordHash) }.onSome {
-                val session = createSession(dto.email)
-                ctx.cookie(session.first)
-                ctx.status(200)
-                ctx.json(mapOf(email to dto.email, expireTime to session.second.toString()))
-            }.onNone {
-                ctx.status(404)
-                ctx.json(mapOf("message" to "Email or password not found"))
-            }
         }
     }
 
@@ -145,27 +124,8 @@ class AuthService(
 
                 val passwordHash = BCrypt.hashpw(dto.userPassword, BCrypt.gensalt())
 
-                Either.catch {
-                    db.query { conn ->
-                        conn.prepareStatement(
-                            "update user set balance = balance - ? where email = ?"
-                        ).use { stmt ->
-                            stmt.setInt(1, dto.initialCreditBalance)
-                            stmt.setString(2, orchestratorEmail)
-                            stmt.executeUpdate()
-                        }
-                        conn.prepareStatement(
-                            "insert into user (email, password_hash, balance, orchestrated_by) values (?, ?, ?, ?)"
-                        ).use { stmt ->
-                            stmt.setString(1, dto.userEmail)
-                            stmt.setString(2, passwordHash)
-                            stmt.setInt(3, dto.initialCreditBalance)
-                            stmt.setString(4, orchestratorEmail)
-                            stmt.executeUpdate()
-                        }
-                    }
-                    Unit
-                }.mapLeft { 500 to "Internal server error" }.bind()
+                authDao.createOrchestratedUser(dto, passwordHash, orchestratorEmail)
+                    .mapLeft { 500 to "Internal server error" }.bind()
                 201 to "Update successful"
             }
             result.onLeft { error ->
@@ -205,33 +165,7 @@ class AuthService(
         auth: Pair<String, Long>
     ): Either<Pair<Int, String>, Unit> {
         val targetUserBalance = getBalance(dto.targetUserEmail).getOrElse { 0 }
-
-        return Either.catch {
-            db.query { conn ->
-                conn.prepareStatement(
-                    """
-                    update user set balance = balance - ? where email = ? and orchestrated_by = ?
-                """
-                ).use { stmt ->
-                    stmt.setInt(1, targetUserBalance)
-                    stmt.setString(2, dto.targetUserEmail)
-                    stmt.setString(3, dto.orchestratorEmail)
-                    stmt.executeUpdate()
-                }
-                conn.prepareStatement(
-                    """
-                    update user set balance = balance + ? where email = ?
-                """
-                ).use { stmt ->
-                    stmt.setInt(1, targetUserBalance)
-                    stmt.setString(2, auth.first)
-                    stmt.executeUpdate()
-                }
-
-                liquidateSingleUserOrchestratedPositions(conn, dto.orchestratorEmail, dto.targetUserEmail)
-            }
-
-        }.mapLeft { throwable ->
+        return authDao.liquidateOrchestratedUser(dto, auth, targetUserBalance).mapLeft { throwable ->
             logger.error(throwable.message)
             500 to "Internal server error"
         }
@@ -248,30 +182,8 @@ class AuthService(
                 val orchestratedUsers = getOrchestratedUsersWithBalance(orchestratorEmail).bind()
                 if (orchestratedUsers.isNotEmpty()) {
                     // Should probably return something different if no results but leaving this for now
-                    Either.catch {
-                        val totalBalance = orchestratedUsers.sumOf { it.second }
-
-                        db.query { conn ->
-                            conn.prepareStatement(
-                                """
-                                update user set balance = 0 where orchestrated_by = ?
-                            """
-                            ).use { stmt ->
-                                stmt.setString(1, orchestratorEmail)
-                                stmt.executeUpdate()
-                            }
-                        }
-
-                        db.query { conn ->
-                            conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                                stmt.setInt(1, totalBalance)
-                                stmt.setString(2, orchestratorEmail)
-                                stmt.executeUpdate()
-                            }
-                        }
-
-                        liquidateAllOrchestratedPositions(orchestratorEmail, orchestratedUsers)
-                    }.mapLeft { 500 to "Internal server error" }.bind()
+                    authDao.liquidateAllOrchestratedUsers(orchestratedUsers, orchestratorEmail)
+                        .mapLeft { 500 to "Internal server error" }.bind()
                 }
                 201 to "Update successful"
             }.fold(
@@ -286,144 +198,8 @@ class AuthService(
         }
     }
 
-    private fun liquidateSingleUserOrchestratedPositions(
-        conn: Connection,
-        orchestratorEmail: String,
-        userEmail: String
-    ) {
-        val referenceTime = System.currentTimeMillis()
-
-        // Short orders: would have to be mindful about consolidation
-        val orchestratedUsersLongPositions = HashMap<String, Int>()
-        conn.prepareStatement(
-            """
-                select ticker, sum(size)
-                    from user u
-                    left join position_records p on u.email = p.user
-                    where orchestrated_by = ? and u.email = ? and p.position_type = ?
-                    group by ticker;
-            """
-        ).use { stmt ->
-            stmt.setString(1, orchestratorEmail)
-            stmt.setString(2, userEmail)
-            stmt.setInt(3, PositionType.LONG.ordinal)
-            stmt.executeQuery().use { rs ->
-                while (rs.next()) {
-                    orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
-                }
-            }
-        }
-
-        orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
-            conn.prepareStatement(
-                """
-                    delete from position_records
-                        where ticker = ? 
-                        and user = ?
-                        and position_type = ?
-                    """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setString(2, userEmail) //Inverting these: nasty bug
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.executeUpdate()
-            }
-
-            conn.prepareStatement("""
-                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                        on conflict (user, ticker, position_type)
-                        do update set size = size + excluded.size, received_tick = excluded.received_tick
-                    """
-            ).use { stmt ->
-                stmt.setString(1, orchestratorEmail)
-                stmt.setString(2, ticker)
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.setInt(4, longPositions)
-                stmt.setLong(5, referenceTime)
-                stmt.executeUpdate()
-            }
-        }
-    }
-
-    private fun liquidateAllOrchestratedPositions(
-        orchestratorEmail: String,
-        orchestratedUsers: List<Pair<String, Int>>
-    ) {
-        val referenceTime = System.currentTimeMillis()
-
-        // Short orders: would have to be mindful about consolidation
-        val orchestratedUsersLongPositions = HashMap<String, Int>()
-        db.query { conn ->
-            conn.prepareStatement(
-                """
-                select ticker, sum(size)
-                    from user u
-                    left join position_records p on u.email = p.user
-                    where orchestrated_by = ? and p.position_type = ?
-                    group by ticker;
-            """
-            ).use { stmt ->
-                stmt.setString(1, orchestratorEmail)
-                stmt.setInt(2, PositionType.LONG.ordinal)
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
-                    }
-                }
-            }
-        }
-
-        val orchestratedUserSqlList =
-            orchestratedUsers.map { it.first }.joinToString(prefix = "(", postfix = ")") { "?" }
-
-        orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
-            db.query { conn ->
-                conn.prepareStatement(
-                    """
-                    delete from position_records
-                        where ticker = ? 
-                        and user in $orchestratedUserSqlList
-                        and position_type = ?
-                """
-                ).use { stmt ->
-                    stmt.setString(1, ticker)
-                    stmt.setInt(2, PositionType.LONG.ordinal)
-                    stmt.executeUpdate()
-                }
-
-                conn.prepareStatement(
-                    """
-                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                        on conflict (user, ticker, position_type)
-                        do update set size = size + excluded.size, received_tick = excluded.received_tick
-                        """
-                ).use { stmt ->
-                    stmt.setString(1, orchestratorEmail)
-                    stmt.setString(2, ticker)
-                    stmt.setInt(3, PositionType.LONG.ordinal)
-                    stmt.setInt(4, longPositions)
-                    stmt.setLong(5, referenceTime)
-                    stmt.executeUpdate()
-                }
-            }
-        }
-    }
-
     private fun getOrchestratedUsersWithBalance(orchestratorEmail: String): Either<Pair<Int, String>, List<Pair<String, Int>>> {
-        return Either.catch {
-            db.query { conn ->
-                conn.prepareStatement("select email, balance from user where orchestrated_by = ?").use { stmt ->
-                    stmt.setString(1, orchestratorEmail)
-                    stmt.executeQuery().use { rs ->
-                        val users = mutableListOf<Pair<String, Int>>()
-                        while (rs.next()) {
-                            users.add(rs.getString("email") to rs.getInt("balance"))
-                        }
-                        users
-                    }
-                }
-            }
-        }.mapLeft { 500 to "Internal server error" }
+        return authDao.getOrchestratedUsersWithBalance(orchestratorEmail).mapLeft { 500 to "Internal server error" }
     }
 
     fun transferCredits(ctx: Context, writeSemaphore: Semaphore, onSuccess: (CreditTransferDto) -> Unit) {
@@ -435,24 +211,7 @@ class AuthService(
                     ensure(hasAtLeastAsManyCredits(auth.first, dto.creditAmount)) { 403 to "Insufficient Funds" }
                     ensure(emailPresent(dto.targetUserEmail)) { 400 to "Target user does not exist" }
 
-                    Either.catch {
-                        db.query { conn ->
-                            conn.prepareStatement(
-                                "update user set balance = balance - ? where email = ?"
-                            ).use { stmt ->
-                                stmt.setInt(1, dto.creditAmount)
-                                stmt.setString(2, auth.first)
-                                stmt.executeUpdate()
-                            }
-                            conn.prepareStatement(
-                                "update user set balance = balance + ? where email = ?"
-                            ).use { stmt ->
-                                stmt.setInt(1, dto.creditAmount)
-                                stmt.setString(2, dto.targetUserEmail)
-                                stmt.executeUpdate()
-                            }
-                        }
-                    }.mapLeft { _ -> 500 to "Internal server error" }.bind()
+                    authDao.transferCredits(dto, auth).mapLeft { _ -> 500 to "Internal server error" }.bind()
                     201 to "Update successful"
                     onSuccess(dto)
                 }
@@ -530,30 +289,18 @@ class AuthService(
     }
 
     private fun deleteToken(token: String): Boolean {
-        val edits = db.query { conn ->
-            conn.prepareStatement("delete from session where token = ?").use { stmt ->
-                stmt.setString(1, token)
-                stmt.executeUpdate()
-            }
-        }
-
+        val edits = authDao.deleteToken(token)
         // TODO logging when edits > 1
         return edits > 0
     }
 
     private fun evaluateAuthFromToken(token: String): Pair<String, Long>? {
-        val pair =
-            db.query { conn ->
-                conn.prepareStatement("select email, expire_timestamp from session where token = ?")
-                    .use { stmt ->
-                        stmt.setString(1, token)
-                        stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
-                    }
-            }
-        return if (pair == null || pair.second < Instant.now().toEpochMilli()) {
+        val maybePair = authDao.getAuthFromToken(token)
+
+        return if (maybePair == null || maybePair.second < Instant.now().toEpochMilli()) {
             null
         } else {
-            pair
+            maybePair
         }
     }
 
@@ -561,68 +308,24 @@ class AuthService(
     fun evaluateAuth(ctx: Context): Option<Pair<String, Long>> {
         return option {
             val token = Option.fromNullable(ctx.cookie(session)).bind()
-            val maybePair =
-                db.query { conn ->
-                    conn.prepareStatement("select email, expire_timestamp from session where token = ?")
-                        .use { stmt ->
-                            stmt.setString(1, token)
-                            stmt.executeQuery()
-                                .use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
-                        }
-                }
+            val maybePair = authDao.getAuthFromToken(token)
+
             Option.fromNullable(maybePair).bind()
         }.filter { pair -> pair.second >= Instant.now().toEpochMilli() }
     }
 
-    private fun emailPresent(email: String): Boolean {
-        return db.query { conn ->
-            conn.prepareStatement("select email from user where email = ?").use { stmt ->
-                stmt.setString(1, email)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
-        }
-    }
+    private fun emailPresent(email: String) = authDao.emailPresent(email)
 
-    private fun isOrchestrator(email: String): Boolean {
-        return db.query { conn ->
-            conn.prepareStatement("select email from user where email = ? and type = ${AccountType.ORCHESTRATOR.ordinal}")
-                .use { stmt ->
-                    stmt.setString(1, email)
-                    stmt.executeQuery().use { rs -> rs.next() }
-                }
-        }
-    }
+    private fun isOrchestrator(email: String) = authDao.isOrchestrator(email)
 
-    private fun isOrchestratedBy(targetUserEmail: String, orchestratorEmail: String): Boolean {
-        return db.query { conn ->
-            conn.prepareStatement("select email from user where email = ? and orchestrated_by = ?").use { stmt ->
-                stmt.setString(1, targetUserEmail)
-                stmt.setString(2, orchestratorEmail)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
-        }
-    }
+    private fun isOrchestratedBy(targetUserEmail: String, orchestratorEmail: String) =
+        authDao.isOrchestratedBy(targetUserEmail, orchestratorEmail)
 
     // Assumes already within transaction semaphore!
-    private fun hasAtLeastAsManyCredits(email: String, credits: Int): Boolean {
-        return db.query { conn ->
-            conn.prepareStatement("select email from user where email = ? and balance >= ?").use { stmt ->
-                stmt.setString(1, email)
-                stmt.setInt(2, credits)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
-        }
-    }
+    private fun hasAtLeastAsManyCredits(email: String, credits: Int) = authDao.hasAtLeastAsManyCredits(email, credits)
 
     // Assumes already within transaction semaphore!
-    private fun getBalance(email: String): Option<Int> {
-        return db.query { conn ->
-            conn.prepareStatement("select balance from user where email = ?").use { stmt ->
-                stmt.setString(1, email)
-                stmt.executeQuery().use { rs -> if (rs.next()) Option.fromNullable(rs.getInt(1)) else none() }
-            }
-        }
-    }
+    private fun getBalance(email: String): Option<Int> = authDao.getBalance(email)
 
     private fun createSession(
         email: String,
@@ -644,15 +347,8 @@ class AuthService(
             )
 
         try {
-            db.query { conn ->
-                conn.prepareStatement("insert into session (token, expire_timestamp, email) values (?, ?, ?)")
-                    .use { stmt ->
-                        stmt.setString(1, token)
-                        stmt.setLong(2, expireTimestamp)
-                        stmt.setString(3, email)
-                        stmt.executeUpdate()
-                    }
-            }
+            // TODO make this a proper Either
+            authDao.insertSession(token, expireTimestamp, email)
 
             return Pair(cookie, expireTimestamp)
         } catch (e: Exception) {
@@ -662,22 +358,7 @@ class AuthService(
 
     private fun removeExistingSessions(email: String) {
         try {
-            val sessionExists = db.query { conn ->
-                conn.prepareStatement("select * from session where email = ?").use { stmt ->
-                    stmt.setString(1, email)
-                    stmt.executeQuery().use { rs -> rs.next() }
-                }
-            }
-
-            if (sessionExists) {
-                db.query { conn ->
-                    conn.prepareStatement("delete from session where email = ?").use { stmt ->
-                        stmt.setString(1, email)
-                        stmt.executeUpdate()
-                    }
-                }
-            }
-
+            authDao.removeExistingSessions(email)
         } catch (e: Exception) {
             throw InternalError(exceptionMessage("`clearSession` error", e))
         }
