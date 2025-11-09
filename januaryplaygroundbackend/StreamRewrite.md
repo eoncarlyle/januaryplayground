@@ -22,14 +22,48 @@ ssl.enabled.protocols=TLSv1.2
 ssl.endpoint.identification.algorithm=
 ```
 
-The following topics will be used. I really don't like the idea of environment-specific topics, but I also do not 
-care for having to run Kafka locally.
+There should only be two topics: `tx-requests` and `tx-ledger`. The HTTP request accepting thread will emit onto the
+request thread and a consuming thread will, in a Kafka transaction, read from `requests` . I hate having enviornment
+specific topics in the same cluster, but I just won't spin up a seperate broker. The `notification_rules`, 
+`order_records`, `position_records`, `session`, `ticker` , and `user` will be calculated on startup by an ad-hoc 
+consumer going down the length of `tx-ledger`. Because there will only ever be one thread producing onto `tx-ledger`, 
+the log-end offset when the backend starts will be the same offset as when the ad-hoc consumer finishes building the 
+table equivalent data structures.
 
-```
-test-xchng-notification-rules
-test-xchng-order-records
-test-xchng-position-records
-test-xchng-session
-test-xchng-ticker
-test-xchng-user
+```kotlin
+        val endOffsets = mutableMapOf<Int, Long>()
+        val currentOffsets = mutableMapOf<Int, Long>()
+        var isInitialized = false
+        
+        while (true) {
+            val records = consumer.poll(Duration.ofMillis(1000))
+            
+            if (!isInitialized && consumer.assignment().isNotEmpty()) {
+                val endOffsetsMap = consumer.endOffsets(consumer.assignment())
+                endOffsetsMap.forEach { (partition, offset) ->
+                    endOffsets[partition.partition()] = offset
+                }
+                isInitialized = true
+            }
+            
+            if (records.isEmpty) {
+                if (isInitialized && currentOffsets.isNotEmpty()) {
+                    val allPartitionsComplete = endOffsets.all { (partition, endOffset) ->
+                        val currentOffset = currentOffsets[partition] ?: 0
+                        currentOffset >= endOffset
+                    }
+                    
+                    if (allPartitionsComplete) {
+                        break
+                    }
+                }
+                continue
+            }
+            
+            records.forEach { record ->
+                currentOffsets[record.partition()] = record.offset() + 1
+            }
+            
+            consumer.commitSync()
+        }
 ```

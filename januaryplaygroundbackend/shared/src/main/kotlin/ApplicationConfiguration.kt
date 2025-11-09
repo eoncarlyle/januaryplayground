@@ -26,12 +26,8 @@ data class ApplicationConfig(
 )
 
 data class BackendKafkaTopics(
-    val notificationRules: String = "",
-    val orderRecords: String = "",
-    val positionRecords: String = "",
-    val session: String = "",
-    val ticker: String = "",
-    val user: String = ""
+    val txRequest: String = "",
+    val txLedger: String = ""
 )
 
 object SimplePropertiesLoader {
@@ -75,12 +71,8 @@ object SimplePropertiesLoader {
         )
 
     fun Properties.toKafkaTopicsConfig(): BackendKafkaTopics = BackendKafkaTopics(
-        notificationRules = getProperty("kafka.topics.notification-rules"),
-        orderRecords = getProperty("kafka.topics.order-records"),
-        positionRecords = getProperty("kafka.topics.position-records"),
-        session = getProperty("kafka.topics.session"),
-        ticker = getProperty("kafka.topics.ticker"),
-        user = getProperty("kafka.topics.user")
+        txRequest = getProperty("kafka.topics.tx-request"),
+        txLedger = getProperty("kafka.topics.tx-ledger"),
     )
 
     fun ApplicationConfig.toProperties(): Properties {
