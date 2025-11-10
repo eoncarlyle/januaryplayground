@@ -6,7 +6,14 @@ LinkedBlockingQueue. The Kafka transaction producing thread will complete the fu
 place. I don't love this - it would be nice to have some two-phased commit instead - but this is probably good enough.
 
 Each ledger record should contain a list of CRUD operations on a table, and now I have to figure out what the model 
-looks like for each of the table records, which I have done in `LedgerTableEntry`
+looks like for each of the table records, which I have done in `LedgerTableEntry`. Neccessarily, there are three 
+operations on the ledger
+- Adding a ledger entry, which requires a key and a value (integer saftey important on some of these)
+- Removing a ledger entry, which just requires a key
+- Updating a ledger entry, which requires both a key and a value
+
+Now certainly we can find ourselves in a place where all ledger table entries that satisfy certain criteria are 
+requested, but that can be handled in the ledger class itself.
 
 # 2025.11.08
 
