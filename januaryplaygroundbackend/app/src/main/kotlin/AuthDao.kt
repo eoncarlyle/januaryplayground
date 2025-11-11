@@ -2,23 +2,26 @@ import arrow.core.Either
 import arrow.core.Option
 import arrow.core.none
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import model.LedgerState
 import java.sql.Connection
 
 class AuthDao(
+    private val ledgerRequestQueue: LedgerRequestQueue,
     private val db: DatabaseHelper
 ) {
     fun createUser(email: String, passwordHash: String) =
         Either.catch {
-            db.query { conn ->
-                conn.prepareStatement(
-                    "insert into user (email, password_hash) values (?, ?)"
-                )
-                    .use { stmt ->
-                        stmt.setString(1, email)
-                        stmt.setString(2, passwordHash)
-                        stmt.executeUpdate()
-                    }
-            }
+//            db.query { conn ->
+//                conn.prepareStatement(
+//                    "insert into user (email, password_hash) values (?, ?)"
+//                )
+//                    .use { stmt ->
+//                        stmt.setString(1, email)
+//                        stmt.setString(2, passwordHash)
+//                        stmt.executeUpdate()
+//                        Unit
+//                    }
+//            }
         }
 
     fun getMaybePasswordHash(email: String) = db.query { conn ->

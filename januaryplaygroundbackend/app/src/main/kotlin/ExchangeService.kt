@@ -8,6 +8,7 @@ import java.util.concurrent.Semaphore
 import kotlin.collections.HashMap
 
 class ExchangeService(
+    val ledgerRequestQueue: LedgerRequestQueue,
     db: DatabaseHelper,
     private val secure: Boolean,
     private val wsUserMap: WsUserMap,

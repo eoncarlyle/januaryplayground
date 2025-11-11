@@ -11,9 +11,9 @@ import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.consumer.ConsumerRecords
 import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
 import java.time.Duration
-import java.util.*
 
 inline fun <reified T> String.deserializeEither(): Either<String, T> =
     try {
@@ -23,8 +23,10 @@ inline fun <reified T> String.deserializeEither(): Either<String, T> =
     } catch (e: Exception) {
         (e.message ?: "Unknown error").left()
     }
+
 class AppKafkaConsumer(
     sslConfig: ApplicationConfig,
+    private val oneShot: Boolean = false,
     private val groupId: String = "default-consumer-group"
 ) {
     private val consumer: KafkaConsumer<String, String>
@@ -44,10 +46,9 @@ class AppKafkaConsumer(
         consumer = KafkaConsumer(props)
     }
 
-    fun startConsuming(topics: List<String>, messageProcessor: (ConsumerRecord<String, String>) -> Unit) {
+    private fun continuousConsume(topics: List<String>, messageProcessor: (ConsumerRecord<String, String>) -> Unit) {
         try {
             consumer.subscribe(topics)
-
             while (true) {
                 val records: ConsumerRecords<String, String> = consumer.poll(Duration.ofMillis(1000))
 
@@ -61,9 +62,58 @@ class AppKafkaConsumer(
                 consumer.commitSync()
             }
         } catch (e: Exception) {
-            throw(e)
+            throw (e)
         } finally {
             consumer.close()
         }
     }
+
+    private fun oneshotConsume(topics: List<String>, messageProcessor: (ConsumerRecord<String, String>) -> Unit) {
+        try {
+            consumer.subscribe(topics)
+            //val endOffsets = consumer.endOffsets(consumer.assignment())
+            val endOffsets: MutableMap<TopicPartition, Long> = mutableMapOf()
+            val currentOffsets: MutableMap<TopicPartition, Long> = mutableMapOf()
+            var isInitialized = false
+
+            while (true) {
+                val records: ConsumerRecords<String, String> = consumer.poll(Duration.ofMillis(1000))
+
+                if (!isInitialized) {
+                    // High water mark is not the final message offset: this is one higher than
+                    val endOffsetsMap = consumer.endOffsets(consumer.assignment())
+                    endOffsetsMap.forEach { (partition, offset) ->
+                        endOffsets[partition] = offset
+                    }
+                    isInitialized = true
+                }
+
+                if (records.isEmpty) {
+                    if (currentOffsets.isNotEmpty()) {
+                        val allPartitionsComplete = endOffsets.all { (partition, endOffset) ->
+                            val currentOffset = currentOffsets[partition] ?: 0
+                            // See comment above `endOffsetsMap` definition
+                            currentOffset >= endOffset - 1
+                        }
+                        if (allPartitionsComplete) {
+                            break
+                        }
+                    }
+                }
+
+                for (record in records) {
+                    messageProcessor(record)
+                    currentOffsets[TopicPartition(record.topic(), record.partition())] = record.offset()
+                }
+                consumer.commitSync()
+            }
+        } catch (e: Exception) {
+            throw (e)
+        } finally {
+            consumer.close()
+        }
+    }
+
+    fun startConsuming(topics: List<String>, messageProcessor: (ConsumerRecord<String, String>) -> Unit) =
+        if (oneShot) oneshotConsume(topics, messageProcessor) else continuousConsume(topics, messageProcessor)
 }

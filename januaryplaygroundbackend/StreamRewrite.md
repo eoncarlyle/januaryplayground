@@ -1,5 +1,18 @@
 # Stream Rewrite
 
+# 2025.11.10
+The ledger requests shouldn't be on seperate Kafka topic with how I have things configured. The reason that I am using
+Kafka is just to have a ledger log, but there isn't a reason to persist the requests. This still allows for Kafka 
+transactions, as producer-only operations can be transactional even if consumer-only actions are not.
+
+Was briefly unsure how to tie the `LedgerRequestQueue` to Kafka - we need a construct that can handle both the 
+intermediate result and the state of the ledger. A function needs to be provided to the queue that will
+
+```haskel
+modify :: (s -> s) -> m ()
+get :: m s
+```
+
 # 2025.11.09
 The way that responses will be handled is that the services will place a `Pair<CompleteableFuture, Operation>` onto a 
 LinkedBlockingQueue. The Kafka transaction producing thread will complete the future after the Kafka transaction takes

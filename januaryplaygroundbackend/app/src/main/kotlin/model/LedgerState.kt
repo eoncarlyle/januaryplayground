@@ -1,7 +1,10 @@
 package model
 
+import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.deserializeEither
 import kotlinx.serialization.Serializable
+import org.apache.kafka.clients.consumer.ConsumerRecord
 
 sealed class LedgerK {
     @Serializable
@@ -135,12 +138,12 @@ fun LedgerTableEntry.getValue(): LedgerV = when (this) {
 }
 
 class LedgerState(
-    private val tickers: MutableMap<LedgerK.Tickers, LedgerV.Tickers> = mutableMapOf(),
-    private val users: MutableMap<LedgerK.Users, LedgerV.Users> = mutableMapOf(),
-    private val sessions: MutableMap<LedgerK.Sessions, LedgerV.Sessions> = mutableMapOf(),
-    private val orderRecords: MutableMap<LedgerK.OrderRecords, LedgerV.OrderRecords> = mutableMapOf(),
-    private val positionRecords: MutableMap<LedgerK.PositionRecords, LedgerV.PositionRecords> = mutableMapOf(),
-    private val notificationRules: MutableMap<LedgerK.NotificationRules, LedgerV.NotificationRules> = mutableMapOf()
+    val tickers: MutableMap<LedgerK.Tickers, LedgerV.Tickers> = mutableMapOf(),
+    val users: MutableMap<LedgerK.Users, LedgerV.Users> = mutableMapOf(),
+    val sessions: MutableMap<LedgerK.Sessions, LedgerV.Sessions> = mutableMapOf(),
+    val orderRecords: MutableMap<LedgerK.OrderRecords, LedgerV.OrderRecords> = mutableMapOf(),
+    val positionRecords: MutableMap<LedgerK.PositionRecords, LedgerV.PositionRecords> = mutableMapOf(),
+    val notificationRules: MutableMap<LedgerK.NotificationRules, LedgerV.NotificationRules> = mutableMapOf()
 ) {
     var nextOrderId = 0L
 
@@ -200,5 +203,12 @@ class LedgerState(
         is LedgerTableEntry.OrderRecords -> orderRecords
         is LedgerTableEntry.PositionRecords -> positionRecords
         is LedgerTableEntry.NotificationRules -> notificationRules
+    }
+
+    fun messageProcessor(record: ConsumerRecord<String, String>) {
+        either {
+            val dto = record.value().deserializeEither<List<LedgerTableOperation>>().bind()
+            apply(dto)
+        }
     }
 }

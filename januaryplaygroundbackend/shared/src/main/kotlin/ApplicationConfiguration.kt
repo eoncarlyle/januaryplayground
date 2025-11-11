@@ -25,10 +25,11 @@ data class ApplicationConfig(
     val sslEndpointIdentificationAlgorithm: String = "",
 )
 
-data class BackendKafkaTopics(
-    val txRequest: String = "",
+data class LedgerKafkaTopics(
     val txLedger: String = ""
-)
+) {
+    fun toList() = listOf(txLedger)
+}
 
 object SimplePropertiesLoader {
     fun loadFromResource(resourcePath: String): Option<Properties> {
@@ -70,8 +71,7 @@ object SimplePropertiesLoader {
             sslEndpointIdentificationAlgorithm = getProperty("ssl.endpoint.identification.algorithm") ?: ""
         )
 
-    fun Properties.toKafkaTopicsConfig(): BackendKafkaTopics = BackendKafkaTopics(
-        txRequest = getProperty("kafka.topics.tx-request"),
+    fun Properties.toKafkaTopicsConfig(): LedgerKafkaTopics = LedgerKafkaTopics(
         txLedger = getProperty("kafka.topics.tx-ledger"),
     )
 

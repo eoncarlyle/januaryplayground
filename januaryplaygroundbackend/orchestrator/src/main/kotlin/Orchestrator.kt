@@ -36,7 +36,7 @@ class Orchestrator(
 ) {
     private val logger by lazy { LoggerFactory.getLogger(this::class.java) }
 
-    private val consumer = AppKafkaConsumer(kafkaConfig, "test-consumer-group")
+    private val consumer = AppKafkaConsumer(kafkaConfig, false, "test-consumer-group")
     private val backendClient = BackendClient(logger)
     private val orchestratorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val defaultStartingCredits = 150

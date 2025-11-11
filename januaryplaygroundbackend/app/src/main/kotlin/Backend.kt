@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaProducer
 import com.iainschmitt.januaryplaygroundbackend.shared.ApplicationConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaConsumer
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.HttpStatus
@@ -17,6 +18,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import model.LedgerState
+import java.util.concurrent.CompletableFuture
 
 private data class OrderQueueMessage(
     val request: Any, // This is only ever an OrderRequest or an ExchangeRequestDto,
@@ -26,17 +29,26 @@ private data class OrderQueueMessage(
     val finalStatelessQuote: StatelessQuote?
 )
 
-class Backend(db: DatabaseHelper, applicationConfig: ApplicationConfig, topics: BackendKafkaTopics, secure: Boolean) {
+class Backend(
+    db: DatabaseHelper,
+    applicationConfig: ApplicationConfig,
+    val ledgerTopics: LedgerKafkaTopics,
+    secure: Boolean
+) {
+    private val ledgerState = LedgerState()
     private val authenticatedWsUserMap = WsUserMap()
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val orderQueue = LinkedBlockingQueue<OrderQueueMessage>()
+    private val ledgerRequestQueue = LedgerRequestQueue()
 
     private val creditTransferQueue = LinkedBlockingQueue<CreditTransferDto>()
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(writeSemaphore)
     private val producer = AppKafkaProducer(applicationConfig)
+
+    private val oneshotConsumer = AppKafkaConsumer(applicationConfig, true, "backend-oneshot")
 
     private val javalinApp = Javalin.create { config ->
         config.bundledPlugins.enableCors { cors ->
@@ -59,7 +71,7 @@ class Backend(db: DatabaseHelper, applicationConfig: ApplicationConfig, topics: 
         }
     }
 
-    private val authService = AuthService(db, secure, authenticatedWsUserMap, logger)
+    private val authService = AuthService(ledgerRequestQueue, db, secure, authenticatedWsUserMap, logger)
     private val exchangeService = ExchangeService(db, secure, authenticatedWsUserMap, logger)
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
@@ -73,7 +85,20 @@ class Backend(db: DatabaseHelper, applicationConfig: ApplicationConfig, topics: 
         }
     }
 
+    private fun ledgerInitialise() {
+        oneshotConsumer.startConsuming(ledgerTopics.toList()) { ledgerState.messageProcessor(it) }
+
+        logger.info("Initial State:")
+        logger.info("Tickers: ${ledgerState.tickers.keys.joinToString(", ") { it.symbol }}")
+        logger.info("Users: ${ledgerState.users.keys.joinToString(", ") { it.email }}")
+        logger.info("Sessions: ${ledgerState.sessions.values.joinToString(", ") { it.email }}")
+        logger.info("Order Record Count: ${ledgerState.orderRecords.values.size}")
+        logger.info("Position Count: ${ledgerState.positionRecords.values.size}")
+        logger.info("Notification Rules: ${ledgerState.notificationRules.keys.joinToString(", ") { it.userEmail }}")
+    }
+
     fun run() {
+
         // # Auth HTTP
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
@@ -115,7 +140,6 @@ class Backend(db: DatabaseHelper, applicationConfig: ApplicationConfig, topics: 
         }
 
         // # Exchange HTTP
-
         // ## Modifying non-exchange state
         this.javalinApp.put("/exchange/notification-rule") { createNotificationRule(it) }
         this.javalinApp.delete("/exchange/notification-rule") { deleteNotificationRule(it) }
@@ -123,6 +147,9 @@ class Backend(db: DatabaseHelper, applicationConfig: ApplicationConfig, topics: 
         // # WebSockets
         this.javalinApp.ws("/ws/authenticated") { privateWebSocketConsumer(it) }
         this.javalinApp.ws("/ws/public") { publicWebSocketConsumer(it) }
+
+        // Ledger must be up-to-date before receiving requests
+        ledgerInitialise()
 
         this.javalinApp.start(7070)
         heartbeatThread()
