@@ -1,5 +1,19 @@
 # Stream Rewrite
 
+# 2025.11.11
+This is something close to what we need - but providing a means to modify state directly is not what we want. And it 
+isn't transactional either (the prior more important than the latter) but the analogy is `DatabaseHelper`.
+
+```kotlin
+private val ledgerRequestQueue = LinkedBlockingQueue<LedgerRequestEntry<*>>()
+
+fun <T> submit(block: (ledgerState: LedgerState) -> T): CompletableFuture<T> {
+    val future = CompletableFuture<T>()
+    ledgerRequestQueue.put(LedgerRequestEntry(future) { block(this) })
+    return future
+}
+```
+
 # 2025.11.10
 The ledger requests shouldn't be on seperate Kafka topic with how I have things configured. The reason that I am using
 Kafka is just to have a ledger log, but there isn't a reason to persist the requests. This still allows for Kafka 
@@ -18,7 +32,7 @@ The way that responses will be handled is that the services will place a `Pair<C
 LinkedBlockingQueue. The Kafka transaction producing thread will complete the future after the Kafka transaction takes
 place. I don't love this - it would be nice to have some two-phased commit instead - but this is probably good enough.
 
-Each ledger record should contain a list of CRUD operations on a table, and now I have to figure out what the model 
+Each ledger record should contain a list of CRUD operations on a table, and now I have to figure out what the ledger 
 looks like for each of the table records, which I have done in `LedgerTableEntry`. Neccessarily, there are three 
 operations on the ledger
 - Adding a ledger entry, which requires a key and a value (integer saftey important on some of these)

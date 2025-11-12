@@ -18,8 +18,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
-import model.LedgerState
-import java.util.concurrent.CompletableFuture
+import ledger.LedgerRequestQueue
+import ledger.LedgerState
 
 private data class OrderQueueMessage(
     val request: Any, // This is only ever an OrderRequest or an ExchangeRequestDto,
@@ -72,7 +72,7 @@ class Backend(
     }
 
     private val authService = AuthService(ledgerRequestQueue, db, secure, authenticatedWsUserMap, logger)
-    private val exchangeService = ExchangeService(db, secure, authenticatedWsUserMap, logger)
+    private val exchangeService = ExchangeService(ledgerRequestQueue, db, secure, authenticatedWsUserMap, logger)
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))

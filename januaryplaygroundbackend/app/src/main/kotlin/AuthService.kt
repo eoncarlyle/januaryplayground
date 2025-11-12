@@ -1,7 +1,6 @@
 import arrow.core.Either
 import arrow.core.Option
 import arrow.core.getOrElse
-import arrow.core.none
 import arrow.core.raise.either
 import arrow.core.raise.ensure
 import arrow.core.raise.option
@@ -10,11 +9,10 @@ import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.*
 import io.javalin.websocket.WsConnectContext
 import io.javalin.websocket.WsContext
-import model.LedgerState
+import ledger.LedgerRequestQueue
 import java.util.concurrent.Semaphore
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
-import java.sql.Connection
 import java.time.Duration
 import java.time.Instant
 import kotlin.collections.mapOf
