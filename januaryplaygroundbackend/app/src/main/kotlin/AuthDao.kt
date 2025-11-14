@@ -2,11 +2,9 @@ import arrow.core.Either
 import arrow.core.Option
 import arrow.core.none
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import ledger.LedgerRequestQueue
 import java.sql.Connection
 
 class AuthDao(
-    private val ledgerRequestQueue: LedgerRequestQueue,
     private val db: DatabaseHelper
 ) {
     fun createUser(email: String, passwordHash: String) =

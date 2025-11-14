@@ -30,7 +30,10 @@ class AppKafkaProducer(
         producer = KafkaProducer(props)
     }
 
-    fun sendSync(topic: String, key: String?, value: String): RecordMetadata {
-        return producer.send(ProducerRecord(topic, key, value)).get()
-    }
+    fun initTransactions() = producer.initTransactions()
+
+    fun sendSync(topic: String, key: String?, value: String): RecordMetadata =
+        producer.send(ProducerRecord(topic, key, value)).get()
+
+    fun commitTransaction() = producer.commitTransaction()
 }

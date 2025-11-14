@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
-import ledger.LedgerRequestQueue
+import ledger.Ledger
 import ledger.LedgerState
 
 private data class OrderQueueMessage(
@@ -35,12 +35,10 @@ class Backend(
     val ledgerTopics: LedgerKafkaTopics,
     secure: Boolean
 ) {
-    private val ledgerState = LedgerState()
     private val authenticatedWsUserMap = WsUserMap()
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
     private val orderQueue = LinkedBlockingQueue<OrderQueueMessage>()
-    private val ledgerRequestQueue = LedgerRequestQueue()
 
     private val creditTransferQueue = LinkedBlockingQueue<CreditTransferDto>()
     private val objectMapper = ObjectMapper()
@@ -48,6 +46,7 @@ class Backend(
     private val readerLightswitch = Lightswitch(writeSemaphore)
     private val producer = AppKafkaProducer(applicationConfig)
 
+    private val ledger = Ledger(producer, ledgerTopics.txLedger, LedgerState())
     private val oneshotConsumer = AppKafkaConsumer(applicationConfig, true, "backend-oneshot")
 
     private val javalinApp = Javalin.create { config ->
@@ -71,8 +70,8 @@ class Backend(
         }
     }
 
-    private val authService = AuthService(ledgerRequestQueue, db, secure, authenticatedWsUserMap, logger)
-    private val exchangeService = ExchangeService(ledgerRequestQueue, db, secure, authenticatedWsUserMap, logger)
+    private val authService = AuthService(db, secure, authenticatedWsUserMap, logger)
+    private val exchangeService = ExchangeService(db, secure, authenticatedWsUserMap, logger)
 
     private fun exchangeFailureHandler(ctx: Context, orderFailure: OrderFailure) {
         ctx.json(mapOf("message" to orderFailure.second))
@@ -86,15 +85,16 @@ class Backend(
     }
 
     private fun ledgerInitialise() {
-        oneshotConsumer.startConsuming(ledgerTopics.toList()) { ledgerState.messageProcessor(it) }
+        producer.initTransactions()
+        oneshotConsumer.startConsuming(ledgerTopics.toList()) { ledger.messageProcessor(it) }
 
         logger.info("Initial State:")
-        logger.info("Tickers: ${ledgerState.tickers.keys.joinToString(", ") { it.symbol }}")
-        logger.info("Users: ${ledgerState.users.keys.joinToString(", ") { it.email }}")
-        logger.info("Sessions: ${ledgerState.sessions.values.joinToString(", ") { it.email }}")
-        logger.info("Order Record Count: ${ledgerState.orderRecords.values.size}")
-        logger.info("Position Count: ${ledgerState.positionRecords.values.size}")
-        logger.info("Notification Rules: ${ledgerState.notificationRules.keys.joinToString(", ") { it.userEmail }}")
+        logger.info("Tickers: ${ledger.ledgerState.tickers.keys.joinToString(", ") { it.symbol }}")
+        logger.info("Users: ${ledger.ledgerState.users.keys.joinToString(", ") { it.email }}")
+        logger.info("Sessions: ${ledger.ledgerState.sessions.values.joinToString(", ") { it.email }}")
+        logger.info("Order Record Count: ${ledger.ledgerState.orderRecords.values.size}")
+        logger.info("Position Count: ${ledger.ledgerState.positionRecords.values.size}")
+        logger.info("Notification Rules: ${ledger.ledgerState.notificationRules.keys.joinToString(", ") { it.userEmail }}")
     }
 
     fun run() {

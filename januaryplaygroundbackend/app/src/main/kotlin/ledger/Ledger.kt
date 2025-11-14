@@ -1,11 +1,15 @@
 package ledger
 
+import arrow.core.prependTo
 import arrow.core.raise.either
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaConsumer
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaProducer
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.deserializeEither
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.serializer
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
-
 
 class LedgerState(
     val tickers: MutableMap<LedgerK.Tickers, LedgerV.Tickers> = mutableMapOf(),
@@ -15,17 +19,39 @@ class LedgerState(
     val positionRecords: MutableMap<LedgerK.PositionRecords, LedgerV.PositionRecords> = mutableMapOf(),
     val notificationRules: MutableMap<LedgerK.NotificationRules, LedgerV.NotificationRules> = mutableMapOf()
 ) {
+    fun deepCopy(): LedgerState {
+        return LedgerState(
+            tickers.toMutableMap(), users.toMutableMap(), sessions.toMutableMap(), orderRecords.toMutableMap(),
+            positionRecords.toMutableMap(), notificationRules.toMutableMap()
+        )
+    }
+}
+
+class Ledger(
+    var producer: AppKafkaProducer,
+    val txLedgerTopic: String,
+    var ledgerState: LedgerState,
+) {
     private var nextOrderId = 0L
     private val ledgerRequestQueue = LinkedBlockingQueue<LedgerRequestEntry<*>>()
     // TODO talk about this design pattern this is great - solves the fact that you want to capture the type T and not
     // requiring casts and `Any`
 
-    fun <T> submit(block: (ledgerState: LedgerState) -> T): CompletableFuture<T> {
+    fun <T> submit(
+        ledgerRequests: List<LedgerTableOperation>,
+        getResultFromFinalState: (ledgerState: LedgerState) -> T
+    ): CompletableFuture<T> {
         val future = CompletableFuture<T>()
-        ledgerRequestQueue.put(LedgerRequestEntry(future) { block(this) })
+        val initialState = ledgerState.deepCopy() // I hate this
+        ledgerRequestQueue.put(LedgerRequestEntry(future, { ledgerState = initialState }) {
+            apply(ledgerRequests)
+            producer.sendSync(txLedgerTopic, null, Json.encodeToString(serializer<List<LedgerTableOperation>>() ,ledgerRequests))
+            getResultFromFinalState(ledgerState)
+        })
         return future
     }
 
+    // Need dedicated thread on this
     fun processNext() {
         ledgerRequestQueue.take().execute()
     }
@@ -46,6 +72,7 @@ class LedgerState(
                             )
                         )
                     }
+
                     else -> upsert(ledgerTableOperation)
                 }
             }
@@ -66,26 +93,31 @@ class LedgerState(
         when (ledgerTableOperation.entry) {
             is LedgerTableEntry.Tickers -> (getTable(ledgerTableOperation.entry) as MutableMap<LedgerK.Tickers, LedgerV.Tickers>)[ledgerTableOperation.entry.getKey() as LedgerK.Tickers] =
                 ledgerTableOperation.entry.getValue() as LedgerV.Tickers
+
             is LedgerTableEntry.Users -> (getTable(ledgerTableOperation.entry) as MutableMap<LedgerK.Users, LedgerV.Users>)[ledgerTableOperation.entry.getKey() as LedgerK.Users] =
                 ledgerTableOperation.entry.getValue() as LedgerV.Users
+
             is LedgerTableEntry.Sessions -> (getTable(ledgerTableOperation.entry) as MutableMap<LedgerK.Sessions, LedgerV.Sessions>)[ledgerTableOperation.entry.getKey() as LedgerK.Sessions] =
                 ledgerTableOperation.entry.getValue() as LedgerV.Sessions
+
             is LedgerTableEntry.OrderRecords -> (getTable(ledgerTableOperation.entry) as MutableMap<LedgerK.OrderRecords, LedgerV.OrderRecords>)[ledgerTableOperation.entry.getKey() as LedgerK.OrderRecords] =
                 ledgerTableOperation.entry.getValue() as LedgerV.OrderRecords
+
             is LedgerTableEntry.PositionRecords -> (getTable(ledgerTableOperation.entry) as MutableMap<LedgerK.PositionRecords, LedgerV.PositionRecords>)[ledgerTableOperation.entry.getKey() as LedgerK.PositionRecords] =
                 ledgerTableOperation.entry.getValue() as LedgerV.PositionRecords
+
             is LedgerTableEntry.NotificationRules -> (getTable(ledgerTableOperation.entry) as MutableMap<LedgerK.NotificationRules, LedgerV.NotificationRules>)[ledgerTableOperation.entry.getKey() as LedgerK.NotificationRules] =
                 ledgerTableOperation.entry.getValue() as LedgerV.NotificationRules
         }
     }
 
     fun getTable(entry: LedgerTableEntry) = when (entry) {
-        is LedgerTableEntry.Tickers -> tickers
-        is LedgerTableEntry.Users -> users
-        is LedgerTableEntry.Sessions -> sessions
-        is LedgerTableEntry.OrderRecords -> orderRecords
-        is LedgerTableEntry.PositionRecords -> positionRecords
-        is LedgerTableEntry.NotificationRules -> notificationRules
+        is LedgerTableEntry.Tickers -> ledgerState.tickers
+        is LedgerTableEntry.Users -> ledgerState.users
+        is LedgerTableEntry.Sessions -> ledgerState.sessions
+        is LedgerTableEntry.OrderRecords -> ledgerState.orderRecords
+        is LedgerTableEntry.PositionRecords -> ledgerState.positionRecords
+        is LedgerTableEntry.NotificationRules -> ledgerState.notificationRules
     }
 
     fun messageProcessor(record: ConsumerRecord<String, String>) {

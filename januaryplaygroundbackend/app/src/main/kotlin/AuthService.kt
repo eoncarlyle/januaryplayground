@@ -9,7 +9,6 @@ import com.iainschmitt.januaryplaygroundbackend.shared.*
 import io.javalin.http.*
 import io.javalin.websocket.WsConnectContext
 import io.javalin.websocket.WsContext
-import ledger.LedgerRequestQueue
 import java.util.concurrent.Semaphore
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
@@ -20,13 +19,12 @@ import kotlin.collections.mapOf
 
 // Should break out the queries here into AuthDao
 class AuthService(
-    private val ledgerRequestQueue: LedgerRequestQueue,
     private val db: DatabaseHelper,
     private val secure: Boolean,
     private val wsUserMap: WsUserMap,
     private val logger: Logger
 ) {
-    private val authDao = AuthDao(ledgerRequestQueue, db)
+    private val authDao = AuthDao( db)
     private val session = "session"
     private val email = "email"
     private val expireTime = "expireTime"
