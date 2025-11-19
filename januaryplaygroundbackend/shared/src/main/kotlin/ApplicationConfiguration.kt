@@ -53,7 +53,6 @@ object SimplePropertiesLoader {
         } else None
     }
 
-
     fun Properties.toKafkaSSLConfig(): ApplicationConfig =
         ApplicationConfig(
             database = getProperty("database") ?: "",

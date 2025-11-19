@@ -1,5 +1,6 @@
 import arrow.core.Either
 import arrow.core.getOrElse
+import arrow.fx.stm.atomically
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaProducer
@@ -46,7 +47,7 @@ class Backend(
     private val readerLightswitch = Lightswitch(writeSemaphore)
     private val producer = AppKafkaProducer(applicationConfig)
 
-    private val ledger = Ledger(producer, ledgerTopics.txLedger, LedgerState())
+    private val ledger = Ledger(producer, ledgerTopics.txLedger, LedgerState(), logger)
     private val oneshotConsumer = AppKafkaConsumer(applicationConfig, true, "backend-oneshot")
 
     private val javalinApp = Javalin.create { config ->
@@ -87,14 +88,13 @@ class Backend(
     private fun ledgerInitialise() {
         producer.initTransactions()
         oneshotConsumer.startConsuming(ledgerTopics.toList()) { ledger.messageProcessor(it) }
-
         logger.info("Initial State:")
-        logger.info("Tickers: ${ledger.ledgerState.tickers.keys.joinToString(", ") { it.symbol }}")
-        logger.info("Users: ${ledger.ledgerState.users.keys.joinToString(", ") { it.email }}")
-        logger.info("Sessions: ${ledger.ledgerState.sessions.values.joinToString(", ") { it.email }}")
-        logger.info("Order Record Count: ${ledger.ledgerState.orderRecords.values.size}")
-        logger.info("Position Count: ${ledger.ledgerState.positionRecords.values.size}")
-        logger.info("Notification Rules: ${ledger.ledgerState.notificationRules.keys.joinToString(", ") { it.userEmail }}")
+        logger.info("Tickers: ${ledger.getLedgerState().tickers.keys.joinToString(", ") { it.symbol }}")
+        logger.info("Users: ${ledger.getLedgerState().users.keys.joinToString(", ") { it.email }}")
+        logger.info("Sessions: ${ledger.getLedgerState().sessions.values.joinToString(", ") { it.email }}")
+        logger.info("Order Record Count: ${ledger.getLedgerState().orderRecords.values.size}")
+        logger.info("Position Count: ${ledger.getLedgerState().positionRecords.values.size}")
+        logger.info("Notification Rules: ${ledger.getLedgerState().notificationRules.keys.joinToString(", ") { it.userEmail }}")
     }
 
     fun run() {
@@ -152,6 +152,7 @@ class Backend(
         ledgerInitialise()
 
         this.javalinApp.start(7070)
+        ledgerThread()
         heartbeatThread()
         orderQueueConsumerThread()
         kafkaProducerThread()
@@ -402,6 +403,14 @@ class Backend(
                 }
             }
         }.start()
+    }
+
+    private fun ledgerThread() {
+        Thread {
+            while (true) {
+                ledger.processNext()
+            }
+        }
     }
 
     private fun orderQueueConsumerThread() {

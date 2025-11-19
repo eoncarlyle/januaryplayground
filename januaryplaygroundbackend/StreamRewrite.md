@@ -1,5 +1,51 @@
 # Stream Rewrite
 
+
+# 2025.11.13
+
+Horrible! Glad it is gone
+```kotlin
+class LedgerRequestEntry<T>(
+    private val future: CompletableFuture<T>,
+    private val cleanup: () -> Unit,
+    private val stateChangeAndResult: () -> T,
+) {
+    fun execute() {
+        try {
+            future.complete(stateChangeAndResult())
+        } catch (e: Exception) {
+            cleanup()
+            future.completeExceptionally(e)
+        }
+    }
+}
+```
+
+# 2025.11.12
+STM is great and probably the right way to do this. It would require bring coroutines into the ledger operations and I
+don't feel great about that. If a simple 
+
+```kotlin
+fun STM.transfer(bal: TVar<MutableMap<String, Int>>): Unit {
+    bal.write(mutableMapOf("a" to 2))
+    throw RuntimeException()
+    bal.write(mutableMapOf("a" to 3))
+}
+
+
+suspend fun main() {
+    val bal = TVar.new(mutableMapOf("a" to 1))
+    println("Balance: ${bal.unsafeRead()}")
+    atomically {
+        catch({ transfer(bal) }) { e ->
+            println("Caught exception: ${e.message}")
+        }
+    }
+    println("Balance: ${bal.unsafeRead()}")
+}
+```
+
+
 # 2025.11.11
 This is something close to what we need - but providing a means to modify state directly is not what we want. And it 
 isn't transactional either (the prior more important than the latter) but the analogy is `DatabaseHelper`.

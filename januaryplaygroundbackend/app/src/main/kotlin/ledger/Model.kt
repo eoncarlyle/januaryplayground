@@ -136,14 +136,12 @@ fun LedgerTableEntry.getValue(): LedgerV = when (this) {
 
 class LedgerRequestEntry<T>(
     private val future: CompletableFuture<T>,
-    private val cleanup: () -> Unit,
     private val stateChangeAndResult: () -> T,
 ) {
     fun execute() {
         try {
             future.complete(stateChangeAndResult())
         } catch (e: Exception) {
-            cleanup()
             future.completeExceptionally(e)
         }
     }
