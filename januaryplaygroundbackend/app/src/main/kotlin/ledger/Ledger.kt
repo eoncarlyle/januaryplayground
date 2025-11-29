@@ -35,6 +35,36 @@ class Ledger(
     // requiring casts and `Any`
     private var ledgerState = runBlocking { TVar.new(initialLedgerState) }
 
+    fun <T> submitWithHandle(
+        ledgerRequestsFactory: (ledgerState: LedgerState) -> List<LedgerTableOperation>,
+        getResultFromFinalState: (ledgerState: LedgerState) -> T
+    ): CompletableFuture<T> {
+        val future = CompletableFuture<T>()
+        ledgerRequestQueue.put(LedgerRequestEntry(future) {
+            runBlocking {
+                atomically {
+                    catch({
+                        val initialLedgerState = ledgerState.read()
+                        val ledgerRequests = ledgerRequestsFactory(initialLedgerState)
+                        ledgerState.write(apply(initialLedgerState, ledgerRequests))
+                        producer.sendSync(
+                            txLedgerTopic,
+                            null,
+                            Json.encodeToString(serializer<List<LedgerTableOperation>>(), ledgerRequests)
+                        )
+                        val finalLedgerState = ledgerState.read()
+                        getResultFromFinalState(
+                            finalLedgerState,
+                        )
+                    }) {
+                        // This just completes exceptionally in the future
+                        throw RuntimeException("Error during : $it")
+                    }
+                }
+            }
+        })
+        return future
+    }
     fun <T> submit(
         ledgerRequests: List<LedgerTableOperation>,
         getResultFromFinalState: (ledgerState: LedgerState) -> T
@@ -54,6 +84,7 @@ class Ledger(
                             ledgerState.read()
                         )
                     }) {
+                        // This just completes exceptionally in the future
                         throw RuntimeException("Error during : $it")
                     }
                 }

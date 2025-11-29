@@ -2,37 +2,41 @@ import arrow.core.Either
 import arrow.core.Option
 import arrow.core.none
 import com.iainschmitt.januaryplaygroundbackend.shared.*
+import ledger.Ledger
+import ledger.LedgerK
+import ledger.LedgerTableOperation
+import ledger.LedgerTableOperationType
+import ledger.userLedgerOperation
 import java.sql.Connection
 
-class AuthDao(
-    private val db: DatabaseHelper
+class StreamingAuthDao(
+    private val db: DatabaseHelper,
+    private val ledger: Ledger
 ) {
-    fun createUser(email: String, passwordHash: String) =
+    fun createUser(email: String, passwordHash: String, accountType: AccountType = AccountType.STANDARD,
+                   orchestratedBy: String? = null) =
         Either.catch {
-            db.query { conn ->
-                conn.prepareStatement(
-                    "insert into user (email, password_hash) values (?, ?)"
+            val user = ledger.submit(
+                listOf(
+                    userLedgerOperation(LedgerTableOperationType.Create, email, passwordHash, 0, accountType, orchestratedBy)
                 )
-                    .use { stmt ->
-                        stmt.setString(1, email)
-                        stmt.setString(2, passwordHash)
-                        stmt.executeUpdate()
-                        Unit
-                    }
-            }
+            ) { state -> state.users[LedgerK.Users(email)] }
+
+            user.get()
+            Unit
         }
 
-    fun getMaybePasswordHash(email: String) = db.query { conn ->
-        conn.prepareStatement("select password_hash from user where email = ?").use { stmt
-            ->
-            stmt.setString(1, email)
-            stmt.executeQuery().use { rs ->
-                if (rs.next()) Option.fromNullable(rs.getString("password_hash")) else none()
-            }
-        }
+    fun getMaybePasswordHash(email: String) = Option.fromNullable(ledger.getLedgerState().users[LedgerK.Users(email)])
+
+
+    fun createOrchestratedUser(dto: OrchestratedCredentialsDto, passwordHash: String, orchestratorEmail: String) = Either.catch {
+        // The solution is sending a partial ledger record where an updating funciton is passed of the value type
+        listOf(
+            userLedgerOperation(LedgerTableOperationType.Update, orchestratorEmail, )
+        )
     }
 
-    fun createOrchestratedUser(dto: OrchestratedCredentialsDto, passwordHash: String, orchestratorEmail: String) =
+    fun _createOrchestratedUser(dto: OrchestratedCredentialsDto, passwordHash: String, orchestratorEmail: String) =
         Either.catch {
             db.query { conn ->
                 conn.prepareStatement(

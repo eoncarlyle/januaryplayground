@@ -146,3 +146,17 @@ class LedgerRequestEntry<T>(
         }
     }
 }
+
+fun userLedgerOperation(
+    operation: LedgerTableOperationType,
+    email: String,
+    passwordHash: String,
+    balance: Int,
+    accountType: AccountType,
+    orchestratedBy: String?
+) = LedgerTableOperation(
+    LedgerTableEntry.Users(
+        LedgerK.Users(email), LedgerV.Users(passwordHash, balance, accountType, orchestratedBy)
+    ), operation
+)
+

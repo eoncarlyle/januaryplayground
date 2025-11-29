@@ -28,7 +28,7 @@ don't feel great about that. If a simple
 ```kotlin
 fun STM.transfer(bal: TVar<MutableMap<String, Int>>): Unit {
     bal.write(mutableMapOf("a" to 2))
-    throw RuntimeException()
+    throw    RuntimeException()
     bal.write(mutableMapOf("a" to 3))
 }
 
