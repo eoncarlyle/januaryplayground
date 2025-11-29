@@ -36,8 +36,8 @@ class Ledger(
     private var ledgerState = runBlocking { TVar.new(initialLedgerState) }
 
     fun <T> submitWithHandle(
+        getResultFromFinalState: (ledgerState: LedgerState) -> T,
         ledgerRequestsFactory: (ledgerState: LedgerState) -> List<LedgerTableOperation>,
-        getResultFromFinalState: (ledgerState: LedgerState) -> T
     ): CompletableFuture<T> {
         val future = CompletableFuture<T>()
         ledgerRequestQueue.put(LedgerRequestEntry(future) {

@@ -1,6 +1,7 @@
 import arrow.core.Either
 import arrow.core.Option
 import arrow.core.none
+import arrow.core.raise.ensure
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import ledger.Ledger
 import ledger.LedgerK
@@ -13,12 +14,21 @@ class StreamingAuthDao(
     private val db: DatabaseHelper,
     private val ledger: Ledger
 ) {
-    fun createUser(email: String, passwordHash: String, accountType: AccountType = AccountType.STANDARD,
-                   orchestratedBy: String? = null) =
+    fun createUser(
+        email: String, passwordHash: String, accountType: AccountType = AccountType.STANDARD,
+        orchestratedBy: String? = null
+    ) =
         Either.catch {
             val user = ledger.submit(
                 listOf(
-                    userLedgerOperation(LedgerTableOperationType.Create, email, passwordHash, 0, accountType, orchestratedBy)
+                    userLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        email,
+                        passwordHash,
+                        0,
+                        accountType,
+                        orchestratedBy
+                    )
                 )
             ) { state -> state.users[LedgerK.Users(email)] }
 
@@ -29,60 +39,72 @@ class StreamingAuthDao(
     fun getMaybePasswordHash(email: String) = Option.fromNullable(ledger.getLedgerState().users[LedgerK.Users(email)])
 
 
-    fun createOrchestratedUser(dto: OrchestratedCredentialsDto, passwordHash: String, orchestratorEmail: String) = Either.catch {
+    fun createOrchestratedUser(dto: OrchestratedCredentialsDto, passwordHash: String, orchestratorEmail: String) =
         // The solution is sending a partial ledger record where an updating funciton is passed of the value type
-        listOf(
-            userLedgerOperation(LedgerTableOperationType.Update, orchestratorEmail, )
-        )
-    }
-
-    fun _createOrchestratedUser(dto: OrchestratedCredentialsDto, passwordHash: String, orchestratorEmail: String) =
         Either.catch {
-            db.query { conn ->
-                conn.prepareStatement(
-                    "update user set balance = balance - ? where email = ?"
-                ).use { stmt ->
-                    stmt.setInt(1, dto.initialCreditBalance)
-                    stmt.setString(2, orchestratorEmail)
-                    stmt.executeUpdate()
-                }
-                conn.prepareStatement(
-                    "insert into user (email, password_hash, balance, orchestrated_by) values (?, ?, ?, ?)"
-                ).use { stmt ->
-                    stmt.setString(1, dto.userEmail)
-                    stmt.setString(2, passwordHash)
-                    stmt.setInt(3, dto.initialCreditBalance)
-                    stmt.setString(4, orchestratorEmail)
-                    stmt.executeUpdate()
-                }
+            ledger.submitWithHandle({ }) { state ->
+
+                //TODO: convert this to an Arrow raise instead of the exception catch, but this is complicated
+                // somewhat by the use of the Either.catch
+
+                val orchestrator = state.users[LedgerK.Users(orchestratorEmail)]
+                    ?: throw RuntimeException("Orchestrated users error")
+
+                listOf(
+                    userLedgerOperation(
+                        LedgerTableOperationType.Update,
+                        orchestratorEmail,
+                        orchestrator.passwordHash,
+                        orchestrator.balance - dto.initialCreditBalance,
+                        orchestrator.type,
+                        orchestrator.orchestratedBy
+                    ),
+                    userLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        dto.userEmail,
+                        passwordHash,
+                        dto.initialCreditBalance,
+                        AccountType.STANDARD,
+                        orchestratorEmail
+                    )
+                )
             }
+            Unit
         }
 
     fun liquidateOrchestratedUser(dto: LiquidateOrchestratedUserDto, auth: Pair<String, Long>, targetUserBalance: Int) =
         Either.catch {
-            db.query { conn ->
-                conn.prepareStatement(
-                    """
-                    update user set balance = balance - ? where email = ? and orchestrated_by = ?
-                """
-                ).use { stmt ->
-                    stmt.setInt(1, targetUserBalance)
-                    stmt.setString(2, dto.targetUserEmail)
-                    stmt.setString(3, dto.orchestratorEmail)
-                    stmt.executeUpdate()
-                }
-                conn.prepareStatement(
-                    """
-                    update user set balance = balance + ? where email = ?
-                """
-                ).use { stmt ->
-                    stmt.setInt(1, targetUserBalance)
-                    stmt.setString(2, auth.first)
-                    stmt.executeUpdate()
-                }
+            ledger.submitWithHandle({ }) { state ->
+                //TODO: convert this to an Arrow raise instead of the exception catch, but this is complicated
+                // somewhat by the use of the Either.catch
+                val orchestratedUser = state.users[LedgerK.Users(dto.targetUserEmail)]
+                    ?: throw RuntimeException("Orchestrated users error")
 
-                liquidateSingleUserOrchestratedPositions(conn, dto.orchestratorEmail, dto.targetUserEmail)
+                assert(orchestratedUser.orchestratedBy == auth.first)
+
+                val orchestrator = state.users[LedgerK.Users(auth.first)]
+                    ?: throw RuntimeException("Orchestrated users error")
+
+                listOf(
+                    userLedgerOperation(
+                        LedgerTableOperationType.Update,
+                        dto.targetUserEmail,
+                        orchestratedUser.passwordHash,
+                        orchestratedUser.balance - targetUserBalance,
+                        orchestratedUser.type,
+                        orchestratedUser.orchestratedBy
+                    ),
+                    userLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        auth.first,
+                        orchestrator.passwordHash,
+                        orchestrator.balance + targetUserBalance,
+                        orchestrator.type,
+                        orchestrator.orchestratedBy
+                    )
+                )
             }
+            Unit
         }
 
     private fun liquidateSingleUserOrchestratedPositions(
