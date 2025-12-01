@@ -65,6 +65,7 @@ class Ledger(
         })
         return future
     }
+
     fun <T> submit(
         ledgerRequests: List<LedgerTableOperation>,
         getResultFromFinalState: (ledgerState: LedgerState) -> T

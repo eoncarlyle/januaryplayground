@@ -1,17 +1,17 @@
 import arrow.core.Either
 import arrow.core.Option
-import arrow.core.none
-import arrow.core.raise.ensure
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import ledger.Ledger
 import ledger.LedgerK
+import ledger.LedgerState
+import ledger.LedgerTableEntry
 import ledger.LedgerTableOperation
 import ledger.LedgerTableOperationType
+import ledger.positionLedgerOperation
+import ledger.sessionLedgerOperation
 import ledger.userLedgerOperation
-import java.sql.Connection
 
 class StreamingAuthDao(
-    private val db: DatabaseHelper,
     private val ledger: Ledger
 ) {
     fun createUser(
@@ -68,8 +68,7 @@ class StreamingAuthDao(
                         orchestratorEmail
                     )
                 )
-            }
-            Unit
+            }.get()
         }
 
     fun liquidateOrchestratedUser(dto: LiquidateOrchestratedUserDto, auth: Pair<String, Long>, targetUserBalance: Int) =
@@ -85,283 +84,243 @@ class StreamingAuthDao(
                 val orchestrator = state.users[LedgerK.Users(auth.first)]
                     ?: throw RuntimeException("Orchestrated users error")
 
+                val referenceTime = System.currentTimeMillis()
+
+                liquidateSingleUserOrchestratedPositions(
+                    state, dto.orchestratorEmail, dto.targetUserEmail,
+                    referenceTime
+                ).toCollection(
+                    mutableListOf(
+                        userLedgerOperation(
+                            LedgerTableOperationType.Update,
+                            dto.targetUserEmail,
+                            orchestratedUser.passwordHash,
+                            orchestratedUser.balance - targetUserBalance,
+                            orchestratedUser.type,
+                            orchestratedUser.orchestratedBy
+                        ),
+                        userLedgerOperation(
+                            LedgerTableOperationType.Create,
+                            auth.first,
+                            orchestrator.passwordHash,
+                            orchestrator.balance + targetUserBalance,
+                            orchestrator.type,
+                            orchestrator.orchestratedBy
+                        )
+                    )
+                )
+            }.get()
+        }
+
+    private fun liquidateSingleUserOrchestratedPositions(
+        state: LedgerState,
+        orchestratorEmail: String,
+        userEmail: String,
+        referenceTime: Long,
+    ): List<LedgerTableOperation> {
+        val orchestratedUser =
+            state.users[LedgerK.Users(userEmail)] ?: throw RuntimeException("Orchestrated users error")
+        assert(orchestratedUser.orchestratedBy == orchestratorEmail)
+
+        val orchestrator = state.users[LedgerK.Users(orchestratorEmail)]
+        assert(orchestrator != null)
+
+        // Short orders: would have to be mindful about consolidation
+        val orchestratedUserLongPositions = state.positionRecords.filter {
+            (it.key.userEmail == userEmail) && (it.key.positionType == PositionType.LONG)
+        }
+
+        val orchestratorLongPositions = state.positionRecords.filter {
+            (it.key.userEmail == orchestratorEmail) && (it.key.positionType == PositionType.LONG)
+        }
+
+        return orchestratedUserLongPositions.flatMap { userPosition ->
+            val deleteOperation =
+                LedgerTableOperation(
+                    LedgerTableEntry.PositionRecords(
+                        userPosition.key,
+                        userPosition.value
+                    ),
+                    LedgerTableOperationType.Delete
+                )
+
+            val orchestratorPosition = orchestratorLongPositions[LedgerK.PositionRecords(
+                orchestratorEmail,
+                userPosition.key
+                    .ticker, userPosition.key.positionType
+            )]
+
+            return@flatMap if (orchestratorPosition != null) {
                 listOf(
+                    deleteOperation,
+                    positionLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        orchestratorEmail,
+                        userPosition.key.ticker,
+                        userPosition.key.positionType,
+                        orchestratorPosition.size + userPosition.value.size,
+                        referenceTime
+                    ),
+                )
+            } else {
+                listOf(
+                    deleteOperation,
+                    positionLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        orchestratorEmail,
+                        userPosition.key.ticker,
+                        userPosition.key.positionType,
+                        userPosition.value.size,
+                        referenceTime
+                    ),
+                )
+            }
+        }
+    }
+
+    fun liquidateAllOrchestratedUsers(orchestratorEmail: String) =
+        Either.catch {
+            //TODO: remove the orchestrated users
+            val referenceTime = System.currentTimeMillis()
+            ledger.submitWithHandle({}) { state ->
+                val orchestratedUsers = state.users.filter { it.value.orchestratedBy == orchestratorEmail }
+                val orchestrator = state.users[LedgerK.Users(orchestratorEmail)]
+
+                assert(orchestrator != null)
+                val totalBalance = orchestratedUsers.map { it.value.balance }.sum()
+
+                val ledgerTableOperations = orchestratedUsers.map {
+                    userLedgerOperation(
+                        LedgerTableOperationType.Delete,
+                        it.key.email,
+                        it.value.passwordHash,
+                        it.value.balance,
+                        it.value.type,
+                        it.value.orchestratedBy
+                    )
+                }.toMutableList()
+
+
+                ledgerTableOperations.add(
                     userLedgerOperation(
                         LedgerTableOperationType.Update,
-                        dto.targetUserEmail,
-                        orchestratedUser.passwordHash,
-                        orchestratedUser.balance - targetUserBalance,
-                        orchestratedUser.type,
-                        orchestratedUser.orchestratedBy
-                    ),
-                    userLedgerOperation(
-                        LedgerTableOperationType.Create,
-                        auth.first,
-                        orchestrator.passwordHash,
-                        orchestrator.balance + targetUserBalance,
+                        orchestratorEmail,
+                        orchestrator!!.passwordHash, //Why do I need to specify the `!!` after assert?
+                        orchestrator.balance + totalBalance,
                         orchestrator.type,
                         orchestrator.orchestratedBy
                     )
                 )
-            }
-            Unit
+
+                ledgerTableOperations.addAll(
+                    orchestratedUsers.map { it.key.email }.flatMap {
+                        liquidateSingleUserOrchestratedPositions(
+                            state,
+                            orchestratorEmail, it,
+                            referenceTime
+                        )
+                    }
+                )
+                ledgerTableOperations
+            }.get()
         }
-
-    private fun liquidateSingleUserOrchestratedPositions(
-        conn: Connection,
-        orchestratorEmail: String,
-        userEmail: String
-    ) {
-        val referenceTime = System.currentTimeMillis()
-
-        // Short orders: would have to be mindful about consolidation
-        val orchestratedUsersLongPositions = HashMap<String, Int>()
-        conn.prepareStatement(
-            """
-                select ticker, sum(size)
-                    from user u
-                    left join position_records p on u.email = p.user
-                    where orchestrated_by = ? and u.email = ? and p.position_type = ?
-                    group by ticker;
-            """
-        ).use { stmt ->
-            stmt.setString(1, orchestratorEmail)
-            stmt.setString(2, userEmail)
-            stmt.setInt(3, PositionType.LONG.ordinal)
-            stmt.executeQuery().use { rs ->
-                while (rs.next()) {
-                    orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
-                }
-            }
-        }
-
-        orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
-            conn.prepareStatement(
-                """
-                    delete from position_records
-                        where ticker = ? 
-                        and user = ?
-                        and position_type = ?
-                    """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setString(2, userEmail) //Inverting these: nasty bug
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.executeUpdate()
-            }
-
-            conn.prepareStatement(
-                """
-                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                        on conflict (user, ticker, position_type)
-                        do update set size = size + excluded.size, received_tick = excluded.received_tick
-                    """
-            ).use { stmt ->
-                stmt.setString(1, orchestratorEmail)
-                stmt.setString(2, ticker)
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.setInt(4, longPositions)
-                stmt.setLong(5, referenceTime)
-                stmt.executeUpdate()
-            }
-        }
-    }
-
-    fun liquidateAllOrchestratedUsers(orchestratedUsers: List<Pair<String, Int>>, orchestratorEmail: String) =
-        Either.catch {
-            val totalBalance = orchestratedUsers.sumOf { it.second }
-
-            db.query { conn ->
-                conn.prepareStatement(
-                    """
-                                update user set balance = 0 where orchestrated_by = ?
-                            """
-                ).use { stmt ->
-                    stmt.setString(1, orchestratorEmail)
-                    stmt.executeUpdate()
-                }
-
-                conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, totalBalance)
-                    stmt.setString(2, orchestratorEmail)
-                    stmt.executeUpdate()
-                }
-
-                liquidateAllOrchestratedPositions(conn, orchestratorEmail, orchestratedUsers)
-            }
-        }
-
-    private fun liquidateAllOrchestratedPositions(
-        conn: Connection,
-        orchestratorEmail: String,
-        orchestratedUsers: List<Pair<String, Int>>
-    ) {
-        val referenceTime = System.currentTimeMillis()
-
-        // Short orders: would have to be mindful about consolidation
-        val orchestratedUsersLongPositions = HashMap<String, Int>()
-        conn.prepareStatement(
-            """
-                select ticker, sum(size)
-                    from user u
-                    left join position_records p on u.email = p.user
-                    where orchestrated_by = ? and p.position_type = ?
-                    group by ticker;
-            """
-        ).use { stmt ->
-            stmt.setString(1, orchestratorEmail)
-            stmt.setInt(2, PositionType.LONG.ordinal)
-            stmt.executeQuery().use { rs ->
-                while (rs.next()) {
-                    orchestratedUsersLongPositions[rs.getString(1)] = rs.getInt(2)
-                }
-            }
-        }
-
-        val orchestratedUserSqlList =
-            orchestratedUsers.map { it.first }.joinToString(prefix = "(", postfix = ")") { "?" }
-
-        orchestratedUsersLongPositions.forEach { (ticker, longPositions) ->
-            conn.prepareStatement(
-                """
-                    delete from position_records
-                        where ticker = ? 
-                        and user in $orchestratedUserSqlList
-                        and position_type = ?
-                """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setInt(2, PositionType.LONG.ordinal)
-                stmt.executeUpdate()
-            }
-
-            conn.prepareStatement(
-                """
-                    insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                        on conflict (user, ticker, position_type)
-                        do update set size = size + excluded.size, received_tick = excluded.received_tick
-                        """
-            ).use { stmt ->
-                stmt.setString(1, orchestratorEmail)
-                stmt.setString(2, ticker)
-                stmt.setInt(3, PositionType.LONG.ordinal)
-                stmt.setInt(4, longPositions)
-                stmt.setLong(5, referenceTime)
-                stmt.executeUpdate()
-            }
-        }
-    }
 
     fun getOrchestratedUsersWithBalance(orchestratorEmail: String) = Either.catch {
-        db.query { conn ->
-            conn.prepareStatement("select email, balance from user where orchestrated_by = ?").use { stmt ->
-                stmt.setString(1, orchestratorEmail)
-                stmt.executeQuery().use { rs ->
-                    val users = mutableListOf<Pair<String, Int>>()
-                    while (rs.next()) {
-                        users.add(rs.getString("email") to rs.getInt("balance"))
-                    }
-                    users
-                }
-            }
+        ledger.getLedgerState().users.filter { it.value.orchestratedBy == orchestratorEmail }.map {
+            it.key.email to it
+                .value
+                .balance
         }
     }
 
     fun transferCredits(dto: CreditTransferDto, auth: Pair<String, Long>) = Either.catch {
-        db.query { conn ->
-            conn.prepareStatement(
-                "update user set balance = balance - ? where email = ?"
-            ).use { stmt ->
-                stmt.setInt(1, dto.creditAmount)
-                stmt.setString(2, auth.first)
-                stmt.executeUpdate()
-            }
-            conn.prepareStatement(
-                "update user set balance = balance + ? where email = ?"
-            ).use { stmt ->
-                stmt.setInt(1, dto.creditAmount)
-                stmt.setString(2, dto.targetUserEmail)
-                stmt.executeUpdate()
-            }
+        ledger.submitWithHandle({}) { state ->
+            val source = state.users[LedgerK.Users(auth.first)]
+            val target = state.users[LedgerK.Users(dto.targetUserEmail)]
+            assert(source != null)
+            assert(target != null)
+
+            listOf(
+                userLedgerOperation(
+                    LedgerTableOperationType.Update,
+                    auth.first,
+                    source!!.passwordHash,
+                    source.balance - dto.creditAmount,
+                    source.type,
+                    source.orchestratedBy
+                ),
+                userLedgerOperation(
+                    LedgerTableOperationType.Update,
+                    dto.targetUserEmail,
+                    target!!.passwordHash,
+                    target.balance + dto.creditAmount,
+                    target.type,
+                    target.orchestratedBy
+                )
+            )
+        }.get()
+    }
+
+    fun deleteToken(token: String) = Either.catch {
+        ledger.submitWithHandle({}) { state ->
+            val session = state.sessions[LedgerK.Sessions(token)]
+            assert(session != null)
+            listOf(
+                sessionLedgerOperation(
+                    LedgerTableOperationType.Delete, token, session!!.expireTimestamp, session
+                        .email
+                )
+            )
+        }.get()
+    }
+
+    fun getAuthFromToken(token: String) =
+        ledger.getLedgerState().sessions.filter { it.key.token == token }.map {
+            it.key.token to it.value
+                .expireTimestamp
+        }.firstOrNull()
+
+    fun emailPresent(email: String) = ledger.getLedgerState().sessions.filter { it.value.email == email }.isNotEmpty()
+
+    fun isOrchestrator(email: String) = ledger.getLedgerState().users.filter {
+        it.key.email == email && it.value.type == AccountType.ORCHESTRATOR
+    }
+        .isNotEmpty()
+
+    fun isOrchestratedBy(targetUserEmail: String, orchestratorEmail: String) = ledger.getLedgerState().users.filter {
+        it.key.email == targetUserEmail && it.value.orchestratedBy == orchestratorEmail
+    }
+        .isNotEmpty()
+
+    fun hasAtLeastAsManyCredits(email: String, credits: Int) = ledger.getLedgerState().users.filter {
+        it.key.email ==
+                email && it.value.balance >= credits
+    }.isNotEmpty()
+
+    fun getBalance(email: String) =
+        Option.fromNullable(ledger.getLedgerState().users.filter { it.key.email == email }.map {
+            it
+                .value
+                .balance
+        }.firstOrNull())
+
+    fun insertSession(token: String, expireTimestamp: Long, email: String) = ledger.submit(
+        listOf(
+            sessionLedgerOperation(
+                LedgerTableOperationType.Create,
+                token,
+                expireTimestamp,
+                email
+            )
+        )
+    ) {}.get()
+
+    fun removeExistingSessions(email: String) = ledger.submitWithHandle({}) { state ->
+        state.sessions.filter { it.value.email == email }.map {
+            sessionLedgerOperation(
+                LedgerTableOperationType.Delete,
+                it.key.token, it.value.expireTimestamp, it.value.email
+            )
         }
-    }
-
-    fun deleteToken(token: String) = db.query { conn ->
-        conn.prepareStatement("delete from session where token = ?").use { stmt ->
-            stmt.setString(1, token)
-            stmt.executeUpdate()
-        }
-    }
-
-    fun getAuthFromToken(token: String) = db.query { conn ->
-        conn.prepareStatement("select email, expire_timestamp from session where token = ?")
-            .use { stmt ->
-                stmt.setString(1, token)
-                stmt.executeQuery().use { rs -> if (rs.next()) Pair(rs.getString(1), rs.getLong(2)) else null }
-            }
-    }
-
-    fun emailPresent(email: String) = db.query { conn ->
-        conn.prepareStatement("select email from user where email = ?").use { stmt ->
-            stmt.setString(1, email)
-            stmt.executeQuery().use { rs -> rs.next() }
-        }
-    }
-
-    fun isOrchestrator(email: String) = db.query { conn ->
-        conn.prepareStatement("select email from user where email = ? and type = ${AccountType.ORCHESTRATOR.ordinal}")
-            .use { stmt ->
-                stmt.setString(1, email)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
-    }
-
-    fun isOrchestratedBy(targetUserEmail: String, orchestratorEmail: String) = db.query { conn ->
-        conn.prepareStatement("select email from user where email = ? and orchestrated_by = ?").use { stmt ->
-            stmt.setString(1, targetUserEmail)
-            stmt.setString(2, orchestratorEmail)
-            stmt.executeQuery().use { rs -> rs.next() }
-        }
-    }
-
-    fun hasAtLeastAsManyCredits(email: String, credits: Int) = db.query { conn ->
-        conn.prepareStatement("select email from user where email = ? and balance >= ?").use { stmt ->
-            stmt.setString(1, email)
-            stmt.setInt(2, credits)
-            stmt.executeQuery().use { rs -> rs.next() }
-        }
-    }
-
-    fun getBalance(email: String) = db.query { conn ->
-        conn.prepareStatement("select balance from user where email = ?").use { stmt ->
-            stmt.setString(1, email)
-            stmt.executeQuery().use { rs -> if (rs.next()) Option.fromNullable(rs.getInt(1)) else none() }
-        }
-    }
-
-    fun insertSession(token: String, expireTimestamp: Long, email: String) = db.query { conn ->
-        conn.prepareStatement("insert into session (token, expire_timestamp, email) values (?, ?, ?)")
-            .use { stmt ->
-                stmt.setString(1, token)
-                stmt.setLong(2, expireTimestamp)
-                stmt.setString(3, email)
-                stmt.executeUpdate()
-                Unit
-            }
-    }
-
-    fun removeExistingSessions(email: String) = db.query { conn ->
-        val sessionExists = conn.prepareStatement("select * from session where email = ?").use { stmt ->
-            stmt.setString(1, email)
-            stmt.executeQuery().use { rs -> rs.next() }
-        }
-
-        if (sessionExists) {
-            conn.prepareStatement("delete from session where email = ?").use { stmt ->
-                stmt.setString(1, email)
-                stmt.executeUpdate()
-            }
-        }
-    }
-
+    }.get()
 }

@@ -160,3 +160,27 @@ fun userLedgerOperation(
     ), operation
 )
 
+fun positionLedgerOperation(
+    operation: LedgerTableOperationType,
+    userEmail: String,
+    ticker: Ticker,
+    positionType: PositionType,
+    size: Int,
+    receivedTick: Long
+) = LedgerTableOperation(
+    LedgerTableEntry.PositionRecords(
+        LedgerK.PositionRecords(userEmail, ticker, positionType),
+        LedgerV.PositionRecords(size, receivedTick)
+    ), operation
+)
+
+fun sessionLedgerOperation(
+    operation: LedgerTableOperationType,
+    token: String,
+    expireTimestamp: Long,
+    email: String
+) = LedgerTableOperation(
+    LedgerTableEntry.Sessions(
+        LedgerK.Sessions(token), LedgerV.Sessions(expireTimestamp, email)
+    ), operation
+)
