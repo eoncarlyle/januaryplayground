@@ -1,5 +1,7 @@
 package com.iainschmitt.januaryplaygroundbackend.shared.kafka
 
+import com.iainschmitt.januaryplaygroundbackend.shared.ApplicationConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.SimplePropertiesLoader.toProperties
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.ProducerConfig
 import org.apache.kafka.clients.producer.ProducerRecord
@@ -7,7 +9,7 @@ import org.apache.kafka.clients.producer.RecordMetadata
 import org.apache.kafka.common.serialization.StringSerializer
 
 class AppKafkaProducer(
-    sslConfig: KafkaSSLConfig
+    sslConfig: ApplicationConfig
 ) {
     private val producer: KafkaProducer<String, String>
 
@@ -28,7 +30,10 @@ class AppKafkaProducer(
         producer = KafkaProducer(props)
     }
 
-    fun sendSync(topic: String, key: String?, value: String): RecordMetadata {
-        return producer.send(ProducerRecord(topic, key, value)).get()
-    }
+    fun initTransactions() = producer.initTransactions()
+
+    fun sendSync(topic: String, key: String?, value: String): RecordMetadata =
+        producer.send(ProducerRecord(topic, key, value)).get()
+
+    fun commitTransaction() = producer.commitTransaction()
 }

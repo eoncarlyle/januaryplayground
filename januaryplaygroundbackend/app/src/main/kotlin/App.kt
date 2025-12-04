@@ -1,8 +1,7 @@
-import arrow.core.Either
 import arrow.core.Some
-import arrow.core.constant
-import com.iainschmitt.januaryplaygroundbackend.shared.kafka.SimplePropertiesLoader
-import com.iainschmitt.januaryplaygroundbackend.shared.kafka.toKafkaSSLConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.SimplePropertiesLoader
+import com.iainschmitt.januaryplaygroundbackend.shared.SimplePropertiesLoader.toKafkaSSLConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.SimplePropertiesLoader.toKafkaTopicsConfig
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
@@ -10,8 +9,6 @@ fun main(args: Array<String>) {
         println("Empty args")
         exitProcess(1)
     }
-
-    val db = DatabaseHelper(args[0])
 
     val secure =
         when (args[1]) {
@@ -23,18 +20,18 @@ fun main(args: Array<String>) {
             }
         }
 
-    val maybeConfig = SimplePropertiesLoader.loadFromResource("application.properties")
-
-    val config =
-        when (maybeConfig) {
-            is Some -> maybeConfig.value.toKafkaSSLConfig()
+    val (applicationConfig, kafkaTopicsConfig) =
+        when (val maybeConfig = SimplePropertiesLoader.loadFromFile(args[0])) {
+            is Some -> maybeConfig.value.toKafkaSSLConfig() to maybeConfig.value.toKafkaTopicsConfig()
             else -> {
                 println("Kafka configuration must be provided")
                 exitProcess(1)
             }
         }
 
-    val app = Backend(db, config, secure)
+    val db = DatabaseHelper(applicationConfig.database)
+
+    val app = Backend(db, applicationConfig, kafkaTopicsConfig, secure)
     app.run()
 }
 

@@ -16,7 +16,6 @@ class LiquidateOrchestratedUserDto(val orchestratorEmail: String, val targetUser
 
 class LiquidateAllOrchestratedUsersDto(val orchestratorEmail: String)
 
-
 @Serializable
 class CreditTransferDto(val sendingUserEmail: String, val targetUserEmail: String, val creditAmount: Int)
 

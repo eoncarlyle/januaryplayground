@@ -1,9 +1,11 @@
 import arrow.core.Either
 import arrow.core.getOrElse
+import arrow.fx.stm.atomically
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaProducer
-import com.iainschmitt.januaryplaygroundbackend.shared.kafka.KafkaSSLConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.ApplicationConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaConsumer
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.HttpStatus
@@ -17,6 +19,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import ledger.Ledger
+import ledger.LedgerState
 
 private data class OrderQueueMessage(
     val request: Any, // This is only ever an OrderRequest or an ExchangeRequestDto,
@@ -26,7 +30,12 @@ private data class OrderQueueMessage(
     val finalStatelessQuote: StatelessQuote?
 )
 
-class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) {
+class Backend(
+    db: DatabaseHelper,
+    applicationConfig: ApplicationConfig,
+    val ledgerTopics: LedgerKafkaTopics,
+    secure: Boolean
+) {
     private val authenticatedWsUserMap = WsUserMap()
     private val publicWsUsers = HashSet<WsContext>()
     private val logger by lazy { LoggerFactory.getLogger(Backend::class.java) }
@@ -36,7 +45,10 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
     private val objectMapper = ObjectMapper()
     private val writeSemaphore = Semaphore(1)
     private val readerLightswitch = Lightswitch(writeSemaphore)
-    private val producer = AppKafkaProducer(kafkaConfig)
+    private val producer = AppKafkaProducer(applicationConfig)
+
+    private val ledger = Ledger(producer, ledgerTopics.txLedger, LedgerState(), logger)
+    private val oneshotConsumer = AppKafkaConsumer(applicationConfig, true, "backend-oneshot")
 
     private val javalinApp = Javalin.create { config ->
         config.bundledPlugins.enableCors { cors ->
@@ -73,7 +85,20 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }
     }
 
+    private fun ledgerInitialise() {
+        producer.initTransactions()
+        oneshotConsumer.startConsuming(ledgerTopics.toList()) { ledger.messageProcessor(it) }
+        logger.info("Initial State:")
+        logger.info("Tickers: ${ledger.getLedgerState().tickers.keys.joinToString(", ") { it.symbol }}")
+        logger.info("Users: ${ledger.getLedgerState().users.keys.joinToString(", ") { it.email }}")
+        logger.info("Sessions: ${ledger.getLedgerState().sessions.values.joinToString(", ") { it.email }}")
+        logger.info("Order Record Count: ${ledger.getLedgerState().orderRecords.values.size}")
+        logger.info("Position Count: ${ledger.getLedgerState().positionRecords.values.size}")
+        logger.info("Notification Rules: ${ledger.getLedgerState().notificationRules.keys.joinToString(", ") { it.userEmail }}")
+    }
+
     fun run() {
+
         // # Auth HTTP
         this.javalinApp.get("/health") { ctx -> ctx.result("Up") }
         this.javalinApp.beforeMatched("/auth/") { ctx -> NaiveRateLimit.requestPerTimeUnit(ctx, 1, TimeUnit.SECONDS) }
@@ -115,7 +140,6 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         }
 
         // # Exchange HTTP
-
         // ## Modifying non-exchange state
         this.javalinApp.put("/exchange/notification-rule") { createNotificationRule(it) }
         this.javalinApp.delete("/exchange/notification-rule") { deleteNotificationRule(it) }
@@ -124,7 +148,11 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
         this.javalinApp.ws("/ws/authenticated") { privateWebSocketConsumer(it) }
         this.javalinApp.ws("/ws/public") { publicWebSocketConsumer(it) }
 
+        // Ledger must be up-to-date before receiving requests
+        ledgerInitialise()
+
         this.javalinApp.start(7070)
+        ledgerThread()
         heartbeatThread()
         orderQueueConsumerThread()
         kafkaProducerThread()
@@ -375,6 +403,14 @@ class Backend(db: DatabaseHelper, kafkaConfig: KafkaSSLConfig, secure: Boolean) 
                 }
             }
         }.start()
+    }
+
+    private fun ledgerThread() {
+        Thread {
+            while (true) {
+                ledger.processNext()
+            }
+        }
     }
 
     private fun orderQueueConsumerThread() {

@@ -9,21 +9,17 @@ class ExchangeDao(
     private val db: DatabaseHelper
 ) {
 
-    fun getUserBalance(userEmail: String): Int? {
-        return db.query { conn ->
-            conn.prepareStatement("select balance from user where email = ?").use { stmt ->
-                stmt.setString(1, userEmail)
-                stmt.executeQuery().use { rs -> if (rs.next()) rs.getInt("balance") else null }
-            }
+    fun getUserBalance(userEmail: String): Int? = db.query { conn ->
+        conn.prepareStatement("select balance from user where email = ?").use { stmt ->
+            stmt.setString(1, userEmail)
+            stmt.executeQuery().use { rs -> if (rs.next()) rs.getInt("balance") else null }
         }
     }
 
-    fun getTicker(ticker: Ticker): TickerRecord? {
-        return db.query { conn ->
-            conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.executeQuery().use { rs -> if (rs.next()) TickerRecord(rs.getString(1), rs.getInt(2)) else null }
-            }
+    fun getTicker(ticker: Ticker): TickerRecord? = db.query { conn ->
+        conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->
+            stmt.setString(1, ticker)
+            stmt.executeQuery().use { rs -> if (rs.next()) TickerRecord(rs.getString(1), rs.getInt(2)) else null }
         }
     }
 
@@ -41,38 +37,34 @@ class ExchangeDao(
         return tickers
     }
 
-    fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean {
-        return db.query { conn ->
-            conn.prepareStatement("select id from order_records where id = ? and user = ? and filled_tick = -1")
-                .use { stmt ->
-                    stmt.setInt(1, pendingOrderId)
-                    stmt.setString(2, email)
-                    stmt.executeQuery().use { rs -> rs.next() }
-                }
-        }
+    fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean = db.query { conn ->
+        conn.prepareStatement("select id from order_records where id = ? and user = ? and filled_tick = -1")
+            .use { stmt ->
+                stmt.setInt(1, pendingOrderId)
+                stmt.setString(2, email)
+                stmt.executeQuery().use { rs -> rs.next() }
+            }
     }
 
-    fun getStatelessQuote(ticker: Ticker): StatelessQuote? {
-        return db.query { conn ->
-            conn.prepareStatement(
-                """
+    fun getStatelessQuote(ticker: Ticker): StatelessQuote? = db.query { conn ->
+        conn.prepareStatement(
+            """
                  select
                     coalesce((select max(price) from order_records
                     where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
                     coalesce((select min(price) from order_records
                     where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
                  """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setString(2, ticker)
-                stmt.executeQuery().use { rs ->
-                    if (rs.next()) {
-                        val bid = rs.getInt(1)
-                        val ask = rs.getInt(2)
-                        if (rs.wasNull() || ask == 0 && rs.wasNull()) null
-                        else StatelessQuote(ticker, bid, ask)
-                    } else null
-                }
+        ).use { stmt ->
+            stmt.setString(1, ticker)
+            stmt.setString(2, ticker)
+            stmt.executeQuery().use { rs ->
+                if (rs.next()) {
+                    val bid = rs.getInt(1)
+                    val ask = rs.getInt(2)
+                    if (rs.wasNull() || ask == 0 && rs.wasNull()) null
+                    else StatelessQuote(ticker, bid, ask)
+                } else null
             }
         }
     }
@@ -109,13 +101,13 @@ class ExchangeDao(
     ): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement(
+            conn.prepareStatement( //The following statement wasn't checkign for ticker in the subqery!
                 """
                 select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, seller_position_count
                     from order_records o
                              left join (
                                     select user, coalesce(sum(size), 0) as seller_position_count
-                                    from position_records
+                                    from position_records 
                                     where position_type = ?
                                     group by user
                              ) p on p.user = o.user
@@ -199,12 +191,10 @@ class ExchangeDao(
     fun getMatchingOrderBook(
         ticker: Ticker,
         pendingOrderTradeType: TradeType
-    ): List<OrderBookEntry> {
-        return if (pendingOrderTradeType.isBuy()) {
-            buyMatchingOrderBook(ticker)
-        } else {
-            sellMatchingOrderBook(ticker)
-        }
+    ): List<OrderBookEntry> = if (pendingOrderTradeType.isBuy()) {
+        buyMatchingOrderBook(ticker)
+    } else {
+        sellMatchingOrderBook(ticker)
     }
 
     //TODO: I need to re-read this to better understand if there are any issues with limit order usages
@@ -317,36 +307,33 @@ class ExchangeDao(
         conn: Connection,
         order: Order,
         orderFilledTick: Long
-    ): Long {
+    ): Long = conn.prepareStatement(
         // SQLite docs:
         // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
         //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
-        return conn.prepareStatement(
-            """
+        """
                 insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
                     on conflict (user, ticker, position_type)
                     do update set size = size + excluded.size, received_tick = excluded.received_tick
             """,
-            Statement.RETURN_GENERATED_KEYS
-        ).use { stmt ->
-            stmt.setString(1, order.email)
-            stmt.setString(2, order.ticker)
-            stmt.setInt(3, PositionType.LONG.ordinal)
-            stmt.setInt(4, order.size)
-            stmt.setLong(5, orderFilledTick)
-            stmt.executeUpdate()
+        Statement.RETURN_GENERATED_KEYS
+    ).use { stmt ->
+        stmt.setString(1, order.email)
+        stmt.setString(2, order.ticker)
+        stmt.setInt(3, PositionType.LONG.ordinal)
+        stmt.setInt(4, order.size)
+        stmt.setLong(5, orderFilledTick)
+        stmt.executeUpdate()
 
-            val rs = stmt.generatedKeys
-            if (rs.next()) rs.getLong(1) else -1
-        }
+        val rs = stmt.generatedKeys
+        if (rs.next()) rs.getLong(1) else -1
     }
 
     private fun sellerLongPositionUpdate(
         conn: Connection,
         order: Order,
         orderFilledTick: Long
-    ): Long {
-        return conn.prepareStatement(
+    ): Long = conn.prepareStatement(
         """
             update position_records set 
                 size = size - ?, 
@@ -360,22 +347,21 @@ class ExchangeDao(
             )
             returning id, size;
         """
-        ).use { stmt ->
-            stmt.setInt(1, order.size)
-            stmt.setLong(2, orderFilledTick)
-            stmt.setString(3, order.email)
-            stmt.setString(4, order.ticker)
-            stmt.setInt(5, PositionType.LONG.ordinal)
+    ).use { stmt ->
+        stmt.setInt(1, order.size)
+        stmt.setLong(2, orderFilledTick)
+        stmt.setString(3, order.email)
+        stmt.setString(4, order.ticker)
+        stmt.setInt(5, PositionType.LONG.ordinal)
 
-            val rs = stmt.executeQuery()
-            if (rs.next()) {
-                if (rs.getInt(2) == 0) {
-                    deleteEmptyPositions(conn, order.email, order.ticker)
-                }
-                rs.getLong(1)
-            } else {
-                -1
+        val rs = stmt.executeQuery()
+        if (rs.next()) {
+            if (rs.getInt(2) == 0) {
+                deleteEmptyPositions(conn, order.email, order.ticker)
             }
+            rs.getLong(1)
+        } else {
+            -1
         }
     }
 
@@ -414,8 +400,7 @@ class ExchangeDao(
         }
     }
 
-    private fun statePair(conn: Connection): Pair<Int, Int> {
-        return conn.prepareStatement(
+    private fun statePair(conn: Connection): Pair<Int, Int> = conn.prepareStatement(
         """
                 select positions, balances
                     from (
@@ -424,10 +409,9 @@ class ExchangeDao(
                             (select sum(balance) from user) as balances
             )
             """
-        ).use { stmt ->
-            stmt.executeQuery().use { rs ->
-                Pair(rs.getInt("positions"), rs.getInt("balances"))
-            }
+    ).use { stmt ->
+        stmt.executeQuery().use { rs ->
+            Pair(rs.getInt("positions"), rs.getInt("balances"))
         }
     }
 
@@ -437,7 +421,7 @@ class ExchangeDao(
 
         orderId = db.query { conn ->
             conn.prepareStatement(
-            """
+                """
                 insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
                     values (?, ?, ?, ?, ?, ?, ?, ?) 
                 """
@@ -467,8 +451,8 @@ class ExchangeDao(
         return getUserPositions(userEmail, ticker, PositionType.SHORT)
     }
 
-    fun getUserPositions(userEmail: String, ticker: Ticker, positionType: PositionType): List<PositionRecord> {
-        return db.query { conn ->
+    fun getUserPositions(userEmail: String, ticker: Ticker, positionType: PositionType): List<PositionRecord> =
+        db.query { conn ->
             conn.prepareStatement(
                 """
                 select id, size from position_records
@@ -495,7 +479,6 @@ class ExchangeDao(
                 positions
             }
         }
-    }
 
     fun getUserOrders(userEmail: String, ticker: Ticker): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
@@ -529,24 +512,22 @@ class ExchangeDao(
         return matchingPendingOrders
     }
 
-    fun getState(): Pair<Int, Int> {
-        return db.query { conn ->
-            conn.prepareStatement(
-                """
+    fun getState(): Pair<Int, Int> = db.query { conn ->
+        conn.prepareStatement(
+            """
                select
                    (select sum(size) from position_records) as position_sum,
                    (select sum(balance) from user) as credit_sum
                """
-            ).use { stmt ->
-                stmt.executeQuery().use { rs ->
-                    if (rs.next()) {
-                        Pair(
-                            rs.getInt("position_sum"),
-                            rs.getInt("credit_sum")
-                        )
-                    } else {
-                        Pair(-1, -1)
-                    }
+        ).use { stmt ->
+            stmt.executeQuery().use { rs ->
+                if (rs.next()) {
+                    Pair(
+                        rs.getInt("position_sum"),
+                        rs.getInt("credit_sum")
+                    )
+                } else {
+                    Pair(-1, -1)
                 }
             }
         }

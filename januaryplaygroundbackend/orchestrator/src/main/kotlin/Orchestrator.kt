@@ -1,17 +1,14 @@
 import arrow.core.Either
-import arrow.core.combine
 import arrow.core.raise.either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.AppKafkaConsumer
-import com.iainschmitt.januaryplaygroundbackend.shared.kafka.KafkaSSLConfig
+import com.iainschmitt.januaryplaygroundbackend.shared.ApplicationConfig
 import com.iainschmitt.januaryplaygroundbackend.shared.kafka.deserializeEither
 import kotlinx.coroutines.*
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.security.SecureRandom
-import java.util.concurrent.LinkedBlockingQueue
-import kotlin.math.log
 import kotlin.system.exitProcess
 
 private class OrchestratedNoiseTrader(
@@ -35,11 +32,11 @@ class Orchestrator(
     private val orchestratorEmail: String,
     private val password: String,
     private val ticker: Ticker,
-    kafkaConfig: KafkaSSLConfig, //Note: for Kotlin explainer to group, talk about not having the `val` here
+    kafkaConfig: ApplicationConfig, //Note: for Kotlin explainer to group, talk about not having the `val` here
 ) {
     private val logger by lazy { LoggerFactory.getLogger(this::class.java) }
 
-    private val consumer = AppKafkaConsumer(kafkaConfig, "test-consumer-group")
+    private val consumer = AppKafkaConsumer(kafkaConfig, false, "test-consumer-group")
     private val backendClient = BackendClient(logger)
     private val orchestratorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val defaultStartingCredits = 150
