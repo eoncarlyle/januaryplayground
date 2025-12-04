@@ -208,4 +208,6 @@ class Ledger(
             }
         }
     }
+
+    fun getNextOrderId() = nextOrderId
 }

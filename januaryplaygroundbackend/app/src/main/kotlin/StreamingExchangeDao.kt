@@ -1,13 +1,7 @@
 import arrow.core.raise.option
+import arrow.core.Either
 import com.iainschmitt.januaryplaygroundbackend.shared.*
-import ledger.Ledger
-import ledger.LedgerK
-import ledger.LedgerTableOperation
-import ledger.LedgerTableOperationType
-import ledger.orderLedgerOperation
-import ledger.positionLedgerOperation
-import ledger.userLedgerBalanceUpdate
-import ledger.userLedgerOperation
+import ledger.*
 import java.sql.Connection
 import java.sql.Statement
 import kotlin.collections.filter
@@ -159,343 +153,208 @@ class StreamingExchangeDao(
             orderBookEntry.receivedTick
         )
 
-    fun _fillOrder(
-        order: Order,
-        marketOrderProposal: ArrayList<OrderBookEntry>
-    ) {
-        val orderFilledTick: Long = System.currentTimeMillis()
-        val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
-        val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
-
-
-        ledger.submitWithHandle({
-            it.positionRecords[LedgerK.PositionRecords(
-                order.email, order.ticker, PositionType
-                    .LONG
-            )]
-        }) { state ->
-
-            val completeCounterpartyLedgers: List<LedgerTableOperation> = completeOrders.flatMap { orderBookEntry ->
-                val orderOperation = orderLedgerOperation(
-                    LedgerTableOperationType.Update,
-                    orderBookEntry,
-                    orderFilledTick,
-                )
-
-                val counterparty = state.users[LedgerK.Users(orderBookEntry.user)]
-                assert(counterparty != null)
-                // There isn't a good way to update just one field
-                val userOperation = userLedgerBalanceUpdate(
-                    orderBookEntry.user, counterparty!!,
-                    counterparty.balance +
-                            orderBookEntry.size * orderBookEntry.price * order.sign(),
-                )
-
-                val position = state.positionRecords[LedgerK.PositionRecords(
-                    orderBookEntry.user, orderBookEntry
-                        .ticker, PositionType.LONG
-                )]
-                assert(position != null)
-
-                val positionOperation =
-                    positionLedgerOperation(
-                        LedgerTableOperationType.Create,
-                        orderBookEntry.user,
-                        orderBookEntry.ticker,
-                        PositionType.LONG,
-                        position!!.size - orderBookEntry.size * order.sign(),
-                        position.receivedTick
-                    )
-
-                listOf(orderOperation, userOperation, positionOperation)
-            }
-
-            val partialCounterpartyLedgers: List<LedgerTableOperation> = partialOrders.flatMap { orderBookEntry ->
-                val orderOperation = orderLedgerOperation(
-                    LedgerTableOperationType.Update,
-                    orderBookEntry,
-                    orderFilledTick,
-                )
-
-                val counterparty = state.users[LedgerK.Users(orderBookEntry.user)]
-                assert(counterparty != null)
-
-                val userOperation = userLedgerBalanceUpdate(
-                    orderBookEntry.user,
-                    counterparty!!,
-                    counterparty.balance + (orderBookEntry.size - orderBookEntry.finalSize) * orderBookEntry.price * order
-                )
-
-                val position = state.positionRecords[LedgerK.PositionRecords(
-                    orderBookEntry.user, orderBookEntry
-                        .ticker, PositionType.LONG
-                )]
-                assert(position != null)
-
-                val positionOperation =
-                    positionLedgerOperation(
-                        LedgerTableOperationType.Create,
-                        orderBookEntry.user,
-                        orderBookEntry.ticker,
-                        PositionType.LONG,
-                        position!!.size - orderBookEntry.size * order.sign(),
-                        position.receivedTick
-                    )
-
-                listOf(orderOperation, userOperation, positionOperation)
-            }
-
-            //TODO: address orderer, do the buyerLongPositionUpdate/sellerLongPositionUpdate
-            //TODO: this should be in a new method
-
-            listOf()
-        }
-    }
-
-    //TODO: I need to re-read this to better understand if there are any issues with limit order usages
     fun fillOrder(
         order: Order,
         marketOrderProposal: ArrayList<OrderBookEntry>
-    ): FilledOrderRecord? {
+    ): Either<Throwable, Unit> {
         val orderFilledTick: Long = System.currentTimeMillis()
         val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
         val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
-        // From perspective of the counterparties:
-        // this is the direction that the counterparty balances will go
 
-        val positionId = db.query { conn ->
-            val completeOrderIds = completeOrders.map { it.id }
-            val orderIdSqlList = completeOrderIds.joinToString(prefix = "(", postfix = ")") { "?" }
-            val completeOrderUpdate = "update order_records set filled_tick = ? where id in $orderIdSqlList"
+        return Either.catch {
+            ledger.submitWithHandle({
+            }) { state ->
+                val completeCounterpartyLedgers =
+                    completeCounterpartyLedgers(completeOrders, orderFilledTick, state, order)
 
-            // Addressing complete orders
-            conn.prepareStatement(completeOrderUpdate).use { stmt ->
-                stmt.setLong(1, orderFilledTick)
-                completeOrderIds.forEachIndexed { index, completeOrderId ->
-                    stmt.setInt(index + 2, completeOrderId)
-                }
-                stmt.executeUpdate()
-            }
-            // TODO: There is certainly a way to do this in a single query
-            for (completeOrder in completeOrders) {
-                conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, completeOrder.size * completeOrder.price * order.sign())
-                    stmt.setString(2, completeOrder.user)
-                    stmt.executeUpdate()
-                }
+                val partialCounterpartyLedgers: List<LedgerTableOperation> =
+                    partialCounterpartyLedgers(partialOrders, orderFilledTick, state, order)
 
-                conn.prepareStatement(
-                    """
-                    update position_records set size = size - ?
-                        where id = (
-                            select id from position_records
-                                where user = ?
-                                and ticker = ?
-                                and position_type = ?
-                            order by received_tick limit 1
-                        );
-                    """
-                ).use { stmt ->
-                    stmt.setInt(1, completeOrder.size * order.sign())
-                    stmt.setString(2, completeOrder.user)
-                    stmt.setString(3, order.ticker)
-                    stmt.setInt(4, PositionType.LONG.ordinal)
+                val requestingUserLedgers =
+                    requestingUserLedgers(marketOrderProposal, completeOrders, orderFilledTick, state, order)
 
-                    stmt.executeUpdate()
-                }
-            }
-
-            // Addressing partial orders
-            // There really only should be _one_ of these ever run
-            for (partialOrder in partialOrders) {
-                conn.prepareStatement("update order_records set size = ? where id = ?").use { stmt ->
-                    stmt.setInt(1, partialOrder.finalSize)
-                    stmt.setInt(2, partialOrder.id)
-                    stmt.executeUpdate()
-                }
-
-                conn.prepareStatement("update user set balance = balance + ? where email = ?").use { stmt ->
-                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * partialOrder.price * order.sign())
-                    stmt.setString(2, partialOrder.user)
-                    stmt.executeUpdate()
-                }
-
-                conn.prepareStatement(
-                    """
-                    update position_records set size = size - ?
-                        where id = (
-                            select id from position_records
-                                where user = ? -- Note the unique contraint
-                                and ticker = ?
-                                and position_type = ?
-                        );
-                    """
-                ).use { stmt ->
-                    stmt.setInt(1, (partialOrder.size - partialOrder.finalSize) * order.sign())
-                    stmt.setString(2, partialOrder.user)
-                    stmt.setString(3, order.ticker)
-                    stmt.setInt(4, PositionType.LONG.ordinal)
-
-                    stmt.executeUpdate()
-                }
-            }
-            // Addressing orderer
-            conn.prepareStatement("update user set balance = balance - ? where email = ?").use { stmt ->
-                stmt.setInt(
-                    1,
-                    marketOrderProposal.sumOf { entry -> (entry.size - entry.finalSize) * entry.price } * order.sign())
-                stmt.setString(2, order.email)
-                stmt.executeUpdate()
-            }
-
-            //TODO: think about long/short orders
-            return@query if (order.isBuy()) buyerLongPositionUpdate(
-                conn,
-                order,
-                orderFilledTick
-            ) else sellerLongPositionUpdate(conn, order, orderFilledTick)
+                listOf(completeCounterpartyLedgers, partialCounterpartyLedgers, requestingUserLedgers).flatten()
+            }.get()
         }
-        return if (positionId != -1L) FilledOrderRecord(positionId, orderFilledTick) else null
     }
 
-    private fun buyerLongPositionUpdate(
-        conn: Connection,
-        order: Order,
-        orderFilledTick: Long
-    ): Long = conn.prepareStatement(
-        // SQLite docs:
-        // 'On an INSERT, if the ROWID or INTEGER PRIMARY KEY column is not explicitly given a value, then it
-        //  will be filled automatically with an unused integer, usually one more than the largest ROWID currently in use.;
-        """
-                insert into position_records (user, ticker, position_type, size, received_tick) values (?, ?, ?, ?, ?)
-                    on conflict (user, ticker, position_type)
-                    do update set size = size + excluded.size, received_tick = excluded.received_tick
-            """,
-        Statement.RETURN_GENERATED_KEYS
-    ).use { stmt ->
-        stmt.setString(1, order.email)
-        stmt.setString(2, order.ticker)
-        stmt.setInt(3, PositionType.LONG.ordinal)
-        stmt.setInt(4, order.size)
-        stmt.setLong(5, orderFilledTick)
-        stmt.executeUpdate()
+    private fun partialCounterpartyLedgers(
+        partialOrders: List<OrderBookEntry>,
+        orderFilledTick: Long,
+        state: LedgerState,
+        order: Order
+    ) = partialOrders.flatMap { orderBookEntry ->
+        val orderOperation = orderLedgerOperation(
+            LedgerTableOperationType.Update,
+            orderBookEntry,
+            orderFilledTick,
+        )
 
-        val rs = stmt.generatedKeys
-        if (rs.next()) rs.getLong(1) else -1
-    }
+        val counterparty = state.users[LedgerK.Users(orderBookEntry.user)]
+        assert(counterparty != null)
 
-    private fun sellerLongPositionUpdate(
-        conn: Connection,
-        order: Order,
-        orderFilledTick: Long
-    ): Long = conn.prepareStatement(
-        """
-            update position_records set 
-                size = size - ?, 
-                received_tick = ?
-            where id = (
-                select id from position_records
-                where user = ?
-                and ticker = ?
-                and position_type = ?
-                order by received_tick limit 1
+        val userOperation = userLedgerBalanceUpdate(
+            orderBookEntry.user,
+            counterparty!!,
+            counterparty.balance + (orderBookEntry.size - orderBookEntry.finalSize) * orderBookEntry.price * order
+        )
+
+        val position = state.positionRecords[LedgerK.PositionRecords(
+            orderBookEntry.user, orderBookEntry
+                .ticker, PositionType.LONG
+        )]
+        assert(position != null)
+
+        val positionOperation =
+            positionLedgerOperation(
+                LedgerTableOperationType.Create,
+                orderBookEntry.user,
+                orderBookEntry.ticker,
+                PositionType.LONG,
+                position!!.size - orderBookEntry.size * order.sign(),
+                position.receivedTick
             )
-            returning id, size;
-        """
-    ).use { stmt ->
-        stmt.setInt(1, order.size)
-        stmt.setLong(2, orderFilledTick)
-        stmt.setString(3, order.email)
-        stmt.setString(4, order.ticker)
-        stmt.setInt(5, PositionType.LONG.ordinal)
 
-        val rs = stmt.executeQuery()
-        if (rs.next()) {
-            if (rs.getInt(2) == 0) {
-                deleteEmptyPositions(conn, order.email, order.ticker)
-            }
-            rs.getLong(1)
+        listOf(orderOperation, userOperation, positionOperation)
+    }
+
+    private fun completeCounterpartyLedgers(
+        completeOrders: List<OrderBookEntry>,
+        orderFilledTick: Long,
+        state: LedgerState,
+        order: Order
+    ) = completeOrders.flatMap { orderBookEntry ->
+        val orderOperation = orderLedgerOperation(
+            LedgerTableOperationType.Update,
+            orderBookEntry,
+            orderFilledTick,
+        )
+
+        val counterparty = state.users[LedgerK.Users(orderBookEntry.user)]
+        assert(counterparty != null)
+        // There isn't a good way to update just one field
+        val userOperation = userLedgerBalanceUpdate(
+            orderBookEntry.user, counterparty!!,
+            counterparty.balance +
+                    orderBookEntry.size * orderBookEntry.price * order.sign(),
+        )
+
+        val position = state.positionRecords[LedgerK.PositionRecords(
+            orderBookEntry.user, orderBookEntry
+                .ticker, PositionType.LONG
+        )]
+        assert(position != null)
+
+        val positionOperation =
+            positionLedgerOperation(
+                LedgerTableOperationType.Create,
+                orderBookEntry.user,
+                orderBookEntry.ticker,
+                PositionType.LONG,
+                position!!.size - orderBookEntry.size * order.sign(),
+                position.receivedTick
+            )
+
+        listOf(orderOperation, userOperation, positionOperation)
+    }
+
+    private fun requestingUserLedgers(
+        marketOrderProposal: ArrayList<OrderBookEntry>,
+        state: LedgerState,
+        order: Order
+    ): List<LedgerTableOperation> {
+        val requestingUser = state.users[LedgerK.Users(order.email)]
+        assert(requestingUser != null)
+        val userOperation = userLedgerBalanceUpdate(
+            order.email,
+            requestingUser!!,
+            requestingUser.balance - (marketOrderProposal.sumOf { entry -> (entry.size - entry.finalSize) * entry.price } * order.sign())
+        )
+
+        val existingPosition =
+            state.positionRecords[LedgerK.PositionRecords(order.email, order.ticker, PositionType.LONG)]
+        assert(existingPosition != null)
+
+        val positionOperation = if (order.isBuy()) {
+            positionLedgerOperation(
+                LedgerTableOperationType.Update,
+                order.email,
+                order.ticker,
+                PositionType.LONG,
+                order.size,
+                existingPosition!!.receivedTick
+            )
         } else {
-            -1
+            if (existingPosition!!.size == order.size) {
+                positionLedgerOperation(
+                    LedgerTableOperationType.Delete,
+                    order.email,
+                    order.ticker,
+                    PositionType.LONG,
+                    order.size,
+                    existingPosition.receivedTick
+                )
+            } else if (existingPosition.size > order.size) {
+                positionLedgerOperation(
+                    LedgerTableOperationType.Update,
+                    order.email,
+                    order.ticker,
+                    PositionType.LONG,
+                    order.size,
+                    existingPosition.receivedTick
+                )
+            } else {
+                throw IllegalStateException("Illegal order")
+            }
+
         }
+        return listOf(userOperation, positionOperation)
     }
 
-    private fun deleteEmptyPositions(
-        conn: Connection,
-        user: String,
-        ticker: Ticker,
-    ) {
-        conn.prepareStatement(
-            """
-            delete from position_records 
-                where user = ? and ticker = ? and position_type = ? and size = 0;
-            """
-        ).use { stmt ->
-            stmt.setString(1, user)
-            stmt.setString(2, ticker)
-            stmt.setInt(3, PositionType.LONG.ordinal)
-            stmt.executeUpdate()
-        }
-    }
-
-    // TODO more resilient handling of errors
     private fun deleteFilledOrders(
         conn: Connection,
         ticker: Ticker,
     ) {
-        conn.prepareStatement(
-            """
-            delete from main.order_records
-                where ticker = ? and filled_tick != -1;
-            """
-        ).use { stmt ->
-            stmt.setString(1, ticker)
-            stmt.setInt(2, PositionType.LONG.ordinal)
-            stmt.executeUpdate()
-        }
-    }
-
-    private fun statePair(conn: Connection): Pair<Int, Int> = conn.prepareStatement(
-        """
-                select positions, balances
-                    from (
-                        select
-                            (select sum(size) from position_records) as positions,
-                            (select sum(balance) from user) as balances
-            )
-            """
-    ).use { stmt ->
-        stmt.executeQuery().use { rs ->
-            Pair(rs.getInt("positions"), rs.getInt("balances"))
-        }
-    }
-
-    fun createLimitPendingOrder(order: LimitOrderRequest): LimitPendingOrderRecord? {
-        var orderId: Long? = null
-        val receivedTick: Long = System.currentTimeMillis()
-
-        orderId = db.query { conn ->
-            conn.prepareStatement(
-                """
-                insert into order_records (user, ticker, trade_type, size, price, order_type, filled_tick, received_tick)
-                    values (?, ?, ?, ?, ?, ?, ?, ?) 
-                """
-            ).use { stmt ->
-                stmt.setString(1, order.email)
-                stmt.setString(2, order.ticker)
-                stmt.setInt(3, order.tradeType.ordinal)
-                stmt.setInt(4, order.size)
-                stmt.setInt(5, order.price)
-                stmt.setInt(6, order.orderType.ordinal)
-                stmt.setLong(7, -1L)
-                stmt.setLong(8, receivedTick)
-                stmt.executeUpdate()
-
-                val rs = stmt.generatedKeys
-                return@query if (rs.next()) rs.getLong(1) else -1
+        ledger.submitWithHandle({}) { ledgerState ->
+            val toDelete = ledgerState.orderRecords.filter { it.value.ticker == ticker && it.value.filledTick != -1L }
+            toDelete.map {
+                orderLedgerOperation(
+                    LedgerTableOperationType.Delete,
+                    it.key.id.toInt(),
+                    it.value.userEmail,
+                    it.value.ticker,
+                    it.value.tradeType,
+                    it.value.size,
+                    it.value.price,
+                    it.value.orderType,
+                    it.value.filledTick,
+                    it.value.receivedTick
+                )
             }
+        }.get()
+    }
+
+    private fun statePair() = ledger.getLedgerState().let { state ->
+        state.positionRecords.values.sumOf { it.size } to state.users.values.sumOf { it.balance }
+    }
+
+    fun createLimitPendingOrder(order: LimitOrderRequest) {
+        ledger.submit(
+            listOf(
+                orderLedgerOperation(
+                    LedgerTableOperationType.Delete,
+                    -1,
+                    order.email,
+                    order.ticker,
+                    order.tradeType,
+                    order.size,
+                    order.price,
+                    order.orderType,
+                    -1,
+                    System.currentTimeMillis()
+                )
+            )) { ledgerState -> ledgerState.orderRecords.keys.maxBy { it.id }  }
         }
-        return if (orderId != -1L) LimitPendingOrderRecord(orderId, receivedTick) else null
     }
 
     fun getUserLongPositions(userEmail: String, ticker: Ticker): List<PositionRecord> {
