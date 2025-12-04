@@ -66,6 +66,14 @@ class Ledger(
         return future
     }
 
+    fun <T> getWithHandle(
+        ledgerRequestsFactory: (ledgerState: LedgerState) -> T,
+    ) = runBlocking {
+        atomically {
+            ledgerRequestsFactory(ledgerState.read())
+        }
+    }
+
     fun <T> submit(
         ledgerRequests: List<LedgerTableOperation>,
         getResultFromFinalState: (ledgerState: LedgerState) -> T
@@ -119,6 +127,7 @@ class Ledger(
                             )
                         )
                     }
+
                     else -> upsert(ledgerState, ledgerTableOperation)
                 }
             }

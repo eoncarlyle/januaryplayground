@@ -2,8 +2,16 @@ import arrow.core.raise.option
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import ledger.Ledger
 import ledger.LedgerK
+import ledger.LedgerTableOperation
+import ledger.LedgerTableOperationType
+import ledger.orderLedgerOperation
+import ledger.positionLedgerOperation
+import ledger.userLedgerBalanceUpdate
+import ledger.userLedgerOperation
 import java.sql.Connection
 import java.sql.Statement
+import kotlin.collections.filter
+import kotlin.collections.listOf
 
 // This isn't really a true DAO because that implies more of a 1-to-1 relationship with tables, but
 // this really needed to be somewhere other than `MarketService`
@@ -15,177 +23,114 @@ class StreamingExchangeDao(
 
     fun getUserBalance(userEmail: String): Int? = ledger.getLedgerState().users[LedgerK.Users(userEmail)]?.balance
 
-    fun getTicker(ticker: Ticker): TickerRecord? = db.query { conn ->
-        conn.prepareStatement("select symbol, open from ticker where symbol = ?").use { stmt ->
-            stmt.setString(1, ticker)
-            stmt.executeQuery().use { rs -> if (rs.next()) TickerRecord(rs.getString(1), rs.getInt(2)) else null }
-        }
+
+    fun getTicker(ticker: Ticker): TickerRecord? = ledger.getLedgerState().tickers[LedgerK.Tickers(ticker)].let {
+        if (it != null) {
+            TickerRecord(ticker, if (it.open) 1 else 0)
+        } else null
     }
 
-    fun getAllTickers(): ArrayList<TickerRecord> {
-        val tickers = ArrayList<TickerRecord>()
-        db.query { conn ->
-            conn.prepareStatement("select symbol, open from ticker").use { stmt ->
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        tickers.add(TickerRecord(rs.getString("symbol"), rs.getInt("open")))
-                    }
-                }
-            }
-        }
-        return tickers
+    fun getAllTickers(): List<TickerRecord> = ledger.getLedgerState().tickers.map {
+        TickerRecord(
+            it.key.symbol,
+            if (it.value.open) 1 else 0
+        )
     }
 
-    fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean = db.query { conn ->
-        conn.prepareStatement("select id from order_records where id = ? and user = ? and filled_tick = -1")
-            .use { stmt ->
-                stmt.setInt(1, pendingOrderId)
-                stmt.setString(2, email)
-                stmt.executeQuery().use { rs -> rs.next() }
-            }
+    fun unfilledOrderExists(pendingOrderId: Int, email: String): Boolean = ledger.getLedgerState()
+        .orderRecords[LedgerK.OrderRecords(pendingOrderId.toLong())].let {
+        if (it == null) false else (it.userEmail
+                == email) && it.filledTick == -1L
     }
 
-    fun getStatelessQuote(ticker: Ticker): StatelessQuote? = db.query { conn ->
-        conn.prepareStatement(
-            """
-                 select
-                    coalesce((select max(price) from order_records
-                    where ticker = ? and trade_type = 0 and filled_tick = -1), -1) as bid,
-                    coalesce((select min(price) from order_records
-                    where ticker = ? and trade_type = 1 and filled_tick = -1), -1) as ask;
-                 """
-        ).use { stmt ->
-            stmt.setString(1, ticker)
-            stmt.setString(2, ticker)
-            stmt.executeQuery().use { rs ->
-                if (rs.next()) {
-                    val bid = rs.getInt(1)
-                    val ask = rs.getInt(2)
-                    if (rs.wasNull() || ask == 0 && rs.wasNull()) null
-                    else StatelessQuote(ticker, bid, ask)
-                } else null
-            }
-        }
+    fun getStatelessQuote(ticker: Ticker) = ledger.getWithHandle {
+        val bid = ledger.getLedgerState().orderRecords.filter {
+            it.value.ticker == ticker && it.value.tradeType ==
+                    TradeType.SELL && it.value.filledTick == -1L
+        }.map { it.value.price }.maxByOrNull { it } ?: -1
+
+        val ask = ledger.getLedgerState().orderRecords.filter {
+            it.value.ticker == ticker && it.value.tradeType ==
+                    TradeType.BUY && it.value.filledTick == -1L
+        }.map { it.value.price }.minByOrNull { it } ?: -1
+
+        StatelessQuote(ticker, bid, ask)
     }
 
-    fun getAllStatelessQuotes(): List<StatelessQuote> {
-        val quotes = ArrayList<StatelessQuote>()
-        db.query { conn ->
-            conn.prepareStatement(
-                """
-                select
-                    t.symbol,
-                    coalesce((select max(price) from order_records
-                              where ticker = t.symbol and trade_type = 0 and filled_tick = -1), -1) as bid,
-                    coalesce((select min(price) from order_records
-                              where ticker = t.symbol and trade_type = 1 and filled_tick = -1), -1) as ask
-                    from ticker t;
-                """
-            ).use { stmt ->
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        val ticker = rs.getString(1)
-                        val bid = rs.getInt(2)
-                        val ask = rs.getInt(3)
-                        quotes.add(StatelessQuote(ticker, bid, ask))
-                    }
-                }
-            }
-        }
-        return quotes
+    fun getAllStatelessQuotes(): List<StatelessQuote> = ledger.getLedgerState().tickers.map { ticker ->
+        val bid = ledger.getLedgerState().orderRecords.filter {
+            it.value.ticker == ticker.key.symbol && it.value.tradeType ==
+                    TradeType.SELL && it.value.filledTick == -1L
+        }.map { it.value.price }.maxByOrNull { it } ?: -1
+
+        val ask = ledger.getLedgerState().orderRecords.filter {
+            it.value.ticker == ticker.key.symbol && it.value.tradeType ==
+                    TradeType.BUY && it.value.filledTick == -1L
+        }.map { it.value.price }.minByOrNull { it } ?: -1
+        StatelessQuote(ticker.key.symbol, bid, ask)
     }
 
     private fun buyMatchingOrderBook(
         ticker: Ticker
-    ): List<OrderBookEntry> {
-        val matchingPendingOrders = ArrayList<OrderBookEntry>()
-        db.query { conn ->
-            conn.prepareStatement(
-                """
-                select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, seller_position_count
-                    from order_records o
-                             left join (
-                                    select user, coalesce(sum(size), 0) as seller_position_count
-                                    from position_records
-                                    where position_type = ?
-                                    group by user
-                             ) p on p.user = o.user
-                    where o.ticker = ?
-                      and o.trade_type = ?
-                      and o.filled_tick = -1
-                      and p.seller_position_count >= o.size
-                    order by o.received_tick;
-                """
-            ).use { stmt ->
-                stmt.setInt(1, PositionType.LONG.ordinal)
-                stmt.setString(2, ticker)
-                stmt.setInt(
-                    3, TradeType.SELL.ordinal
-                )
+    ) = ledger.getWithHandle { state ->
+        state.orderRecords.map { order ->
+            val initialConditions = order.value.ticker == ticker && order.value.tradeType == TradeType.SELL && order
+                .value
+                .filledTick == -1L
 
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        matchingPendingOrders.add(
-                            OrderBookEntry(
-                                rs.getInt("id"),
-                                rs.getString("user"),
-                                rs.getString("ticker"),
-                                getTradeType(rs.getInt("trade_type")),
-                                rs.getInt("size"),
-                                rs.getInt("price"),
-                                getOrderType(rs.getInt("order_type")),
-                                rs.getLong("received_tick"),
-                            )
-                        )
-                    }
-                }
+            if (!initialConditions) {
+                return@map null
+            } else {
+                val sellerPositionCount = state.positionRecords.filter { position ->
+                    position.key.userEmail == order.value.userEmail && position.key.ticker == order.value.ticker
+                }.map { it.value.size }.sum()
+
+                return@map if (sellerPositionCount >= order.value.size) {
+                    OrderBookEntry(
+                        order.key.id.toInt(),
+                        order.value.userEmail,
+                        order.value.ticker,
+                        order.value.tradeType,
+                        order.value.size,
+                        order.value.price,
+                        order.value.orderType,
+                        order.value.receivedTick,
+                        sellerPositionCount
+                    )
+                } else null
             }
-        }
-        return matchingPendingOrders
+        }.filterNotNull()
     }
 
     private fun sellMatchingOrderBook(
         ticker: Ticker,
-    ): List<OrderBookEntry> {
-        val matchingPendingOrders = ArrayList<OrderBookEntry>()
-        db.query { conn ->
-            conn.prepareStatement(
-                """
-                select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, u.balance AS buyer_balance
-                    from order_records o join user u
-                        on u.email = o.user
-                    where o.ticker = ?
-                        and o.trade_type = ?
-                        and o.filled_tick = -1
-                        and u.balance >= o.price * o.size
-                    order by o.received_tick;
-                """
-            ).use { stmt ->
-                stmt.setString(1, ticker)
-                stmt.setInt(
-                    2, TradeType.BUY.ordinal
-                )
+    ) = ledger.getWithHandle { state ->
+        state.orderRecords.map { order ->
+            val initialConditions =
+                order.value.ticker == ticker && order.value.tradeType == TradeType.BUY && order.value
+                    .filledTick == -1L
 
-                stmt.executeQuery().use { rs ->
-                    while (rs.next()) {
-                        matchingPendingOrders.add(
-                            OrderBookEntry(
-                                rs.getInt("id"),
-                                rs.getString("user"),
-                                rs.getString("ticker"),
-                                getTradeType(rs.getInt("trade_type")),
-                                rs.getInt("size"),
-                                rs.getInt("price"),
-                                getOrderType(rs.getInt("order_type")),
-                                rs.getLong("received_tick"),
-                            )
-                        )
-                    }
-                }
+            if (!initialConditions) {
+                return@map null
+            } else {
+                val buyerBalance = state.users.size
+
+                return@map if (buyerBalance >= order.value.size * order.value.price) {
+                    OrderBookEntry(
+                        order.key.id.toInt(),
+                        order.value.userEmail,
+                        order.value.ticker,
+                        order.value.tradeType,
+                        order.value.size,
+                        order.value.price,
+                        order.value.orderType,
+                        order.value.receivedTick,
+                    )
+                } else null
             }
         }
-        return matchingPendingOrders
-    }
+    }.filterNotNull()
+
 
     fun getMatchingOrderBook(
         ticker: Ticker,
@@ -194,6 +139,117 @@ class StreamingExchangeDao(
         buyMatchingOrderBook(ticker)
     } else {
         sellMatchingOrderBook(ticker)
+    }
+
+    fun orderLedgerOperation(
+        operation: LedgerTableOperationType,
+        orderBookEntry: OrderBookEntry,
+        orderFilledTick: Long
+    ) =
+        orderLedgerOperation(
+            LedgerTableOperationType.Update,
+            orderBookEntry.id,
+            orderBookEntry.user,
+            orderBookEntry.ticker,
+            orderBookEntry.tradeType,
+            orderBookEntry.size,
+            orderBookEntry.price,
+            orderBookEntry.orderType,
+            orderFilledTick,
+            orderBookEntry.receivedTick
+        )
+
+    fun _fillOrder(
+        order: Order,
+        marketOrderProposal: ArrayList<OrderBookEntry>
+    ) {
+        val orderFilledTick: Long = System.currentTimeMillis()
+        val partialOrders = marketOrderProposal.filter { entry -> entry.finalSize != 0 }
+        val completeOrders = marketOrderProposal.filter { entry -> entry.finalSize == 0 }
+
+
+        ledger.submitWithHandle({
+            it.positionRecords[LedgerK.PositionRecords(
+                order.email, order.ticker, PositionType
+                    .LONG
+            )]
+        }) { state ->
+
+            val completeCounterpartyLedgers: List<LedgerTableOperation> = completeOrders.flatMap { orderBookEntry ->
+                val orderOperation = orderLedgerOperation(
+                    LedgerTableOperationType.Update,
+                    orderBookEntry,
+                    orderFilledTick,
+                )
+
+                val counterparty = state.users[LedgerK.Users(orderBookEntry.user)]
+                assert(counterparty != null)
+                // There isn't a good way to update just one field
+                val userOperation = userLedgerBalanceUpdate(
+                    orderBookEntry.user, counterparty!!,
+                    counterparty.balance +
+                            orderBookEntry.size * orderBookEntry.price * order.sign(),
+                )
+
+                val position = state.positionRecords[LedgerK.PositionRecords(
+                    orderBookEntry.user, orderBookEntry
+                        .ticker, PositionType.LONG
+                )]
+                assert(position != null)
+
+                val positionOperation =
+                    positionLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        orderBookEntry.user,
+                        orderBookEntry.ticker,
+                        PositionType.LONG,
+                        position!!.size - orderBookEntry.size * order.sign(),
+                        position.receivedTick
+                    )
+
+                listOf(orderOperation, userOperation, positionOperation)
+            }
+
+            val partialCounterpartyLedgers: List<LedgerTableOperation> = partialOrders.flatMap { orderBookEntry ->
+                val orderOperation = orderLedgerOperation(
+                    LedgerTableOperationType.Update,
+                    orderBookEntry,
+                    orderFilledTick,
+                )
+
+                val counterparty = state.users[LedgerK.Users(orderBookEntry.user)]
+                assert(counterparty != null)
+
+                val userOperation = userLedgerBalanceUpdate(
+                    orderBookEntry.user,
+                    counterparty!!,
+                    counterparty.balance + (orderBookEntry.size - orderBookEntry.finalSize) * orderBookEntry.price * order
+                )
+
+                val position = state.positionRecords[LedgerK.PositionRecords(
+                    orderBookEntry.user, orderBookEntry
+                        .ticker, PositionType.LONG
+                )]
+                assert(position != null)
+
+                val positionOperation =
+                    positionLedgerOperation(
+                        LedgerTableOperationType.Create,
+                        orderBookEntry.user,
+                        orderBookEntry.ticker,
+                        PositionType.LONG,
+                        position!!.size - orderBookEntry.size * order.sign(),
+                        position.receivedTick
+                    )
+
+                listOf(orderOperation, userOperation, positionOperation)
+            }
+
+            //TODO: address orderer, do the buyerLongPositionUpdate/sellerLongPositionUpdate
+            //TODO: this should be in a new method
+
+            listOf()
+        }
     }
 
     //TODO: I need to re-read this to better understand if there are any issues with limit order usages

@@ -160,6 +160,16 @@ fun userLedgerOperation(
     ), operation
 )
 
+fun userLedgerBalanceUpdate(
+    email: String,
+    value: LedgerV.Users,
+    newBalance: Int,
+) = LedgerTableOperation(
+    LedgerTableEntry.Users(
+        LedgerK.Users(email), LedgerV.Users(value.passwordHash, newBalance, value.type, value.orchestratedBy)
+    ), LedgerTableOperationType.Update
+)
+
 fun positionLedgerOperation(
     operation: LedgerTableOperationType,
     userEmail: String,
@@ -182,5 +192,36 @@ fun sessionLedgerOperation(
 ) = LedgerTableOperation(
     LedgerTableEntry.Sessions(
         LedgerK.Sessions(token), LedgerV.Sessions(expireTimestamp, email)
+    ), operation
+)
+
+fun orderLedgerOperation(
+    operation: LedgerTableOperationType,
+    id: Int,
+    userEmail: String,
+    ticker: Ticker,
+    tradeType: TradeType,
+    size: Int,
+    price: Int,
+    orderType: OrderType,
+    filledTick: Long,
+    receivedTick: Long
+) = LedgerTableOperation(
+    LedgerTableEntry.OrderRecords(
+        LedgerK.OrderRecords(id.toLong()),
+        LedgerV.OrderRecords(
+            userEmail, ticker, tradeType, size, price, orderType, filledTick, receivedTick
+        )
+    ), operation
+)
+
+fun tickerLedgerOperation(
+    symbol: Ticker,
+    open: Boolean,
+    operation: LedgerTableOperationType
+) = LedgerTableOperation(
+    LedgerTableEntry.Tickers(
+        LedgerK.Tickers(symbol),
+        LedgerV.Tickers(open),
     ), operation
 )

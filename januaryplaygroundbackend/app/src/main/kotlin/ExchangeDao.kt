@@ -101,13 +101,13 @@ class ExchangeDao(
     ): List<OrderBookEntry> {
         val matchingPendingOrders = ArrayList<OrderBookEntry>()
         db.query { conn ->
-            conn.prepareStatement(
+            conn.prepareStatement( //The following statement wasn't checkign for ticker in the subqery!
                 """
                 select o.id, o.user, o.ticker, o.trade_type, o.size, o.price, o.order_type, o.received_tick, seller_position_count
                     from order_records o
                              left join (
                                     select user, coalesce(sum(size), 0) as seller_position_count
-                                    from position_records
+                                    from position_records 
                                     where position_type = ?
                                     group by user
                              ) p on p.user = o.user
