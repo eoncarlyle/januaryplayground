@@ -313,7 +313,7 @@ class StreamingAuthDao(
                 email
             )
         )
-    ) {}.get()
+    ).get()
 
     fun removeExistingSessions(email: String) = ledger.submitWithHandle({}) { state ->
         state.sessions.filter { it.value.email == email }.map {

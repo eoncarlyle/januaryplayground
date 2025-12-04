@@ -2,6 +2,7 @@ package ledger
 
 import com.iainschmitt.januaryplaygroundbackend.shared.*
 import kotlinx.serialization.Serializable
+import java.awt.Dimension
 import java.util.concurrent.CompletableFuture
 
 sealed class LedgerK {
@@ -80,7 +81,8 @@ sealed class LedgerV {
     data class NotificationRules(
         val category: NotificationCategory,
         val operation: NotificationOperation,
-        val timestamp: Long
+        val timestamp: Long,
+        val dimension: Int
     ) : LedgerV()
 }
 
@@ -216,12 +218,27 @@ fun orderLedgerOperation(
 )
 
 fun tickerLedgerOperation(
+    operation: LedgerTableOperationType,
     symbol: Ticker,
     open: Boolean,
-    operation: LedgerTableOperationType
 ) = LedgerTableOperation(
     LedgerTableEntry.Tickers(
         LedgerK.Tickers(symbol),
         LedgerV.Tickers(open),
+    ), operation
+)
+
+fun notificationLedgerOperation(
+    operation: LedgerTableOperationType,
+    userEmail: String,
+    notificationOperation: NotificationOperation,
+    category: NotificationCategory,
+    timestamp: Long,
+    dimension: Int
+) = LedgerTableOperation(
+    LedgerTableEntry.NotificationRules(
+        LedgerK.NotificationRules(userEmail), LedgerV.NotificationRules(
+            category, notificationOperation, timestamp, dimension
+        )
     ), operation
 )

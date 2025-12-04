@@ -35,6 +35,16 @@ class Ledger(
     // requiring casts and `Any`
     private var ledgerState = runBlocking { TVar.new(initialLedgerState) }
 
+
+    fun <R> submitWithHandleResultFromInitialState(
+        initialResultFactory: (ledgerState: LedgerState) -> R,
+        ledgerRequestsFactory: (ledgerState: LedgerState) -> List<LedgerTableOperation>,
+    ): R {
+        val result = initialResultFactory(getLedgerState())
+        submitWithHandle({}, ledgerRequestsFactory).get()
+        return result
+    }
+
     fun <T> submitWithHandle(
         getResultFromFinalState: (ledgerState: LedgerState) -> T,
         ledgerRequestsFactory: (ledgerState: LedgerState) -> List<LedgerTableOperation>,
@@ -67,12 +77,16 @@ class Ledger(
     }
 
     fun <T> getWithHandle(
-        ledgerRequestsFactory: (ledgerState: LedgerState) -> T,
+        ledgerRequestsHandle: (ledgerState: LedgerState) -> T,
     ) = runBlocking {
         atomically {
-            ledgerRequestsFactory(ledgerState.read())
+            ledgerRequestsHandle(ledgerState.read())
         }
     }
+
+    fun submit(
+        ledgerRequests: List<LedgerTableOperation>,
+    ): CompletableFuture<Unit> = submit(ledgerRequests) {}
 
     fun <T> submit(
         ledgerRequests: List<LedgerTableOperation>,
